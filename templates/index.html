@@ -131,7 +131,7 @@
       </div>
       {% if trend_rows %}
         <div class="chart-card" data-line-chart='{{ trend_rows | tojson }}' data-currency="{{ display_currency }}">
-          <canvas id="trend-chart" height="280"></canvas>
+          <div id="trendChart" style="width: 100%; height: 350px;"></div>
         </div>
       {% else %}
         <div class="empty-state"><h3>No data yet</h3></div>
@@ -147,7 +147,7 @@
       </div>
       {% if growth_rows %}
         <div class="chart-card" data-bar-chart='{{ growth_rows | tojson }}' data-currency="{{ display_currency }}">
-          <canvas id="growth-chart" height="280"></canvas>
+          <div id="growthChart" style="width: 100%; height: 280px;"></div>
         </div>
       {% else %}
         <div class="empty-state"><h3>No data yet</h3></div>
@@ -173,10 +173,10 @@
           </label>
         {% endif %}
       </div>
+
       {% if pie_data %}
         <div class="chart-card" data-pie-chart='{{ pie_data | tojson }}' data-currency="{{ display_currency }}">
-          <canvas id="pie-chart" height="280"></canvas>
-          <div id="pie-legend" class="pie-legend"></div>
+          <div id="pieChart" style="width: 100%; height: 280px;"></div>
         </div>
       {% else %}
         <div class="empty-state"><h3>No data yet</h3></div>

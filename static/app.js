@@ -149,172 +149,130 @@ function animateValue(duration, drawFrame) {
   requestAnimationFrame(frame);
 }
 
+// 全局保存图表实例，方便在 resize 时调用
+let lineChartInstance = null;
+let growthChartInstance = null;
+let pieChartInstance = null;
+
+// 你之前的 drawLineChart 稍微修改一下，保存到全局变量
 function drawLineChart() {
-  const payload = parseChartData(".chart-card[data-line-chart]", "data-line-chart");
-  if (!payload) {
-    return;
-  }
+    var chartDom = document.getElementById('trendChart');
+    if (!chartDom) return;
+    if (!lineChartInstance) lineChartInstance = echarts.init(chartDom);
 
-  const canvas = document.getElementById("trend-chart");
-  if (!(canvas instanceof HTMLCanvasElement)) {
-    return;
-  }
+    var cardElement = document.querySelector('.chart-card[data-line-chart]');
+    var rawData = cardElement.getAttribute('data-line-chart');
+    var trendData = JSON.parse(rawData);
+    var currency = cardElement.getAttribute('data-currency') || '';
 
-  const prepared = setupCanvas(canvas);
-  if (!prepared) {
-    return;
-  }
-  const { ctx, width, height } = prepared;
-  const points = payload.data;
-  if (!Array.isArray(points) || points.length === 0) {
-    return;
-  }
+    const dates = trendData.map(item => item.snapshot_date);
+    const amounts = trendData.map(item => item.total);
 
-  const pad = { top: 24, right: 18, bottom: 34, left: 56 };
-  const chartWidth = width - pad.left - pad.right;
-  const chartHeight = height - pad.top - pad.bottom;
-  const values = points.map((point) => Number(point.total));
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
-  const valueSpan = maxValue - minValue || Math.max(maxValue, 1);
-
-  ctx.strokeStyle = "rgba(117, 97, 77, 0.18)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 4; i += 1) {
-    const y = pad.top + (chartHeight / 3) * i;
-    ctx.beginPath();
-    ctx.moveTo(pad.left, y);
-    ctx.lineTo(width - pad.right, y);
-    ctx.stroke();
-  }
-
-  ctx.fillStyle = "#75614d";
-  ctx.font = "12px Segoe UI";
-  for (let i = 0; i < 4; i += 1) {
-    const ratio = i / 3;
-    const value = maxValue - valueSpan * ratio;
-    const y = pad.top + chartHeight * ratio + 4;
-    ctx.fillText(Number(value).toFixed(2), 10, y);
-  }
-
-  const coordinates = points.map((point, index) => {
-    const x = pad.left + (chartWidth / Math.max(points.length - 1, 1)) * index;
-    const y = pad.top + ((maxValue - Number(point.total)) / valueSpan) * chartHeight;
-    return { x, y, label: point.snapshot_date };
-  });
-
-  const gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
-  gradient.addColorStop(0, "rgba(31, 111, 95, 0.22)");
-  gradient.addColorStop(1, "rgba(31, 111, 95, 0.02)");
-
-  ctx.beginPath();
-  coordinates.forEach((point, index) => {
-    if (index === 0) {
-      ctx.moveTo(point.x, point.y);
-    } else {
-      ctx.lineTo(point.x, point.y);
-    }
-  });
-  ctx.lineTo(coordinates[coordinates.length - 1].x, height - pad.bottom);
-  ctx.lineTo(coordinates[0].x, height - pad.bottom);
-  ctx.closePath();
-  ctx.fillStyle = gradient;
-  ctx.fill();
-
-  ctx.beginPath();
-  coordinates.forEach((point, index) => {
-    if (index === 0) {
-      ctx.moveTo(point.x, point.y);
-    } else {
-      ctx.lineTo(point.x, point.y);
-    }
-  });
-  ctx.strokeStyle = "#1f6f5f";
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  coordinates.forEach((point) => {
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffffff";
-    ctx.fill();
-    ctx.strokeStyle = "#1f6f5f";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  });
-
-  ctx.fillStyle = "#75614d";
-  ctx.font = "12px Segoe UI";
-  coordinates.forEach((point) => {
-    ctx.fillText(point.label.slice(5), point.x - 16, height - 10);
-  });
-
-  ctx.fillStyle = "#2f2419";
-  ctx.font = "13px Segoe UI";
-  ctx.fillText(`Total asset trend (${payload.currency})`, pad.left, 16);
+    var option = {
+        tooltip: { trigger: 'axis', formatter: '{b} <br/> 总计: {c} ' + currency },
+        grid: { left: '5%', right: '5%', bottom: '15%', containLabel: true },
+        xAxis: { type: 'category', data: dates },
+        yAxis: { type: 'value' },
+        dataZoom: [ { type: 'inside', start: 0, end: 100 }, { type: 'slider', start: 0, end: 100 } ],
+        series: [{ type: 'line', data: amounts, symbolSize: 8, itemStyle: { color: '#c28e5c' } }]
+    };
+    lineChartInstance.setOption(option);
 }
 
-function drawGrowthChart(progress = 1) {
-  const payload = parseChartData(".chart-card[data-bar-chart]", "data-bar-chart");
-  if (!payload) {
-    return;
-  }
+// 柱状图渲染函数（替换原有逻辑）
+function drawGrowthChart() {
+    var chartDom = document.getElementById('growthChart');
+    if (!chartDom) return;
+    if (!growthChartInstance) growthChartInstance = echarts.init(chartDom);
 
-  const canvas = document.getElementById("growth-chart");
-  if (!(canvas instanceof HTMLCanvasElement)) {
-    return;
-  }
+    var cardElement = document.querySelector('.chart-card[data-bar-chart]');
+    var rawData = cardElement.getAttribute('data-bar-chart');
+    var growthData = JSON.parse(rawData);
+    var currency = cardElement.getAttribute('data-currency') || '';
 
-  const prepared = setupCanvas(canvas);
-  if (!prepared) {
-    return;
-  }
-  const { ctx, width, height } = prepared;
-  const rows = payload.data;
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return;
-  }
+    // 截取日期的后半部分，跟原本的逻辑保持一致 (比如 2023-10-10 变成 10-10)
+    const dates = growthData.map(item => item.snapshot_date.slice(5));
+    const values = growthData.map(item => Number(item.growth_per_day));
 
-  const pad = { top: 26, right: 18, bottom: 42, left: 64 };
-  const chartWidth = width - pad.left - pad.right;
-  const chartHeight = height - pad.top - pad.bottom;
-  const values = rows.map((row) => Number(row.growth_per_day));
-  const maxAbsValue = Math.max(...values.map((value) => Math.abs(value)), 1);
-  const zeroY = pad.top + chartHeight / 2;
-  const barWidth = Math.min(42, chartWidth / Math.max(rows.length * 1.8, 1));
+    var option = {
+        tooltip: {
+            trigger: 'axis',
+            formatter: '{b} <br/> 变化: {c} ' + currency + ' / day'
+        },
+        grid: { left: '5%', right: '5%', bottom: '15%', containLabel: true },
+        dataZoom: [ { type: 'inside', start: 0, end: 100 }, { type: 'slider', start: 0, end: 100 } ],
+        xAxis: { type: 'category', data: dates },
+        yAxis: { type: 'value' },
+        series: [{
+            type: 'bar',
+            data: values,
+            itemStyle: {
+                // 如果大于等于0用绿色，小于0用红色（原项目的颜色风格）
+                color: function(params) {
+                    return params.value >= 0 ? '#1f6f5f' : '#d76636';
+                },
+                borderRadius: [4, 4, 0, 0] // 让柱子顶部稍微圆润一点
+            }
+        }]
+    };
+    growthChartInstance.setOption(option);
+}
 
-  ctx.strokeStyle = "rgba(117, 97, 77, 0.18)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(pad.left, zeroY);
-  ctx.lineTo(width - pad.right, zeroY);
-  ctx.stroke();
+// 饼图渲染函数（替换原有逻辑）
+function drawPieChart(snapshotId) {
+    var chartDom = document.getElementById('pieChart');
+    if (!chartDom) return;
+    if (!pieChartInstance) pieChartInstance = echarts.init(chartDom);
 
-  ctx.fillStyle = "#75614d";
-  ctx.font = "12px Segoe UI";
-  ctx.fillText(maxAbsValue.toFixed(2), 10, pad.top + 6);
-  ctx.fillText("0.00", 18, zeroY + 4);
-  ctx.fillText((-maxAbsValue).toFixed(2), 10, height - pad.bottom);
+    var cardElement = document.querySelector('.chart-card[data-pie-chart]');
+    var rawData = cardElement.getAttribute('data-pie-chart');
+    var payloadData = JSON.parse(rawData);
+    var currency = cardElement.getAttribute('data-currency') || '';
 
-  rows.forEach((row, index) => {
-    const x = pad.left + ((index + 0.5) * chartWidth) / rows.length;
-    const value = Number(row.growth_per_day) * progress;
-    const heightRatio = Math.abs(value) / maxAbsValue;
-    const barHeight = heightRatio * (chartHeight / 2);
-    const barX = x - barWidth / 2;
-    const barY = value >= 0 ? zeroY - barHeight : zeroY;
+    // 找到当前选中日期的数据，找不到就默认拿第一条
+    const selected = payloadData.find((item) => String(item.snapshot_id) === String(snapshotId)) || payloadData[0];
 
-    ctx.fillStyle = value >= 0 ? "rgba(31, 111, 95, 0.82)" : "rgba(215, 102, 54, 0.78)";
-    ctx.fillRect(barX, barY, barWidth, Math.max(barHeight, 2));
+    if (!selected || !selected.values || selected.values.length === 0) {
+        pieChartInstance.clear(); // 没有数据就清空
+        return;
+    }
 
-    ctx.fillStyle = "#75614d";
-    ctx.font = "11px Segoe UI";
-    ctx.fillText(row.snapshot_date.slice(5), x - 16, height - 14);
-  });
+    // 格式化为 ECharts 饼图需要的结构: [{name: 'xxx', value: 123}, ...]
+    const pieData = selected.values.map(item => ({
+        name: item.label,
+        value: Number(item.value)
+    }));
 
-  ctx.fillStyle = "#2f2419";
-  ctx.font = "13px Segoe UI";
-  ctx.fillText(`Daily growth (${payload.currency}/day)`, pad.left, 16);
+    var option = {
+        tooltip: {
+            trigger: 'item',
+            // {b}: 名字, {c}: 金额, {d}: 百分比
+            formatter: '{b}: {c} ' + currency + ' ({d}%)'
+        },
+        // ECharts 自带右侧图例，完美替代你原来手写的 HTML legend
+        legend: {
+            type: 'scroll', // 图例如果太多可以滚动
+            orient: 'vertical',
+            right: 0,
+            top: 'center'
+        },
+        series: [
+            {
+                name: 'Composition',
+                type: 'pie',
+                radius: ['45%', '75%'], // 环形图设计（类似你原来画的中间空心的圆）
+                center: ['35%', '50%'], // 整体向左偏移，给右侧的图例让出空间
+                avoidLabelOverlap: false,
+                label: { show: false }, // 隐藏折线引出的文字，保持卡片干净
+                data: pieData,
+                itemStyle: {
+                    borderColor: '#fff',
+                    borderWidth: 2
+                }
+            }
+        ]
+    };
+    pieChartInstance.setOption(option);
 }
 
 function animateGrowthChart() {
@@ -326,103 +284,34 @@ function getPieColors(length) {
   return Array.from({ length }, (_, index) => palette[index % palette.length]);
 }
 
-function drawPieChart(snapshotId, progress = 1) {
-  const payload = parseChartData(".chart-card[data-pie-chart]", "data-pie-chart");
-  if (!payload) {
-    return;
-  }
-
-  const canvas = document.getElementById("pie-chart");
-  const legend = document.getElementById("pie-legend");
-  if (!(canvas instanceof HTMLCanvasElement) || !(legend instanceof HTMLElement)) {
-    return;
-  }
-
-  const selected = payload.data.find((item) => String(item.snapshot_id) === String(snapshotId)) || payload.data[0];
-  if (!selected || !Array.isArray(selected.values) || selected.values.length === 0) {
-    legend.innerHTML = "<p class='chart-empty'>No composition data is available for this date.</p>";
-    return;
-  }
-
-  const prepared = setupCanvas(canvas);
-  if (!prepared) {
-    return;
-  }
-  const { ctx, width, height } = prepared;
-
-  const total = selected.values.reduce((sum, item) => sum + Number(item.value), 0);
-  const radius = Math.min(width, height) * 0.23;
-  const centerX = width * 0.34;
-  const centerY = height * 0.5;
-  const colors = getPieColors(selected.values.length);
-  let startAngle = -Math.PI / 2;
-
-  selected.values.forEach((item, index) => {
-    const ratio = Number(item.value) / total;
-    const endAngle = startAngle + Math.PI * 2 * ratio * progress;
-    ctx.beginPath();
-    ctx.moveTo(centerX, centerY);
-    ctx.arc(centerX, centerY, radius, startAngle, endAngle);
-    ctx.closePath();
-    ctx.fillStyle = colors[index];
-    ctx.fill();
-    startAngle += Math.PI * 2 * ratio;
-  });
-
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, radius * 0.58, 0, Math.PI * 2);
-  ctx.fillStyle = "#fffaf2";
-  ctx.fill();
-  ctx.fillStyle = "#2f2419";
-  ctx.font = "bold 15px Segoe UI";
-  ctx.textAlign = "center";
-  ctx.fillText(selected.snapshot_date, centerX, centerY - 3);
-  ctx.font = "12px Segoe UI";
-  ctx.fillStyle = "#75614d";
-  ctx.fillText(payload.currency, centerX, centerY + 16);
-  ctx.textAlign = "start";
-
-  legend.innerHTML = "";
-  selected.values.forEach((item, index) => {
-    const row = document.createElement("div");
-    row.className = "legend-row legend-row--fade";
-    row.style.animationDelay = `${index * 45}ms`;
-    const ratio = ((Number(item.value) / total) * 100).toFixed(1);
-    row.innerHTML = `
-      <span class="legend-dot" style="background:${colors[index]}"></span>
-      <span class="legend-label">${item.label}</span>
-      <span class="legend-value">${Number(item.value).toFixed(2)} ${payload.currency} (${ratio}%)</span>
-    `;
-    legend.appendChild(row);
-  });
-}
-
 function animatePieChart(snapshotId) {
   animateValue(620, (progress) => drawPieChart(snapshotId, progress));
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  initializeEntryEditor("entries-container", "add-entry-btn");
-  initializeEntryEditor("edit-entries-container", "add-edit-entry-btn");
+    initializeEntryEditor("entries-container", "add-entry-btn");
+    initializeEntryEditor("edit-entries-container", "add-edit-entry-btn");
 
-  drawLineChart();
-  animateGrowthChart();
-
-  const pieSelector = document.getElementById("pie-date-selector");
-  if (pieSelector instanceof HTMLSelectElement) {
-    animatePieChart(pieSelector.value);
-    pieSelector.addEventListener("change", () => animatePieChart(pieSelector.value));
-  } else {
-    animatePieChart();
-  }
-
-  window.addEventListener("resize", () => {
+    // 1. 初始化所有图表
     drawLineChart();
-    drawGrowthChart(1);
-    if (pieSelector instanceof HTMLSelectElement) {
-      drawPieChart(pieSelector.value, 1);
+    drawGrowthChart();
+
+    // 2. 初始化饼图，并监听下拉框切换事件
+    const pieSelector = document.getElementById("pie-date-selector");
+    if (pieSelector) {
+        drawPieChart(pieSelector.value); // 页面加载时画一次
+        pieSelector.addEventListener("change", () => {
+            // 切换日期时，ECharts 会自动生成极其丝滑的数据变形过渡动画！
+            drawPieChart(pieSelector.value);
+        });
     } else {
-      drawPieChart(undefined, 1);
+        drawPieChart();
     }
-  });
+
+    // 3. 屏幕大小调整时，自动重绘图表，实现响应式
+    window.addEventListener("resize", () => {
+        if (lineChartInstance) lineChartInstance.resize();
+        if (growthChartInstance) growthChartInstance.resize();
+        if (pieChartInstance) pieChartInstance.resize();
+    });
 });
