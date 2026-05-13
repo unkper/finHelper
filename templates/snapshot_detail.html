@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Snapshot Detail{% endblock %}
+{% block content %}
+  <main class="layout">
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Snapshot Detail</p>
+          <h2>Edit snapshot</h2>
+          <p>Update amounts, add new accounts, or remove rows and save again.</p>
+        </div>
+        <form method="get" class="currency-switcher">
+          <label>
+            <span>Display currency</span>
+            <select name="display_currency" onchange="this.form.submit()">
+              {% for currency in supported_currencies %}
+                <option value="{{ currency }}" {% if currency == display_currency %}selected{% endif %}>{{ currency }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </form>
+      </div>
+
+      <section class="stats-grid single-stat">
+        <article class="panel stat-card accent-cny">
+          <p>Snapshot total</p>
+          <strong>{{ "%.2f"|format(snapshot.total_in_display_currency) }}</strong>
+          <span>{{ display_currency }}</span>
+        </article>
+      </section>
+
+      <form method="post" action="{{ url_for('update_snapshot', snapshot_id=snapshot.id) }}" class="snapshot-form">
+        <input type="hidden" name="display_currency" value="{{ display_currency }}">
+        <div class="form-row two-col">
+          <label>
+            <span>Date</span>
+            <input type="date" name="snapshot_date" value="{{ snapshot.snapshot_date }}">
+          </label>
+          <label>
+            <span>Note</span>
+            <input type="text" name="note" value="{{ snapshot.note or '' }}" placeholder="Snapshot note">
+          </label>
+        </div>
+
+        <div class="entry-toolbar">
+          <div>
+            <h3>Accounts in this snapshot</h3>
+            <p>Each row can be adjusted independently. Removing a row removes that account from this snapshot only.</p>
+          </div>
+        </div>
+
+        <div id="edit-entries-container" class="entries-container">
+          {% for entry in snapshot.entries %}
+            <div class="entry-card">
+              <div class="entry-head">
+                <strong>Account {{ loop.index }}</strong>
+                <button type="button" class="text-btn remove-entry-btn">Remove</button>
+              </div>
+              <div class="form-row four-col">
+                <label>
+                  <span>Name</span>
+                  <input list="account-suggestions" type="text" name="account_name[]" value="{{ entry.name }}" placeholder="Bank or broker name" required>
+                </label>
+                <label>
+                  <span>Type</span>
+                  <select name="account_category[]">
+                    <option value="bank" {% if entry.category == "bank" %}selected{% endif %}>Bank</option>
+                    <option value="broker" {% if entry.category == "broker" %}selected{% endif %}>Broker</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Currency</span>
+                  <select name="account_currency[]">
+                    {% for currency in supported_currencies %}
+                      <option value="{{ currency }}" {% if entry.currency == currency %}selected{% endif %}>{{ currency }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>
+                  <span>Amount</span>
+                  <input type="number" step="0.01" name="amount[]" value="{{ '%.2f'|format(entry.amount) }}" placeholder="0.00">
+                </label>
+              </div>
+              <div class="tip-box">
+                <span>Converted view</span>
+                <p>Current display value: {{ "%.2f"|format(entry.converted_amount) }} {{ display_currency }}</p>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <datalist id="account-suggestions">
+          {% for account in accounts %}
+            <option value="{{ account.name }}"></option>
+          {% endfor %}
+        </datalist>
+
+        <div class="submit-row submit-actions">
+          <button type="button" class="secondary-btn" id="add-edit-entry-btn">Add account</button>
+          <button type="submit" class="primary-btn">Save changes</button>
+        </div>
+      </form>
+    </section>
+  </main>
+{% endblock %}

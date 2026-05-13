@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}FinHelper{% endblock %}
+{% block content %}
+  <main class="layout">
+    <section class="panel hero-panel">
+      <div class="hero-copy">
+        <p class="eyebrow">New Snapshot</p>
+        <h2>Record one balance per account</h2>
+        <p>Each account now uses only one currency. Totals, the line chart, and the pie chart are converted into the display currency.</p>
+      </div>
+
+      <form method="post" action="{{ url_for('create_snapshot') }}" class="snapshot-form">
+        <input type="hidden" name="display_currency" value="{{ display_currency }}">
+        <div class="form-row two-col">
+          <label>
+            <span>Date</span>
+            <input type="date" name="snapshot_date" value="{{ today }}">
+          </label>
+          <label>
+            <span>Note</span>
+            <input type="text" name="note" placeholder="Closing snapshot">
+          </label>
+        </div>
+
+        <div class="entry-toolbar">
+          <div>
+            <h3>Accounts</h3>
+            <p>One row per account. Add or remove rows freely.</p>
+          </div>
+        </div>
+
+        <div id="entries-container" class="entries-container">
+          <div class="entry-card">
+            <div class="entry-head">
+              <strong>Account 1</strong>
+              <button type="button" class="text-btn remove-entry-btn">Remove</button>
+            </div>
+            <div class="form-row four-col">
+              <label>
+                <span>Name</span>
+                <input list="account-suggestions" type="text" name="account_name[]" placeholder="Bank or broker name" required>
+              </label>
+              <label>
+                <span>Type</span>
+                <select name="account_category[]">
+                  <option value="bank">Bank</option>
+                  <option value="broker">Broker</option>
+                </select>
+              </label>
+              <label>
+                <span>Currency</span>
+                <select name="account_currency[]">
+                  {% for currency in supported_currencies %}
+                    <option value="{{ currency }}">{{ currency }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                <span>Amount</span>
+                <input type="number" step="0.01" name="amount[]" value="0" placeholder="0.00">
+              </label>
+            </div>
+            <div class="tip-box">
+              <span>Account memory</span>
+              <p>Past account names stay available for reuse. Updating a currency also updates that account's default currency.</p>
+            </div>
+          </div>
+        </div>
+
+        <datalist id="account-suggestions">
+          {% for account in accounts %}
+            <option value="{{ account.name }}"></option>
+          {% endfor %}
+        </datalist>
+
+        <div class="submit-row submit-actions">
+          <button type="button" class="secondary-btn" id="add-entry-btn">Add account</button>
+          <button type="submit" class="primary-btn">Save snapshot</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel toolbar-panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Display View</p>
+          <h2>Choose one display currency</h2>
+          <p>All totals and charts are converted into the selected currency.</p>
+        </div>
+        <form method="get" class="currency-switcher">
+          <label>
+            <span>Display currency</span>
+            <select name="display_currency" onchange="this.form.submit()">
+              {% for currency in supported_currencies %}
+                <option value="{{ currency }}" {% if currency == display_currency %}selected{% endif %}>{{ currency }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </form>
+      </div>
+    </section>
+
+    <section class="stats-grid single-stat">
+      <article class="panel stat-card accent-cny">
+        <p>Latest total assets</p>
+        <strong>{{ "%.2f"|format(latest_totals.total_in_display_currency if latest_totals else 0) }}</strong>
+        <span>{{ display_currency }}</span>
+        {% if latest_totals %}
+          <small class="hint">
+            {% if latest_totals.rate_source == "historical" %}
+              Historical FX rates were used.
+            {% elif latest_totals.rate_source == "default" %}
+              Historical FX was unavailable, so default rates were used.
+            {% else %}
+              No FX conversion was needed.
+            {% endif %}
+          </small>
+        {% endif %}
+      </article>
+    </section>
+
+  <section class="chart-dashboard">
+  
+  <div class="charts-main-stack">
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Trend</p>
+          <h2>Total asset curve</h2>
+        </div>
+      </div>
+      {% if trend_rows %}
+        <div class="chart-card" data-line-chart='{{ trend_rows | tojson }}' data-currency="{{ display_currency }}">
+          <canvas id="trend-chart" height="280"></canvas>
+        </div>
+      {% else %}
+        <div class="empty-state"><h3>No data yet</h3></div>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Momentum</p>
+          <h2>Daily growth bars</h2>
+        </div>
+      </div>
+      {% if growth_rows %}
+        <div class="chart-card" data-bar-chart='{{ growth_rows | tojson }}' data-currency="{{ display_currency }}">
+          <canvas id="growth-chart" height="280"></canvas>
+        </div>
+      {% else %}
+        <div class="empty-state"><h3>No data yet</h3></div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="charts-side-col">
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Composition</p>
+          <h2>Asset pie chart</h2>
+        </div>
+        {% if pie_data %}
+          <label class="inline-selector">
+            <span>Date</span>
+            <select id="pie-date-selector">
+              {% for item in pie_data %}
+                <option value="{{ item.snapshot_id }}">{{ item.snapshot_date }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        {% endif %}
+      </div>
+      {% if pie_data %}
+        <div class="chart-card" data-pie-chart='{{ pie_data | tojson }}' data-currency="{{ display_currency }}">
+          <canvas id="pie-chart" height="280"></canvas>
+          <div id="pie-legend" class="pie-legend"></div>
+        </div>
+      {% else %}
+        <div class="empty-state"><h3>No data yet</h3></div>
+      {% endif %}
+    </section>
+  </div>
+
+</section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Recent</p>
+          <h2>Recent snapshots</h2>
+        </div>
+      </div>
+
+      {% if recent_snapshots %}
+        <div class="snapshot-list">
+          {% for snapshot in recent_snapshots %}
+            <article class="snapshot-item">
+              <div>
+                <h3>{{ snapshot.snapshot_date }}</h3>
+                <p>{{ snapshot.account_count }} accounts{% if snapshot.note %} | {{ snapshot.note }}{% endif %}</p>
+              </div>
+              <div class="snapshot-values">
+                <span>{{ display_currency }} {{ "%.2f"|format(snapshot.total_in_display_currency) }}</span>
+                <span class="muted-pill">
+                  {% if snapshot.rate_source == "historical" %}
+                    Historical FX
+                  {% elif snapshot.rate_source == "default" %}
+                    Default FX
+                  {% else %}
+                    Native
+                  {% endif %}
+                </span>
+              </div>
+              <div class="snapshot-actions">
+                <a class="secondary-btn inline-btn" href="{{ url_for('snapshot_detail', snapshot_id=snapshot.id, display_currency=display_currency) }}">Details</a>
+                <form method="post" action="{{ url_for('delete_snapshot', snapshot_id=snapshot.id) }}">
+                  <input type="hidden" name="display_currency" value="{{ display_currency }}">
+                  <button type="submit" class="text-btn danger-text">Delete</button>
+                </form>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+  </main>
+{% endblock %}

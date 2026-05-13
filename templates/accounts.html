@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Accounts{% endblock %}
+{% block content %}
+  <main class="layout">
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Account Memory</p>
+          <h2>Saved accounts</h2>
+          <p>These accounts can be reused during future entries.</p>
+        </div>
+      </div>
+
+      {% if accounts %}
+        <div class="snapshot-list">
+          {% for account in accounts %}
+            <article class="snapshot-item compact-item">
+              <div>
+                <h3>{{ account.name }}</h3>
+                <p>{{ "Bank" if account.category == "bank" else "Broker" }} | {{ account.currency }}</p>
+              </div>
+              <form method="post" action="{{ url_for('delete_account', account_id=account.id) }}">
+                <button type="submit" class="text-btn danger-text">Delete</button>
+              </form>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <h3>No saved accounts yet</h3>
+          <p>Accounts will appear here after the first snapshot is saved.</p>
+        </div>
+      {% endif %}
+    </section>
+  </main>
+{% endblock %}
