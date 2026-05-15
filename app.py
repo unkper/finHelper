@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from contextlib import closing
 from datetime import date
@@ -25,7 +26,7 @@ API_PROXY = "http://127.0.0.1:6244"
 
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "finhelper-dev-key"
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or os.urandom(24)
 
 
 def get_db() -> sqlite3.Connection:
