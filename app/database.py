@@ -56,6 +56,48 @@ def init_db() -> None:
         rates TEXT NOT NULL,
         PRIMARY KEY (target_date, base_currency)
     );
+    
+    -- 1. 投资主题表
+    CREATE TABLE IF NOT EXISTS themes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'observing', -- observing(观察期), accumulating(建仓期), holding(持有期), closed(已平仓)
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 2. 主题关联文章表
+    CREATE TABLE IF NOT EXISTS theme_articles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        theme_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        url TEXT,
+        summary TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(theme_id) REFERENCES themes(id) ON DELETE CASCADE
+    );
+
+    -- 3. 主题关联标的（股票池）
+    CREATE TABLE IF NOT EXISTS theme_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        theme_id INTEGER NOT NULL,
+        ticker TEXT NOT NULL,           -- 例如 AAPL, NVDA, 0700.HK
+        exchange TEXT DEFAULT 'US',     -- 市场
+        target_buy_price REAL,          -- 目标买入价
+        target_sell_price REAL,         -- 目标卖出/止盈价
+        FOREIGN KEY(theme_id) REFERENCES themes(id) ON DELETE CASCADE
+    );
+
+    -- 4. 主题时间线/里程碑
+    CREATE TABLE IF NOT EXISTS theme_milestones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        theme_id INTEGER NOT NULL,
+        event_date TEXT NOT NULL,       -- 发生日期
+        description TEXT NOT NULL,
+        is_completed INTEGER DEFAULT 0, -- 0 未发生, 1 已发生
+        FOREIGN KEY(theme_id) REFERENCES themes(id) ON DELETE CASCADE
+    );
     """
     # 修改点 2：使用 current_app.config 替代 g.flask_app.config
     with closing(sqlite3.connect(current_app.config["DATABASE_PATH"])) as conn:

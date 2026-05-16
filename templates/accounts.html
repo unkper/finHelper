@@ -19,7 +19,7 @@
                 <h3>{{ account.name }}</h3>
                 <p>{{ "Bank" if account.category == "bank" else "Broker" }} | {{ account.currency }}</p>
               </div>
-              <form method="post" action="{{ url_for('delete_account', account_id=account.id) }}">
+              <form method="post" action="{{ url_for('main.delete_account', account_id=account.id) }}">
                 <button type="submit" class="text-btn danger-text">Delete</button>
               </form>
             </article>

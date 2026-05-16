@@ -29,7 +29,7 @@
         </article>
       </section>
 
-      <form method="post" action="{{ url_for('update_snapshot', snapshot_id=snapshot.id) }}" class="snapshot-form">
+      <form method="post" action="{{ url_for('main.update_snapshot', snapshot_id=snapshot.id) }}" class="snapshot-form">
         <input type="hidden" name="display_currency" value="{{ display_currency }}">
         <div class="form-row two-col">
           <label>

@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  .detail-header {
+    margin-bottom: 24px;
+    border-bottom: 1px solid #e1e4e8;
+    padding-bottom: 16px;
+  }
+  .detail-header h2 { margin: 0 0 8px 0; }
+  .badge {
+    background: #e1ecf4; color: #39739d;
+    padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;
+  }
+
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr; /* 三列等宽布局 */
+    gap: 24px;
+  }
+  .panel {
+    background: #fff;
+    border: 1px solid #e1e4e8;
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .panel h3 {
+    margin-top: 0;
+    border-bottom: 2px solid #f4f5f7;
+    padding-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .add-btn {
+    font-size: 12px; color: #0052cc; cursor: pointer; border: none; background: none;
+  }
+  .add-btn:hover { text-decoration: underline; }
+
+  /* 时间线样式 */
+  .timeline-item { border-left: 2px solid #dfe1e6; padding-left: 12px; margin-bottom: 16px; position: relative; }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -6px; top: 4px;
+    width: 10px; height: 10px; border-radius: 50%; background: #0052cc;
+  }
+  .timeline-date { font-size: 12px; color: #6b778c; font-weight: bold; }
+  .timeline-desc { font-size: 13px; margin-top: 4px; }
+
+  /* 文章列表样式 */
+  .article-item { padding: 12px 0; border-bottom: 1px dashed #e1e4e8; }
+  .article-item a { color: #0052cc; text-decoration: none; font-weight: 500; font-size: 14px;}
+  .article-item p { font-size: 12px; color: #5e6c84; margin: 4px 0 0 0; }
+
+  /* 资产监控池样式 */
+  .asset-card {
+    background: #fafbfc; border: 1px solid #dfe1e6; border-radius: 6px; padding: 12px; margin-bottom: 12px;
+  }
+  .asset-card-header { display: flex; justify-content: space-between; font-weight: bold; font-size: 16px;}
+  .asset-prices { margin-top: 8px; font-size: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .price-box { background: #fff; padding: 6px; border-radius: 4px; border: 1px solid #eee; text-align: center; }
+  .price-label { color: #8c939f; display: block; font-size: 10px; margin-bottom: 2px;}
+  .modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(9, 30, 66, 0.54); z-index: 1000; justify-content: center; align-items: center;
+  }
+  .modal-content {
+    background: #fff; width: 400px; border-radius: 8px; padding: 24px;
+    box-shadow: 0 8px 16px rgba(9, 30, 66, 0.25); position: relative;
+  }
+  .modal-close { position: absolute; top: 16px; right: 16px; cursor: pointer; color: #5e6c84; font-weight: bold; border: none; background: none; font-size: 16px;}
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 12px; font-weight: bold; margin-bottom: 8px; color: #5e6c84;}
+  .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 8px 12px; border: 2px solid #dfe1e6; border-radius: 4px; box-sizing: border-box; font-family: inherit; }
+  .form-group input:focus, .form-group textarea:focus, .form-group select:focus { border-color: #0052cc; outline: none; }
+
+  .inline-form-row { display: flex; gap: 12px; }
+  .inline-form-row .form-group { flex: 1; }
+</style>
+
+<div id="addMilestoneModal" class="modal-overlay">
+  <div class="modal-content">
+    <button class="modal-close" onclick="document.getElementById('addMilestoneModal').style.display='none'">✕</button>
+    <h3 style="margin-top: 0; margin-bottom: 20px;">添加关键时间节点</h3>
+    <form action="{{ url_for('investments.add_milestone', theme_id=theme.id) }}" method="POST">
+      <div class="form-group">
+        <label>日期 (Event Date)</label>
+        <input type="date" name="event_date" required>
+      </div>
+      <div class="form-group">
+        <label>事件描述 (Description)</label>
+        <textarea name="description" rows="2" placeholder="例如：美联储议息会议决议公布" required></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+        <button type="submit" class="primary-btn">确认添加</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="addAssetModal" class="modal-overlay">
+  <div class="modal-content">
+    <button class="modal-close" onclick="document.getElementById('addAssetModal').style.display='none'">✕</button>
+    <h3 style="margin-top: 0; margin-bottom: 20px;">添加监控标的</h3>
+    <form action="{{ url_for('investments.add_asset', theme_id=theme.id) }}" method="POST">
+
+      <div class="inline-form-row">
+        <div class="form-group" style="flex: 2;">
+          <label>股票代码 (Ticker)</label>
+          <input type="text" name="ticker" placeholder="如 AAPL" required>
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label>市场</label>
+          <select name="exchange" style="width: 100%; padding: 8px; border: 2px solid #dfe1e6; border-radius: 4px;">
+            <option value="US">US</option>
+            <option value="HK">HK</option>
+            <option value="CN">CN</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="inline-form-row">
+        <div class="form-group">
+          <label>目标买入价 (Target Buy)</label>
+          <input type="number" step="0.01" name="target_buy" placeholder="触发买入告警的低于价" required>
+        </div>
+        <div class="form-group">
+          <label>目标止盈价 (Target Sell)</label>
+          <input type="number" step="0.01" name="target_sell" placeholder="触发卖出告警的高于价" required>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+        <button type="submit" class="primary-btn">确认添加</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="detail-header">
+  <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+    <div>
+      <h2>{{ theme.title }} <span class="badge">{{ theme.status }}</span></h2>
+      <p style="color: #5e6c84; margin-top: 8px; line-height: 1.5;">{{ theme.description }}</p>
+    </div>
+    <button class="secondary-btn">编辑主题</button>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <div class="panel">
+    <h3>
+      <span>⏳ 关键时间线 (Milestones)</span>
+      <button class="add-btn" onclick="document.getElementById('addMilestoneModal').style.display='flex'">+ 节点</button>
+    </h3>
+    <div style="margin-top: 20px;">
+      {% for milestone in milestones %}
+      <div class="timeline-item" style="{% if milestone.is_completed %}opacity: 0.5;{% endif %}">
+        <div class="timeline-date">{{ milestone.event_date }}</div>
+        <div class="timeline-desc">{{ milestone.description }}</div>
+      </div>
+      {% else %}
+      <p style="font-size: 13px; color: #8c939f;">暂未设定关键时间点。</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>
+      <span>📚 研报 & 资讯</span>
+      <button class="add-btn">+ 文章</button>
+    </h3>
+    <div style="margin-top: 10px;">
+      {% for article in articles %}
+      <div class="article-item">
+        <a href="{{ article.url }}" target="_blank">{{ article.title }}</a>
+        <p>{{ article.summary }}</p>
+      </div>
+      {% else %}
+      <p style="font-size: 13px; color: #8c939f;">暂无关联资料。</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>
+      <span>🎯 监控标的池</span>
+      <button class="add-btn" onclick="document.getElementById('addAssetModal').style.display='flex'">+ 标的</button>
+    </h3>
+    <div style="margin-top: 10px;">
+      {% for asset in assets %}
+      <div class="asset-card">
+        <div class="asset-card-header">
+          <span>{{ asset.ticker }}</span>
+          <span style="font-size: 12px; color: #6b778c; font-weight: normal;">{{ asset.exchange }}</span>
+        </div>
+        <div class="asset-prices">
+          <div class="price-box">
+            <span class="price-label">计划买入价</span>
+            <span style="color: #00875a; font-weight: bold;">${{ asset.target_buy_price }}</span>
+          </div>
+          <div class="price-box">
+            <span class="price-label">计划止盈价</span>
+            <span style="color: #de350b; font-weight: bold;">${{ asset.target_sell_price }}</span>
+          </div>
+        </div>
+        <div style="margin-top: 8px; font-size: 11px; text-align: center; color: #8c939f;">
+          当前市价 (未接入): --
+        </div>
+      </div>
+      {% else %}
+      <p style="font-size: 13px; color: #8c939f;">暂无关注标的。</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<script>
+  window.onclick = function(event) {
+    if (event.target.classList.contains('modal-overlay')) {
+      event.target.style.display = "none";
+    }
+  }
+</script>
+
+{% endblock %}
+
+
