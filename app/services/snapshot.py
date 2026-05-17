@@ -23,6 +23,7 @@ def parse_snapshot_form(form: Any) -> Tuple[str, str, str, List[Dict[str, Any]]]
     categories = form.getlist("account_category[]")
     currencies = form.getlist("account_currency[]")
     amounts = form.getlist("amount[]")
+    regions = form.getlist("account_region[]")
 
     for index, raw_name in enumerate(account_names):
         name = raw_name.strip()
@@ -34,11 +35,14 @@ def parse_snapshot_form(form: Any) -> Tuple[str, str, str, List[Dict[str, Any]]]
         if currency not in ("CNY", "HKD", "USD"):
             currency = "CNY"
 
+        region = (regions[index] if index < len(regions) else "中国").strip() or "中国"
+
         entries.append(
             {
                 "name": name,
                 "category": category,
                 "currency": currency,
+                "region": region,
                 "amount": parse_amount(amounts[index] if index < len(amounts) else None),
                 "sort_order": index,
             }
@@ -46,17 +50,18 @@ def parse_snapshot_form(form: Any) -> Tuple[str, str, str, List[Dict[str, Any]]]
 
     return snapshot_date, note, display_currency, entries
 
-def upsert_account(name: str, category: str, currency: str) -> int:
+def upsert_account(name: str, category: str, currency: str, region: str) -> int:
     db = get_db()
     db.execute(
         """
-        INSERT INTO accounts (name, category, currency)
-        VALUES (?, ?, ?)
+        INSERT INTO accounts (name, category, currency, region)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
             category = excluded.category,
-            currency = excluded.currency
+            currency = excluded.currency,
+            region = excluded.region
         """,
-        (name, category, currency),
+        (name, category, currency, region),
     )
     return db.execute("SELECT id FROM accounts WHERE name = ?", (name,)).fetchone()["id"]
 
@@ -74,7 +79,7 @@ def persist_snapshot_entries(
     db.execute("DELETE FROM snapshot_entries WHERE snapshot_id = ?", (snapshot_id,))
 
     for entry in entries:
-        account_id = upsert_account(entry["name"], entry["category"], entry["currency"])
+        account_id = upsert_account(entry["name"], entry["category"], entry["currency"], entry["region"])
         db.execute(
             """
             INSERT INTO snapshot_entries (snapshot_id, account_id, amount, sort_order)
@@ -94,7 +99,7 @@ def fetch_snapshot_entries(snapshot_id: int) -> List[Dict[str, Any]]:
     db = get_db()
     rows = db.execute(
         """
-        SELECT e.id, e.amount, e.sort_order, a.name, a.category, a.currency
+        SELECT e.id, e.amount, e.sort_order, a.name, a.category, a.currency, a.region
         FROM snapshot_entries e
         JOIN accounts a ON a.id = e.account_id
         WHERE e.snapshot_id = ?
@@ -136,6 +141,7 @@ def summarize_snapshot(snapshot_id: int, display_currency: str) -> Optional[Dict
                 "name": entry["name"],
                 "category": entry["category"],
                 "currency": entry["currency"],
+                "region": entry.get("region", "中国"),
                 "amount": quantize(entry["amount"]),
                 "converted_amount": quantize(converted_amount),
             }
@@ -253,19 +259,38 @@ def build_pie_data(display_currency: str) -> List[Dict[str, Any]]:
         summary = summarize_snapshot(row["id"], display_currency)
         if not summary:
             continue
+
+        cat_map = {"bank": "银行", "stock": "证券", "broker": "券商"}
+        composite_data = {}
+
+        for entry in summary["entries"]:
+            if abs(entry["converted_amount"]) <= 0:
+                continue
+
+            # 1. 获取当前账户的国家和类型（这需要确保 summarize_snapshot 的 entry 带有 region 和 category）
+            # 注意：如果原本的 summarize_snapshot 没查 region，需要在其 SQL 关联查询中加入 a.region
+            region = entry.get("region", "中国")
+            cat_eng = entry.get("category", "bank")
+            cat_zh = cat_map.get(cat_eng, "其他")
+
+            # 2. 生成复合标签，例如 "中国银行" 或 "美国证券"
+            composite_label = f"{region}{cat_zh}"
+
+            # 3. 按复合标签累加金额
+            if composite_label not in composite_data:
+                composite_data[composite_label] = 0.0
+            composite_data[composite_label] += entry["converted_amount"]
+
         datasets.append(
             {
                 "snapshot_id": row["id"],
                 "snapshot_date": row["snapshot_date"],
                 "values": [
                     {
-                        "label": entry["name"],
-                        "value": entry["converted_amount"],
-                        "native_amount": entry["amount"],
-                        "currency": entry["currency"],
+                        "label": label,
+                        "value": quantize(amount)
                     }
-                    for entry in summary["entries"]
-                    if abs(entry["converted_amount"]) > 0
+                    for label, amount in composite_data.items()
                 ],
             }
         )

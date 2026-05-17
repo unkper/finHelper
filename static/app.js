@@ -15,7 +15,7 @@ function createEntryCard() {
       <strong>Account</strong>
       <button type="button" class="text-btn remove-entry-btn">Remove</button>
     </div>
-    <div class="form-row four-col">
+    <div class="form-row" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;">
       <label>
         <span>Name</span>
         <input list="account-suggestions" type="text" name="account_name[]" placeholder="Bank or broker name" required>
@@ -33,6 +33,14 @@ function createEntryCard() {
           <option value="CNY">CNY</option>
           <option value="HKD">HKD</option>
           <option value="USD">USD</option>
+        </select>
+      </label>
+      <label>
+        <span>地区</span>
+        <select name="account_region[]">
+          <option value="中国">中国</option>
+          <option value="香港">香港</option>
+          <option value="美国">美国</option>
         </select>
       </label>
       <label>
@@ -84,69 +92,6 @@ function initializeEntryEditor(containerId, addButtonId) {
   });
 
   refreshEntryTitles(container);
-}
-
-function parseChartData(selector, attribute) {
-  const element = document.querySelector(selector);
-  if (!element) {
-    return null;
-  }
-  const raw = element.getAttribute(attribute);
-  if (!raw) {
-    return null;
-  }
-  return {
-    currency: element.getAttribute("data-currency") || "CNY",
-    data: JSON.parse(raw),
-  };
-}
-
-function setupCanvas(canvas) {
-  const dpr = window.devicePixelRatio || 1;
-  
-  // 1. 从父元素获取宽度，高度固定为 280（或者从 dataset 读取一次）
-  const parent = canvas.parentElement;
-  const width = parent.clientWidth || 600;
-  const height = 280; // 直接锁定逻辑高度，避免读取被缩放后的属性
-
-  // 2. 计算物理像素（渲染分辨率）
-  const targetWidth = Math.floor(width * dpr);
-  const targetHeight = Math.floor(height * dpr);
-
-  // 3. 只有尺寸变化时才重置，并强制锁定 CSS 样式
-  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-    // 关键：锁定 CSS 尺寸，防止 Canvas 撑开父容器
-    canvas.style.width = width + "px";
-    canvas.style.height = height + "px";
-  }
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  
-  // 4. 清除并重置缩放矩阵
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, width, height);
-  
-  return { ctx, width, height };
-}
-
-function animateValue(duration, drawFrame) {
-  let start = null;
-  function frame(now) {
-    if (start === null) start = now;
-    const progress = Math.min((now - start) / duration, 1);
-    // 使用缓动函数让动画更自然
-    const eased = 1 - Math.pow(1 - progress, 3);
-    
-    drawFrame(eased);
-    
-    if (progress < 1) {
-      requestAnimationFrame(frame);
-    }
-  }
-  requestAnimationFrame(frame);
 }
 
 // 全局保存图表实例，方便在 resize 时调用
@@ -273,19 +218,6 @@ function drawPieChart(snapshotId) {
         ]
     };
     pieChartInstance.setOption(option);
-}
-
-function animateGrowthChart() {
-  animateValue(700, (progress) => drawGrowthChart(progress));
-}
-
-function getPieColors(length) {
-  const palette = ["#d76636", "#1d7d74", "#3957b8", "#d2a138", "#7854a1", "#5b7f28", "#bb4f74"];
-  return Array.from({ length }, (_, index) => palette[index % palette.length]);
-}
-
-function animatePieChart(snapshotId) {
-  animateValue(620, (progress) => drawPieChart(snapshotId, progress));
 }
 
 document.addEventListener("DOMContentLoaded", () => {

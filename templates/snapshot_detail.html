@@ -77,6 +77,14 @@
                   </select>
                 </label>
                 <label>
+                  <span>地区</span>
+                  <select name="account_region[]">
+                    <option value="中国" {% if entry.region == '中国' %}selected{% endif %}>中国</option>
+                    <option value="香港" {% if entry.region == '香港' %}selected{% endif %}>香港</option>
+                    <option value="美国" {% if entry.region == '美国' %}selected{% endif %}>美国</option>
+                  </select>
+                </label>
+                <label>
                   <span>Amount</span>
                   <input type="number" step="0.01" name="amount[]" value="{{ '%.2f'|format(entry.amount) }}" placeholder="0.00">
                 </label>

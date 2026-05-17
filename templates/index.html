@@ -35,7 +35,7 @@
               <strong>Account 1</strong>
               <button type="button" class="text-btn remove-entry-btn">Remove</button>
             </div>
-            <div class="form-row four-col">
+            <div class="form-row" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;">
               <label>
                 <span>Name</span>
                 <input list="account-suggestions" type="text" name="account_name[]" placeholder="Bank or broker name" required>
@@ -53,6 +53,14 @@
                   {% for currency in supported_currencies %}
                     <option value="{{ currency }}">{{ currency }}</option>
                   {% endfor %}
+                </select>
+              </label>
+              <label>
+                <span>地区</span>
+                <select name="account_region[]">
+                  <option value="中国">中国</option>
+                  <option value="香港">香港</option>
+                  <option value="美国">美国</option>
                 </select>
               </label>
               <label>

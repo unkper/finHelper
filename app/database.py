@@ -115,6 +115,13 @@ def migrate_db(conn: sqlite3.Connection) -> None:
     if "amount" in entry_columns:
         return
 
+    # 检查并迁移新字段 region
+    if "region" not in account_columns:
+        conn.execute("ALTER TABLE accounts ADD COLUMN region TEXT NOT NULL DEFAULT '中国'")
+        # 智能初始化：根据币种自动修正存量账户的国家
+        conn.execute("UPDATE accounts SET region = '香港' WHERE currency = 'HKD'")
+        conn.execute("UPDATE accounts SET region = '美国' WHERE currency = 'USD'")
+
     if {"cny_amount", "hkd_amount", "usd_amount"}.issubset(entry_columns):
         legacy_rows = conn.execute(
             """
