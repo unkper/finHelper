@@ -97,6 +97,30 @@
   </div>
 </div>
 
+<div id="addArticleModal" class="modal-overlay">
+  <div class="modal-content">
+    <button class="modal-close" onclick="document.getElementById('addArticleModal').style.display='none'">✕</button>
+    <h3 style="margin-top: 0; margin-bottom: 20px;">添加研报 / 资讯</h3>
+    <form action="{{ url_for('investments.add_article', theme_id=theme.id) }}" method="POST">
+      <div class="form-group">
+        <label>标题 (Title)</label>
+        <input type="text" name="title" placeholder="例如：高盛 AI 产业链深度报告" required>
+      </div>
+      <div class="form-group">
+        <label>链接 (URL)</label>
+        <input type="url" name="url" placeholder="https://...">
+      </div>
+      <div class="form-group">
+        <label>摘要 (Summary)</label>
+        <textarea name="summary" rows="3" placeholder="核心观点、关键数据或阅读笔记"></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+        <button type="submit" class="primary-btn">确认添加</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="addAssetModal" class="modal-overlay">
   <div class="modal-content">
     <button class="modal-close" onclick="document.getElementById('addAssetModal').style.display='none'">✕</button>
@@ -167,13 +191,19 @@
   <div class="panel">
     <h3>
       <span>📚 研报 & 资讯</span>
-      <button class="add-btn">+ 文章</button>
+      <button class="add-btn" onclick="document.getElementById('addArticleModal').style.display='flex'">+ 文章</button>
     </h3>
     <div style="margin-top: 10px;">
       {% for article in articles %}
       <div class="article-item">
+        {% if article.url %}
         <a href="{{ article.url }}" target="_blank">{{ article.title }}</a>
+        {% else %}
+        <span style="color: #0052cc; font-weight: 500; font-size: 14px;">{{ article.title }}</span>
+        {% endif %}
+        {% if article.summary %}
         <p>{{ article.summary }}</p>
+        {% endif %}
       </div>
       {% else %}
       <p style="font-size: 13px; color: #8c939f;">暂无关联资料。</p>

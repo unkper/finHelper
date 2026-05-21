@@ -1,7 +1,8 @@
 # app/routes/investments.py
 from flask import Blueprint, render_template, request, flash, redirect, url_for
 from app.services.investment import (
-    fetch_all_themes, fetch_theme_by_id, fetch_theme_details, create_theme, add_theme_asset, add_theme_milestone
+    fetch_all_themes, fetch_theme_by_id, fetch_theme_details, create_theme,
+    add_theme_asset, add_theme_milestone, add_theme_article
 )
 
 bp = Blueprint('investments', __name__, url_prefix='/investments')
@@ -74,5 +75,20 @@ def add_milestone(theme_id):
     else:
         add_theme_milestone(theme_id, event_date, description)
         flash("时间线节点已更新", "success")
+
+    return redirect(url_for('investments.detail', theme_id=theme_id))
+
+
+@bp.route('/<int:theme_id>/add_article', methods=['POST'])
+def add_article(theme_id):
+    title = request.form.get('title', '').strip()
+    url = request.form.get('url', '').strip()
+    summary = request.form.get('summary', '').strip()
+
+    if not title:
+        flash("文章标题不能为空", "error")
+    else:
+        add_theme_article(theme_id, title, url, summary)
+        flash("文章已添加", "success")
 
     return redirect(url_for('investments.detail', theme_id=theme_id))

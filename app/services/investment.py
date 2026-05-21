@@ -74,3 +74,13 @@ def add_theme_milestone(theme_id, event_date, description):
         (theme_id, event_date, description)
     )
     db.commit()
+
+
+def add_theme_article(theme_id, title, url=None, summary=None):
+    """为主题添加研报/资讯文章"""
+    db = get_db()
+    db.execute(
+        "INSERT INTO theme_articles (theme_id, title, url, summary) VALUES (?, ?, ?, ?)",
+        (theme_id, title, url or None, summary or None)
+    )
+    db.commit()

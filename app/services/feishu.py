@@ -54,4 +54,5 @@ def push_feishu_message(receive_id_type, receive_id, content):
         "msg_type": "text",
         "content": json.dumps({"text": content})
     }
-    requests.post(url, headers=headers, json=payload)
+    resp = requests.post(url, headers=headers, json=payload)
+    print(resp.json())

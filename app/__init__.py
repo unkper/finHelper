@@ -1,81 +1,75 @@
+import os
 from flask import Flask
 from flask_apscheduler import APScheduler
-
 from config import Config
-import os
 
+# 初始化全局调度器实例
 scheduler = APScheduler()
 
 def create_app(config: Config = None) -> Flask:
-    app = Flask(__name__)
-    app.config.from_object(config_class)
-
-    # 注册数据库和蓝图
-    from app.database import close_db, init_db_command
-    app.teardown_appcontext(close_db)
-    app.cli.add_command(init_db_command)
-
-    from app.routes.main import bp as main_bp
-    from app.routes.investments import bp as investments_bp
-    app.register_blueprint(main_bp)
-    app.register_blueprint(investments_bp)
-
-    # ================= 核心：定时任务配置 =================
-    scheduler.init_app(app)
-
-    # 将监控任务包装在应用上下文中执行 (因为 get_db 需要 app_context)
-    @scheduler.task('cron', id='milestone_job', hour=9, minute=0)  # 每天早上 9:00 执行
-    def scheduled_milestone_check():
-        with app.app_context():
-            from app.services.monitor import check_upcoming_milestones
-            check_upcoming_milestones()
-
-    @scheduler.task('interval', id='test_job', seconds=10)
-    def test_milestone_check():
-        with app.app_context():
-            from app.services.monitor import check_upcoming_milestones
-            check_upcoming_milestones()
-
-    scheduler.start()
-
+    # 1. 确保初始化配置类对象
     if config is None:
-        config = Config.from_env()
+        config = Config()
 
-    # 获取项目根目录（finHelper文件夹）
+    # 2. 计算项目根目录，精准指定模板与静态文件路径
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    # 指定模板和静态文件的路径（与app同级）
+    # 3. 实例化唯一的 Flask 对象（结合你的绝对路径要求）
     app = Flask(
         __name__,
         template_folder=os.path.join(project_root, 'templates'),
         static_folder=os.path.join(project_root, 'static')
     )
 
-
+    # 4. 载入基础核心配置
+    app.config.from_object(config)
     app.config["SECRET_KEY"] = config.SECRET_KEY
     app.config["API_PROXY"] = config.API_PROXY
     app.config["DEBUG"] = config.DEBUG
     app.config["DATABASE_PATH"] = config.DATABASE_PATH
 
-    from .database import init_db_command, get_db, close_db
+    # 5. 显式载入飞书相关配置（确保从环境或.env中读取到的属性进入Flask config）
+    app.config["FEISHU_APP_ID"] = getattr(config, "FEISHU_APP_ID", "")
+    app.config["FEISHU_APP_SECRET"] = getattr(config, "FEISHU_APP_SECRET", "")
+    app.config["FEISHU_ENCRYPT_KEY"] = getattr(config, "FEISHU_ENCRYPT_KEY", "")
+    app.config["FEISHU_ALERT_RECEIVER_ID"] = getattr(config, "FEISHU_ALERT_RECEIVER_ID", "")
+    app.config["FEISHU_ALERT_RECEIVER_TYPE"] = getattr(config, "FEISHU_ALERT_RECEIVER_TYPE", "open_id")
+
+    # 6. 注册数据库清理机制与 CLI 初始化命令
+    from app.database import close_db, init_db_command
+    app.teardown_appcontext(close_db)
     app.cli.add_command(init_db_command)
 
-    @app.teardown_appcontext
-    def teardown_db(error):
-        close_db(error)
-
-    from .routes import bp
-    app.register_blueprint(bp)
-
-    from app.routes.investments import bp as investments_bp
-    app.register_blueprint(investments_bp)
-
+    # 7. 统一注册所有的路由蓝图 (去重，每个蓝图只注册一次)
     from app.routes.main import bp as main_bp
     from app.routes.investments import bp as investments_bp
-    from app.routes.bot import bp as bot_bp  # 导入机器人蓝图
+    from app.routes.bot import bp as bot_bp  # 飞书机器人回调蓝图
+    from app.routes.debug import bp as debug_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(investments_bp)
-    app.register_blueprint(bot_bp)  # 注册蓝图
+    app.register_blueprint(bot_bp)
+    app.register_blueprint(debug_bp)
+
+    # 8. ================= 核心：后台定时任务配置 =================
+    scheduler.init_app(app)
+
+    # 任务 A：投资节点扫描任务（每天早上 9:00 自动执行）
+    @scheduler.task('cron', id='milestone_job', hour=9, minute=0)
+    def scheduled_milestone_check():
+        with app.app_context():
+            from app.services.monitor import check_upcoming_milestones
+            check_upcoming_milestones()
+
+    # 任务 B：开发阶段测试任务（每 10 秒执行一次，测试成功后可注释/删掉）
+    @scheduler.task('interval', id='test_job', seconds=10)
+    def test_milestone_check():
+        with app.app_context():
+            from app.services.monitor import check_upcoming_milestones
+            check_upcoming_milestones()
+
+    # 启动调度引擎
+    scheduler.start()
+    # ====================================================
 
     return app

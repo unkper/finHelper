@@ -7,12 +7,10 @@ from app.services.feishu import get_cipher, reply_feishu_message
 bp = Blueprint('bot', __name__, url_prefix='/bot')
 
 
-def handle_feishu_event_async(data):
-    """异步处理飞书消息的具体逻辑 (脱离当前 HTTP 请求阻塞)"""
-    # 因为在线程中，如果需要使用 Flask 上下文获取配置或数据库，必须手动推入 app_context
-    app = current_app._get_current_object()
+def handle_feishu_event_async(app, data):
 
     with app.app_context():
+        print("DEBUG: 收到完整消息数据:", json.dumps(data, indent=2, ensure_ascii=False))
         event = data.get("event", {})
         msg = event.get("message", {})
         if not msg:
@@ -49,7 +47,10 @@ def feishu_callback():
     if data.get("type") == "url_verification":
         return jsonify({"challenge": data.get("challenge")})
 
+    app = current_app._get_current_object()
+
     # 异步处理正常消息 (把 data 丢给子线程去处理)
-    threading.Thread(target=handle_feishu_event_async, args=(data,)).start()
+    threading.Thread(target=handle_feishu_event_async, args=(app, data)).start()
 
     return jsonify({"msg": "success"}), 200
+
