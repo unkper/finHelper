@@ -1,50 +1,80 @@
-from datetime import date, timedelta
-from app.database import get_db
+from datetime import date, datetime, timedelta
 
-from datetime import date, timedelta
 from flask import current_app
+
 from app.database import get_db
 from app.services.feishu import push_feishu_message
 
 
+def _mark_reminded(db, milestone_id: int, field: str) -> None:
+    if field not in ("reminded_advance_at", "reminded_day_at"):
+        raise ValueError(f"invalid remind field: {field}")
+    db.execute(
+        f"UPDATE theme_milestones SET {field} = ? WHERE id = ?",
+        (date.today().isoformat(), milestone_id),
+    )
+
+
 def check_upcoming_milestones():
-    """扫描即将到来的投资时间线节点，并推送到飞书"""
+    """在节点设定的日期/时刻，通过飞书推送时间线提醒（当天 + 提前3天）。"""
     db = get_db()
     today = date.today()
-    # 设定提前 3 天预警，以及当天预警
-    target_date_3_days = (today + timedelta(days=3)).isoformat()
     today_str = today.isoformat()
+    advance_target_str = (today + timedelta(days=3)).isoformat()
+    now_time = datetime.now().strftime("%H:%M")
 
-    # 联表查询：查出所有未完成（is_completed = 0）的节点以及对应的主题名
-    rows = db.execute(
+    day_rows = db.execute(
         """
-        SELECT m.id, m.event_date, m.description, t.title as theme_title, t.id as theme_id
+        SELECT m.id, m.event_date, m.description, m.reminder_time,
+               t.title AS theme_title
         FROM theme_milestones m
         JOIN themes t ON m.theme_id = t.id
-        WHERE m.is_completed = 0 AND (m.event_date = ? OR m.event_date = ?)
+        WHERE m.is_completed = 0
+          AND m.event_date = ?
+          AND m.reminder_time = ?
+          AND (m.reminded_day_at IS NULL OR m.reminded_day_at != ?)
         """,
-        (today_str, target_date_3_days)
+        (today_str, now_time, today_str),
     ).fetchall()
 
-    if not rows:
-        print("今日无即将到来的投资时间线节点。")
+    advance_rows = db.execute(
+        """
+        SELECT m.id, m.event_date, m.description, m.reminder_time,
+               t.title AS theme_title
+        FROM theme_milestones m
+        JOIN themes t ON m.theme_id = t.id
+        WHERE m.is_completed = 0
+          AND m.event_date = ?
+          AND m.reminder_time = ?
+          AND (m.reminded_advance_at IS NULL OR m.reminded_advance_at != ?)
+        """,
+        (advance_target_str, now_time, today_str),
+    ).fetchall()
+
+    if not day_rows and not advance_rows:
         return
 
-    # 组装告警信息卡片内容
     messages = []
-    for row in rows:
-        day_diff = (date.fromisoformat(row["event_date"]) - today).days
-        time_tag = "【就是今天】" if day_diff == 0 else f"【还有 {day_diff} 天】"
+    for row in advance_rows:
+        messages.append(
+            f"📌 主题：{row['theme_title']}\n"
+            f"⏱️ 节点：【还有 3 天】{row['event_date']} {row['reminder_time']}\n"
+            f"📝 描述：{row['description']}"
+        )
+        _mark_reminded(db, row["id"], "reminded_advance_at")
 
-        msg = f"📌 主题：{row['theme_title']}\n" \
-              f"⏱️ 节点：{time_tag} {row['event_date']}\n" \
-              f"📝 描述：{row['description']}"
-        messages.append(msg)
+    for row in day_rows:
+        messages.append(
+            f"📌 主题：{row['theme_title']}\n"
+            f"⏱️ 节点：【就是今天】{row['event_date']} {row['reminder_time']}\n"
+            f"📝 描述：{row['description']}"
+        )
+        _mark_reminded(db, row["id"], "reminded_day_at")
 
-    # 拼接最终的富文本字符串
-    final_content = "⏳ 投资时间线预警\n\n" + "\n\n---\n\n".join(messages)
+    db.commit()
 
-    # 获取接收者配置
+    final_content = "⏳ 投资时间线提醒\n\n" + "\n\n---\n\n".join(messages)
+
     receiver_id = current_app.config.get("FEISHU_ALERT_RECEIVER_ID")
     receiver_type = current_app.config.get("FEISHU_ALERT_RECEIVER_TYPE")
 
@@ -52,9 +82,8 @@ def check_upcoming_milestones():
         print("未配置 FEISHU_ALERT_RECEIVER_ID，无法发送飞书消息。内容如下：\n", final_content)
         return
 
-    # 调用我们搭好的基建！
     try:
         push_feishu_message(receiver_type, receiver_id, final_content)
-        print(f"已成功发送 {len(rows)} 条里程碑预警至飞书")
+        print(f"已成功发送 {len(messages)} 条里程碑提醒至飞书（{now_time}）")
     except Exception as e:
         print(f"调用飞书主动推送失败: {e}")

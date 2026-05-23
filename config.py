@@ -22,4 +22,7 @@ class Config:
     FEISHU_ALERT_RECEIVER_ID = os.environ.get("FEISHU_ALERT_RECEIVER_ID", "")
     FEISHU_ALERT_RECEIVER_TYPE = os.environ.get("FEISHU_ALERT_RECEIVER_TYPE", "open_id")
 
+    # Financial Modeling Prep（美股行情）
+    FMP_API_KEY = os.environ.get("FMP_API_KEY", "")
+
 # 这样你的 app 初始化时，直接 app.config.from_object(Config) 即可，不需要再调 from_env() 了

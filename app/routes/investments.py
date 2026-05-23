@@ -43,38 +43,79 @@ def create():
     return redirect(url_for('investments.index'))
 
 
+def _parse_price_alerts_from_form():
+    """解析表单中的多条价格提醒。"""
+    prices = request.form.getlist("alert_target_price")
+    directions = request.form.getlist("alert_direction")
+    notes = request.form.getlist("alert_note")
+    alerts = []
+    for i, price_raw in enumerate(prices):
+        price_raw = (price_raw or "").strip()
+        if not price_raw:
+            continue
+        try:
+            target_price = float(price_raw)
+        except ValueError:
+            raise ValueError(f"第 {i + 1} 条提醒价格格式无效")
+        direction = (directions[i] if i < len(directions) else "below").strip()
+        if direction not in ("below", "above"):
+            direction = "below"
+        note = (notes[i] if i < len(notes) else "").strip() or None
+        alerts.append({
+            "target_price": target_price,
+            "direction": direction,
+            "note": note,
+        })
+    return alerts
+
+
 @bp.route('/<int:theme_id>/add_asset', methods=['POST'])
 def add_asset(theme_id):
     ticker = request.form.get('ticker', '').upper().strip()
     exchange = request.form.get('exchange', 'US').upper().strip()
 
-    # 将前端传来的价格字符串转换为浮点数
-    try:
-        target_buy = float(request.form.get('target_buy', 0))
-        target_sell = float(request.form.get('target_sell', 0))
-    except ValueError:
-        flash("价格输入格式错误，请输入数字", "error")
-        return redirect(url_for('investments.detail', theme_id=theme_id))
-
     if not ticker:
         flash("股票代码不能为空", "error")
-    else:
-        add_theme_asset(theme_id, ticker, exchange, target_buy, target_sell)
-        flash(f"已添加监控标的: {ticker}", "success")
+        return redirect(url_for('investments.detail', theme_id=theme_id))
 
+    if exchange != "US":
+        flash("当前仅支持美股（US）的价格提醒", "error")
+        return redirect(url_for('investments.detail', theme_id=theme_id))
+
+    try:
+        price_alerts = _parse_price_alerts_from_form()
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for('investments.detail', theme_id=theme_id))
+
+    if not price_alerts:
+        flash("请至少添加一条价格提醒", "error")
+        return redirect(url_for('investments.detail', theme_id=theme_id))
+
+    add_theme_asset(theme_id, ticker, exchange, price_alerts)
+    flash(f"已添加监控标的 {ticker}，共 {len(price_alerts)} 条价格提醒", "success")
     return redirect(url_for('investments.detail', theme_id=theme_id))
+
+
+def _normalize_reminder_time(raw: str) -> str:
+    """将表单时间规范为 HH:MM，默认 12:00。"""
+    value = (raw or "12:00").strip()
+    if len(value) >= 5:
+        return value[:5]
+    return "12:00"
 
 
 @bp.route('/<int:theme_id>/add_milestone', methods=['POST'])
 def add_milestone(theme_id):
     event_date = request.form.get('event_date')
     description = request.form.get('description', '').strip()
+    reminder_time = _normalize_reminder_time(request.form.get('reminder_time'))
 
     if not event_date or not description:
         flash("日期和描述不能为空", "error")
     else:
-        add_theme_milestone(theme_id, event_date, description)
-        flash("时间线节点已更新", "success")
+        add_theme_milestone(theme_id, event_date, description, reminder_time)
+        flash(f"时间线节点已添加，将于 {event_date} {reminder_time} 飞书提醒", "success")
 
     return redirect(url_for('investments.detail', theme_id=theme_id))
 
