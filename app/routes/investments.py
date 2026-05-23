@@ -1,7 +1,8 @@
 # app/routes/investments.py
 from flask import Blueprint, render_template, request, flash, redirect, url_for
 from app.services.investment import (
-    fetch_all_themes, fetch_theme_by_id, fetch_theme_details, create_theme,
+    fetch_assistants_with_themes, fetch_all_assistants, fetch_theme_by_id,
+    fetch_theme_details, create_theme, create_assistant, move_theme_to_assistant,
     add_theme_asset, add_theme_milestone, add_theme_article,
     delete_theme_milestone, delete_theme_asset, delete_theme_article,
 )
@@ -11,8 +12,13 @@ bp = Blueprint('investments', __name__, url_prefix='/investments')
 
 @bp.route('/')
 def index():
-    themes = fetch_all_themes()
-    return render_template("investments/index.html", themes=themes)
+    assistant_groups = fetch_assistants_with_themes()
+    assistants = fetch_all_assistants()
+    return render_template(
+        "investments/index.html",
+        assistant_groups=assistant_groups,
+        assistants=assistants,
+    )
 
 
 @bp.route('/<int:theme_id>')
@@ -26,6 +32,7 @@ def detail(theme_id):
     return render_template(
         "investments/detail.html",
         theme=theme,
+        assistants=fetch_all_assistants(),
         articles=details['articles'],
         assets=details['assets'],
         milestones=details['milestones']
@@ -34,14 +41,42 @@ def detail(theme_id):
 
 @bp.route('/create', methods=['POST'])
 def create():
-    title = request.form.get('title')
-    description = request.form.get('description')
+    title = request.form.get('title', '').strip()
+    description = request.form.get('description', '').strip()
+    assistant_id = request.form.get('assistant_id', type=int)
+
     if not title:
         flash("标题不能为空", "error")
     else:
-        create_theme(title, description)
+        create_theme(title, description, assistant_id)
         flash("新投资主题已创建", "success")
     return redirect(url_for('investments.index'))
+
+
+@bp.route('/assistants/create', methods=['POST'])
+def create_assistant_route():
+    name = request.form.get('name', '').strip()
+    description = request.form.get('description', '').strip()
+    if not name:
+        flash("助手名称不能为空", "error")
+    else:
+        create_assistant(name, description)
+        flash(f"投资助手「{name}」已创建", "success")
+    return redirect(url_for('investments.index'))
+
+
+@bp.route('/<int:theme_id>/move_assistant', methods=['POST'])
+def move_assistant(theme_id):
+    assistant_id = request.form.get('assistant_id', type=int)
+    if not assistant_id:
+        flash("请选择目标投资助手", "error")
+        return redirect(url_for('investments.detail', theme_id=theme_id))
+
+    if move_theme_to_assistant(theme_id, assistant_id):
+        flash("主题已移动到新的投资助手", "success")
+    else:
+        flash("移动失败，请检查主题或助手是否存在", "error")
+    return redirect(url_for('investments.detail', theme_id=theme_id))
 
 
 def _parse_price_alerts_from_form():

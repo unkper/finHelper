@@ -57,14 +57,24 @@ def init_db() -> None:
         PRIMARY KEY (target_date, base_currency)
     );
     
+    -- 0. 投资助手
+    CREATE TABLE IF NOT EXISTS investment_assistants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- 1. 投资主题表
     CREATE TABLE IF NOT EXISTS themes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
         description TEXT,
-        status TEXT NOT NULL DEFAULT 'observing', -- observing(观察期), accumulating(建仓期), holding(持有期), closed(已平仓)
+        assistant_id INTEGER NOT NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(assistant_id) REFERENCES investment_assistants(id) ON DELETE RESTRICT
     );
 
     -- 2. 主题关联文章表
@@ -193,7 +203,49 @@ def _migrate_app_settings(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_investment_assistants(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS investment_assistants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            is_default INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    default_row = conn.execute(
+        "SELECT id FROM investment_assistants WHERE is_default = 1 LIMIT 1"
+    ).fetchone()
+    if not default_row:
+        conn.execute(
+            """
+            INSERT INTO investment_assistants (name, description, is_default)
+            VALUES ('默认助手', '未分类的投资主题', 1)
+            """
+        )
+        default_row = conn.execute(
+            "SELECT id FROM investment_assistants WHERE is_default = 1 LIMIT 1"
+        ).fetchone()
+    default_id = default_row["id"]
+
+    theme_columns = {row["name"] for row in conn.execute("PRAGMA table_info(themes)")}
+    if not theme_columns:
+        return
+    if "assistant_id" not in theme_columns:
+        conn.execute(
+            "ALTER TABLE themes ADD COLUMN assistant_id INTEGER REFERENCES investment_assistants(id)"
+        )
+        conn.execute(
+            "UPDATE themes SET assistant_id = ? WHERE assistant_id IS NULL",
+            (default_id,),
+        )
+
+
 def migrate_db(conn: sqlite3.Connection) -> None:
+    _migrate_investment_assistants(conn)
     _migrate_app_settings(conn)
     _migrate_asset_price_alerts(conn)
 

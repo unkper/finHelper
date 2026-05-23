@@ -3,39 +3,138 @@ from app.database import get_db
 from app.services.quotes import fetch_us_quotes
 
 
-# --- 主题 (Themes) 相关 ---
+DEFAULT_ASSISTANT_NAME = "默认助手"
 
-def fetch_all_themes():
-    """获取所有投资主题"""
+
+# --- 投资助手 (Assistants) ---
+
+def get_default_assistant_id():
     db = get_db()
-    return db.execute("SELECT * FROM themes ORDER BY updated_at DESC").fetchall()
-
-
-def fetch_theme_by_id(theme_id):
-    """获取单个主题的基础信息"""
-    db = get_db()
-    return db.execute("SELECT * FROM themes WHERE id = ?", (theme_id,)).fetchone()
-
-
-def create_theme(title, description, status='observing'):
-    """创建新投资主题"""
-    db = get_db()
+    row = db.execute(
+        "SELECT id FROM investment_assistants WHERE is_default = 1 LIMIT 1"
+    ).fetchone()
+    if row:
+        return row["id"]
     cursor = db.execute(
-        "INSERT INTO themes (title, description, status) VALUES (?, ?, ?)",
-        (title, description, status)
+        """
+        INSERT INTO investment_assistants (name, description, is_default)
+        VALUES (?, '未分类的投资主题', 1)
+        """,
+        (DEFAULT_ASSISTANT_NAME,),
     )
     db.commit()
     return cursor.lastrowid
 
 
-def update_theme_status(theme_id, new_status):
-    """更新主题状态（如从观察期转为建仓期）"""
+def fetch_all_assistants():
     db = get_db()
-    db.execute(
-        "UPDATE themes SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (new_status, theme_id)
+    return db.execute(
+        "SELECT * FROM investment_assistants ORDER BY is_default DESC, name ASC"
+    ).fetchall()
+
+
+def fetch_assistant_by_id(assistant_id):
+    db = get_db()
+    return db.execute(
+        "SELECT * FROM investment_assistants WHERE id = ?",
+        (assistant_id,),
+    ).fetchone()
+
+
+def create_assistant(name, description=None):
+    db = get_db()
+    cursor = db.execute(
+        """
+        INSERT INTO investment_assistants (name, description, is_default)
+        VALUES (?, ?, 0)
+        """,
+        (name.strip(), (description or "").strip() or None),
     )
     db.commit()
+    return cursor.lastrowid
+
+
+def fetch_assistants_with_themes():
+    """返回 [(assistant, [themes...]), ...] 供列表页分组展示。"""
+    assistants = fetch_all_assistants()
+    db = get_db()
+    themes = db.execute(
+        "SELECT * FROM themes ORDER BY updated_at DESC"
+    ).fetchall()
+    grouped = {assistant["id"]: [] for assistant in assistants}
+    for theme in themes:
+        assistant_id = theme["assistant_id"]
+        if assistant_id in grouped:
+            grouped[assistant_id].append(theme)
+    return [(assistant, grouped[assistant["id"]]) for assistant in assistants]
+
+
+# --- 主题 (Themes) ---
+
+def fetch_all_themes():
+    """获取所有投资主题"""
+    db = get_db()
+    return db.execute(
+        """
+        SELECT t.*, a.name AS assistant_name
+        FROM themes t
+        JOIN investment_assistants a ON t.assistant_id = a.id
+        ORDER BY t.updated_at DESC
+        """
+    ).fetchall()
+
+
+def fetch_theme_by_id(theme_id):
+    """获取单个主题的基础信息（含所属助手）。"""
+    db = get_db()
+    return db.execute(
+        """
+        SELECT t.*, a.name AS assistant_name
+        FROM themes t
+        JOIN investment_assistants a ON t.assistant_id = a.id
+        WHERE t.id = ?
+        """,
+        (theme_id,),
+    ).fetchone()
+
+
+def create_theme(title, description, assistant_id=None):
+    """创建新投资主题，未指定助手时归入默认助手。"""
+    db = get_db()
+    if not assistant_id:
+        assistant_id = get_default_assistant_id()
+    elif not fetch_assistant_by_id(assistant_id):
+        assistant_id = get_default_assistant_id()
+
+    cursor = db.execute(
+        """
+        INSERT INTO themes (title, description, assistant_id)
+        VALUES (?, ?, ?)
+        """,
+        (title, description, assistant_id),
+    )
+    db.commit()
+    return cursor.lastrowid
+
+
+def move_theme_to_assistant(theme_id, assistant_id):
+    """将主题移动到指定投资助手。"""
+    if not fetch_assistant_by_id(assistant_id):
+        return False
+    db = get_db()
+    row = db.execute("SELECT id FROM themes WHERE id = ?", (theme_id,)).fetchone()
+    if not row:
+        return False
+    db.execute(
+        """
+        UPDATE themes
+        SET assistant_id = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (assistant_id, theme_id),
+    )
+    db.commit()
+    return True
 
 
 # --- 关联内容 (Articles, Assets, Milestones) 相关 ---
