@@ -25,4 +25,7 @@ class Config:
     # Financial Modeling Prep（美股行情）
     FMP_API_KEY = os.environ.get("FMP_API_KEY", "")
 
+    # Alpha Vantage（美股行情，支持 REALTIME_BULK_QUOTES 批量）
+    ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
+
 # 这样你的 app 初始化时，直接 app.config.from_object(Config) 即可，不需要再调 from_env() 了

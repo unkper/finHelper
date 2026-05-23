@@ -2,7 +2,8 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for
 from app.services.investment import (
     fetch_all_themes, fetch_theme_by_id, fetch_theme_details, create_theme,
-    add_theme_asset, add_theme_milestone, add_theme_article
+    add_theme_asset, add_theme_milestone, add_theme_article,
+    delete_theme_milestone, delete_theme_asset, delete_theme_article,
 )
 
 bp = Blueprint('investments', __name__, url_prefix='/investments')
@@ -117,6 +118,35 @@ def add_milestone(theme_id):
         add_theme_milestone(theme_id, event_date, description, reminder_time)
         flash(f"时间线节点已添加，将于 {event_date} {reminder_time} 飞书提醒", "success")
 
+    return redirect(url_for('investments.detail', theme_id=theme_id))
+
+
+@bp.route('/<int:theme_id>/milestones/<int:milestone_id>/delete', methods=['POST'])
+def delete_milestone(theme_id, milestone_id):
+    if delete_theme_milestone(theme_id, milestone_id):
+        flash("时间线节点已删除", "success")
+    else:
+        flash("节点不存在或已删除", "error")
+    return redirect(url_for('investments.detail', theme_id=theme_id))
+
+
+@bp.route('/<int:theme_id>/assets/<int:asset_id>/delete', methods=['POST'])
+def delete_asset(theme_id, asset_id):
+    ticker = delete_theme_asset(theme_id, asset_id)
+    if ticker:
+        flash(f"已删除监控标的 {ticker}", "success")
+    else:
+        flash("标的不存在或已删除", "error")
+    return redirect(url_for('investments.detail', theme_id=theme_id))
+
+
+@bp.route('/<int:theme_id>/articles/<int:article_id>/delete', methods=['POST'])
+def delete_article(theme_id, article_id):
+    title = delete_theme_article(theme_id, article_id)
+    if title:
+        flash(f"已删除文章：{title}", "success")
+    else:
+        flash("文章不存在或已删除", "error")
     return redirect(url_for('investments.detail', theme_id=theme_id))
 
 

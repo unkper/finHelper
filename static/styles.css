@@ -252,6 +252,87 @@ select:focus {
   color: var(--danger);
 }
 
+.inline-delete-form {
+  margin: 0;
+  display: inline-flex;
+}
+
+.icon-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(178, 67, 67, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--danger);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+  flex-shrink: 0;
+}
+
+.icon-delete-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.icon-delete-btn:hover {
+  background: #fff1f1;
+  border-color: rgba(178, 67, 67, 0.55);
+  box-shadow: 0 4px 12px rgba(178, 67, 67, 0.12);
+  transform: translateY(-1px);
+}
+
+.icon-delete-btn:active {
+  transform: translateY(0);
+}
+
+.item-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.settings-form {
+  display: grid;
+  gap: 22px;
+  max-width: 520px;
+}
+
+.settings-field label {
+  display: block;
+  margin-bottom: 10px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.settings-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-input-row input {
+  width: 120px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-strong);
+}
+
+.settings-unit {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 12px;
+}
+
 .toolbar-panel {
   padding-top: 18px;
   padding-bottom: 18px;

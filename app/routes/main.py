@@ -1,9 +1,11 @@
 from datetime import date
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import flash, redirect, render_template, request, url_for, current_app
 
 from app.database import SUPPORTED_CURRENCIES
 from app.database import get_db
+from app.scheduler_setup import configure_monitor_jobs
+from app.services.settings import get_monitor_interval_minutes, set_monitor_interval_minutes
 from app.services.snapshot import (
     build_pie_data,
     fetch_accounts,
@@ -52,3 +54,23 @@ def create_snapshot():
     db.commit()
     flash("Snapshot saved.", "success")
     return redirect(url_for(".index", display_currency=display_currency))
+
+
+@bp.route("/settings", methods=["GET", "POST"])
+def settings():
+    if request.method == "POST":
+        try:
+            minutes = int(request.form.get("monitor_interval_minutes", "1"))
+        except ValueError:
+            flash("监控频率必须是整数（分钟）", "error")
+            return redirect(url_for(".settings"))
+
+        interval = set_monitor_interval_minutes(minutes)
+        configure_monitor_jobs(current_app._get_current_object())
+        flash(f"监控频率已更新为每 {interval} 分钟检查一次", "success")
+        return redirect(url_for(".settings"))
+
+    return render_template(
+        "settings.html",
+        monitor_interval_minutes=get_monitor_interval_minutes(),
+    )

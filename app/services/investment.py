@@ -1,6 +1,6 @@
 # app/services/investment.py
 from app.database import get_db
-from app.services.fmp import fetch_us_quotes
+from app.services.quotes import fetch_us_quotes
 
 
 # --- 主题 (Themes) 相关 ---
@@ -143,6 +143,48 @@ def add_theme_milestone(theme_id, event_date, description, reminder_time='12:00'
         (theme_id, event_date, description, reminder_time)
     )
     db.commit()
+
+
+def delete_theme_milestone(theme_id, milestone_id):
+    """删除主题下的时间线节点。"""
+    db = get_db()
+    row = db.execute(
+        "SELECT id FROM theme_milestones WHERE id = ? AND theme_id = ?",
+        (milestone_id, theme_id),
+    ).fetchone()
+    if not row:
+        return False
+    db.execute("DELETE FROM theme_milestones WHERE id = ?", (milestone_id,))
+    db.commit()
+    return True
+
+
+def delete_theme_asset(theme_id, asset_id):
+    """删除主题下的监控标的（关联价格提醒一并删除）。"""
+    db = get_db()
+    row = db.execute(
+        "SELECT id, ticker FROM theme_assets WHERE id = ? AND theme_id = ?",
+        (asset_id, theme_id),
+    ).fetchone()
+    if not row:
+        return None
+    db.execute("DELETE FROM theme_assets WHERE id = ?", (asset_id,))
+    db.commit()
+    return row["ticker"]
+
+
+def delete_theme_article(theme_id, article_id):
+    """删除主题下的研报/资讯文章。"""
+    db = get_db()
+    row = db.execute(
+        "SELECT id, title FROM theme_articles WHERE id = ? AND theme_id = ?",
+        (article_id, theme_id),
+    ).fetchone()
+    if not row:
+        return None
+    db.execute("DELETE FROM theme_articles WHERE id = ?", (article_id,))
+    db.commit()
+    return row["title"]
 
 
 def add_theme_article(theme_id, title, url=None, summary=None):

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'macros.html' import delete_button %}
 
 {% block content %}
 <style>
@@ -50,6 +51,7 @@
   .article-item { padding: 12px 0; border-bottom: 1px dashed #e1e4e8; }
   .article-item a { color: #0052cc; text-decoration: none; font-weight: 500; font-size: 14px;}
   .article-item p { font-size: 12px; color: #5e6c84; margin: 4px 0 0 0; }
+  .article-item-body { flex: 1; min-width: 0; }
 
   /* 资产监控池样式 */
   .asset-card {
@@ -193,7 +195,10 @@
     <div style="margin-top: 20px;">
       {% for milestone in milestones %}
       <div class="timeline-item" style="{% if milestone.is_completed %}opacity: 0.5;{% endif %}">
-        <div class="timeline-date">{{ milestone.event_date }} {{ milestone.reminder_time or '12:00' }} 提醒</div>
+        <div class="item-row-header">
+          <div class="timeline-date">{{ milestone.event_date }} {{ milestone.reminder_time or '12:00' }} 提醒</div>
+          {{ delete_button(url_for('investments.delete_milestone', theme_id=theme.id, milestone_id=milestone.id), '确定删除此时间线节点？') }}
+        </div>
         <div class="timeline-desc">{{ milestone.description }}</div>
       </div>
       {% else %}
@@ -209,15 +214,18 @@
     </h3>
     <div style="margin-top: 10px;">
       {% for article in articles %}
-      <div class="article-item">
-        {% if article.url %}
-        <a href="{{ article.url }}" target="_blank">{{ article.title }}</a>
-        {% else %}
-        <span style="color: #0052cc; font-weight: 500; font-size: 14px;">{{ article.title }}</span>
-        {% endif %}
-        {% if article.summary %}
-        <p>{{ article.summary }}</p>
-        {% endif %}
+      <div class="article-item item-row-header">
+        <div class="article-item-body">
+          {% if article.url %}
+          <a href="{{ article.url }}" target="_blank">{{ article.title }}</a>
+          {% else %}
+          <span style="color: #0052cc; font-weight: 500; font-size: 14px;">{{ article.title }}</span>
+          {% endif %}
+          {% if article.summary %}
+          <p>{{ article.summary }}</p>
+          {% endif %}
+        </div>
+        {{ delete_button(url_for('investments.delete_article', theme_id=theme.id, article_id=article.id), '确定删除此文章？') }}
       </div>
       {% else %}
       <p style="font-size: 13px; color: #8c939f;">暂无关联资料。</p>
@@ -235,7 +243,10 @@
       <div class="asset-card">
         <div class="asset-card-header">
           <span>{{ asset.ticker }}</span>
-          <span style="font-size: 12px; color: #6b778c; font-weight: normal;">{{ asset.exchange }}</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 12px; color: #6b778c; font-weight: normal;">{{ asset.exchange }}</span>
+            {{ delete_button(url_for('investments.delete_asset', theme_id=theme.id, asset_id=asset.id), '确定删除 ' ~ asset.ticker ~ ' 及其所有价格提醒？') }}
+          </div>
         </div>
         <div class="asset-current-price">
           {% if asset.exchange == 'US' %}

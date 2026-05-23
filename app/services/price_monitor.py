@@ -4,7 +4,7 @@ from flask import current_app
 
 from app.database import get_db
 from app.services.feishu import push_feishu_message
-from app.services.fmp import fetch_us_quotes
+from app.services.quotes import fetch_us_quotes
 
 ALERT_COOLDOWN_HOURS = 12
 
@@ -53,7 +53,7 @@ def check_asset_price_alerts():
     tickers = sorted({r["ticker"].upper() for r in due_rows})
     quotes = fetch_us_quotes(tickers)
     if not quotes:
-        print("价格监控：未获取到 FMP 行情，跳过本轮检查。")
+        print("价格监控：未获取到行情，跳过本轮检查。")
         return
 
     messages = []

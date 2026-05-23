@@ -35,6 +35,7 @@ def create_app(config: Config = None) -> Flask:
     app.config["FEISHU_ALERT_RECEIVER_ID"] = getattr(config, "FEISHU_ALERT_RECEIVER_ID", "")
     app.config["FEISHU_ALERT_RECEIVER_TYPE"] = getattr(config, "FEISHU_ALERT_RECEIVER_TYPE", "open_id")
     app.config["FMP_API_KEY"] = getattr(config, "FMP_API_KEY", "")
+    app.config["ALPHA_VANTAGE_API_KEY"] = getattr(config, "ALPHA_VANTAGE_API_KEY", "")
 
     # 6. 注册数据库清理机制与 CLI 初始化命令
     from app.database import close_db, init_db_command
@@ -55,20 +56,12 @@ def create_app(config: Config = None) -> Flask:
     # 8. ================= 核心：后台定时任务配置 =================
     scheduler.init_app(app)
 
-    # 投资节点提醒：每分钟检查是否到达各节点设定的提醒时刻
-    @scheduler.task('cron', id='milestone_job', minute='*')
-    def scheduled_milestone_check():
-        with app.app_context():
-            from app.services.monitor import check_upcoming_milestones
-            check_upcoming_milestones()
+    with app.app_context():
+        from app.database import init_db
+        init_db()
+        from app.scheduler_setup import configure_monitor_jobs
+        configure_monitor_jobs(app)
 
-    @scheduler.task('cron', id='price_alert_job', minute='*')
-    def scheduled_price_alert_check():
-        with app.app_context():
-            from app.services.price_monitor import check_asset_price_alerts
-            check_asset_price_alerts()
-
-    # 启动调度引擎
     scheduler.start()
     # ====================================================
 

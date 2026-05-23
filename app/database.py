@@ -110,6 +110,12 @@ def init_db() -> None:
         is_completed INTEGER DEFAULT 0, -- 0 未发生, 1 已发生
         FOREIGN KEY(theme_id) REFERENCES themes(id) ON DELETE CASCADE
     );
+
+    -- 5. 全局配置
+    CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
     """
     # 修改点 2：使用 current_app.config 替代 g.flask_app.config
     with closing(sqlite3.connect(current_app.config["DATABASE_PATH"])) as conn:
@@ -170,7 +176,25 @@ def _migrate_asset_price_alerts(conn: sqlite3.Connection) -> None:
             )
 
 
+def _migrate_app_settings(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO app_settings (key, value)
+        VALUES ('monitor_interval_minutes', '1')
+        """
+    )
+
+
 def migrate_db(conn: sqlite3.Connection) -> None:
+    _migrate_app_settings(conn)
     _migrate_asset_price_alerts(conn)
 
     milestone_columns = {row["name"] for row in conn.execute("PRAGMA table_info(theme_milestones)")}
