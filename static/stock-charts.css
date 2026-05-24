@@ -247,6 +247,41 @@
   border-radius: 16px;
 }
 
+.macd-alert-toggles {
+  padding-left: 4px;
+  border-left: 2px solid rgba(47, 36, 25, 0.08);
+}
+
+.macd-alert-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.stock-macd-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.macd-signal-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.macd-signal-tag.golden {
+  background: rgba(215, 102, 54, 0.12);
+  border: 1px solid rgba(215, 102, 54, 0.35);
+  color: #d76636;
+}
+
+.macd-signal-tag.death {
+  background: rgba(31, 111, 95, 0.12);
+  border: 1px solid rgba(31, 111, 95, 0.35);
+  color: #1f6f5f;
+}
+
 @media (max-width: 720px) {
   .stock-chart-head {
     flex-direction: column;

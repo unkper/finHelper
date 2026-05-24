@@ -3,6 +3,8 @@ from app.database import get_db
 MONITOR_INTERVAL_KEY = "monitor_interval_minutes"
 QUOTE_CACHE_MINUTES_KEY = "quote_cache_minutes"
 HISTORY_CACHE_HOURS_KEY = "history_cache_hours"
+MACD_ALERT_GOLDEN_ABOVE_KEY = "macd_alert_golden_cross_above_zero"
+MACD_ALERT_DEATH_BELOW_KEY = "macd_alert_death_cross_below_zero"
 DEFAULT_MONITOR_INTERVAL = 1
 DEFAULT_QUOTE_CACHE_MINUTES = 5
 DEFAULT_HISTORY_CACHE_HOURS = 12
@@ -20,6 +22,8 @@ def ensure_default_settings() -> None:
         (MONITOR_INTERVAL_KEY, str(DEFAULT_MONITOR_INTERVAL)),
         (QUOTE_CACHE_MINUTES_KEY, str(DEFAULT_QUOTE_CACHE_MINUTES)),
         (HISTORY_CACHE_HOURS_KEY, str(DEFAULT_HISTORY_CACHE_HOURS)),
+        (MACD_ALERT_GOLDEN_ABOVE_KEY, "0"),
+        (MACD_ALERT_DEATH_BELOW_KEY, "0"),
     )
     for key, value in defaults:
         db.execute(
@@ -90,3 +94,30 @@ def set_history_cache_hours(hours: int) -> int:
     clamped = max(MIN_HISTORY_CACHE_HOURS, min(MAX_HISTORY_CACHE_HOURS, int(hours)))
     set_setting(HISTORY_CACHE_HOURS_KEY, str(clamped))
     return clamped
+
+
+def _is_truthy_setting(key: str) -> bool:
+    return get_setting(key, "0") in ("1", "true", "True", "yes", "on")
+
+
+def is_macd_alert_golden_cross_above_zero_enabled() -> bool:
+    return _is_truthy_setting(MACD_ALERT_GOLDEN_ABOVE_KEY)
+
+
+def is_macd_alert_death_cross_below_zero_enabled() -> bool:
+    return _is_truthy_setting(MACD_ALERT_DEATH_BELOW_KEY)
+
+
+def set_macd_alert_golden_cross_above_zero(enabled: bool) -> None:
+    set_setting(MACD_ALERT_GOLDEN_ABOVE_KEY, "1" if enabled else "0")
+
+
+def set_macd_alert_death_cross_below_zero(enabled: bool) -> None:
+    set_setting(MACD_ALERT_DEATH_BELOW_KEY, "1" if enabled else "0")
+
+
+def get_macd_alert_settings() -> dict:
+    return {
+        "golden_cross_above_zero": is_macd_alert_golden_cross_above_zero_enabled(),
+        "death_cross_below_zero": is_macd_alert_death_cross_below_zero_enabled(),
+    }

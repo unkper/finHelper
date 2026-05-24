@@ -35,6 +35,61 @@
   }
 
   let indicatorSettings = loadIndicatorSettings();
+  let macdAlertSettings = {
+    golden_cross_above_zero: false,
+    death_cross_below_zero: false,
+  };
+  let macdAlertSaving = false;
+
+  function buildMacdSignalTags(macd) {
+    if (!macd || !macd.ready) return "";
+    const labels = macd.signal_labels || [];
+    if (!labels.length) return "";
+    const dateNote = macd.bar_date ? ` · ${macd.bar_date}` : "";
+    return labels.map((item) => {
+      const cls = item.type === "golden_cross_above_zero" ? "golden" : "death";
+      return `<span class="macd-signal-tag ${cls}">${item.label}${dateNote}</span>`;
+    }).join("");
+  }
+
+  function syncMacdAlertToolbar() {
+    const golden = document.getElementById("macdAlertGolden");
+    const death = document.getElementById("macdAlertDeath");
+    if (golden) golden.checked = !!macdAlertSettings.golden_cross_above_zero;
+    if (death) death.checked = !!macdAlertSettings.death_cross_below_zero;
+  }
+
+  async function saveMacdAlertSettings() {
+    if (macdAlertSaving) return;
+    macdAlertSaving = true;
+    const hint = document.getElementById("macdAlertHint");
+    const prevHint = hint ? hint.textContent : "";
+    if (hint) hint.textContent = "正在保存…";
+    try {
+      const response = await fetch("/investments/stocks/api/macd-alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(macdAlertSettings),
+      });
+      if (!response.ok) throw new Error("保存失败");
+      const payload = await response.json();
+      macdAlertSettings = payload.macd_alerts || macdAlertSettings;
+      syncMacdAlertToolbar();
+      if (hint) {
+        hint.textContent = macdAlertSettings.golden_cross_above_zero || macdAlertSettings.death_cross_below_zero
+          ? "已开启，按监控频率推送飞书"
+          : "开启后按监控频率推送飞书";
+      }
+    } catch (error) {
+      if (hint) hint.textContent = "保存失败，请重试";
+      console.error(error);
+    } finally {
+      macdAlertSaving = false;
+      if (hint && hint.textContent === "正在保存…") {
+        hint.textContent = prevHint;
+      }
+    }
+  }
 
   function saveIndicatorSettings() {
     localStorage.setItem(INDICATOR_STORAGE_KEY, JSON.stringify(indicatorSettings));
@@ -429,6 +484,8 @@
       ? `<div id="chart-${asset.ticker}" class="stock-chart-canvas"></div>`
       : `<p class="stock-chart-empty-note">${asset.exchange === "US" ? "暂无历史行情数据" : "暂仅支持美股历史走势"}</p>`;
 
+    const macdTags = buildMacdSignalTags(asset.macd);
+
     card.innerHTML = `
       <div class="stock-chart-head">
         <div>
@@ -442,6 +499,7 @@
       </div>
       <div class="stock-theme-tags">${themeTags}</div>
       ${alertTags ? `<div class="stock-alert-tags">${alertTags}</div>` : ""}
+      ${macdTags ? `<div class="stock-macd-tags">${macdTags}</div>` : ""}
       ${chartBlock}
     `;
 
@@ -502,6 +560,11 @@
     grid.innerHTML = "";
 
     loading.hidden = true;
+
+    if (payload.macd_alerts) {
+      macdAlertSettings = payload.macd_alerts;
+      syncMacdAlertToolbar();
+    }
 
     if (!payload.assets || !payload.assets.length) {
       empty.hidden = false;
@@ -572,6 +635,7 @@
     if (!document.querySelector(".stocks-page")) return;
 
     syncIndicatorToolbar();
+    syncMacdAlertToolbar();
 
     document.querySelectorAll("[data-indicator]").forEach((input) => {
       input.addEventListener("change", () => {
@@ -579,6 +643,16 @@
         indicatorSettings[key] = input.checked;
         saveIndicatorSettings();
         remountAllCharts();
+      });
+    });
+
+    document.querySelectorAll("[data-macd-alert]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const key = input.dataset.macdAlert;
+        if (key in macdAlertSettings) {
+          macdAlertSettings[key] = input.checked;
+          saveMacdAlertSettings();
+        }
       });
     });
 

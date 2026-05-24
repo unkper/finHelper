@@ -1,5 +1,5 @@
 # app/routes/investments.py
-from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify
+from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, current_app
 from app.services.investment import (
     fetch_assistants_with_themes, fetch_all_assistants, fetch_theme_by_id,
     fetch_theme_details, fetch_theme_score, create_theme, create_assistant,
@@ -7,8 +7,14 @@ from app.services.investment import (
     add_theme_asset, add_theme_milestone, update_theme_milestone, add_theme_article,
     delete_theme_milestone, delete_theme_asset, delete_theme_article,
 )
+from app.services.settings import (
+    get_macd_alert_settings,
+    set_macd_alert_death_cross_below_zero,
+    set_macd_alert_golden_cross_above_zero,
+)
 from app.services.stock_charts import build_stock_chart_payload
 from app.services.rate_limit import consume_rate_limit, get_client_ip
+from app.scheduler_setup import configure_monitor_jobs
 
 bp = Blueprint('investments', __name__, url_prefix='/investments')
 
@@ -48,6 +54,20 @@ def stocks_chart_data():
         }), 429
 
     return jsonify(build_stock_chart_payload(force_refresh=force_refresh))
+
+
+@bp.route('/stocks/api/macd-alerts', methods=['POST'])
+def stocks_macd_alerts():
+    data = request.get_json(silent=True) or {}
+    golden = bool(data.get("golden_cross_above_zero"))
+    death = bool(data.get("death_cross_below_zero"))
+    set_macd_alert_golden_cross_above_zero(golden)
+    set_macd_alert_death_cross_below_zero(death)
+    configure_monitor_jobs(current_app._get_current_object())
+    return jsonify({
+        "status": "ok",
+        "macd_alerts": get_macd_alert_settings(),
+    })
 
 
 @bp.route('/<int:theme_id>')

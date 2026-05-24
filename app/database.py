@@ -147,6 +147,15 @@ def init_db() -> None:
         price REAL NOT NULL,
         updated_at TEXT NOT NULL
     );
+
+    -- 8. MACD 信号已推送记录（按 ticker + 信号类型 + K 线日期去重）
+    CREATE TABLE IF NOT EXISTS stock_macd_alert_state (
+        ticker TEXT NOT NULL,
+        signal_type TEXT NOT NULL,
+        last_signal_date TEXT NOT NULL,
+        last_triggered_at TEXT NOT NULL,
+        PRIMARY KEY (ticker, signal_type)
+    );
     """
     # 修改点 2：使用 current_app.config 替代 g.flask_app.config
     with closing(sqlite3.connect(current_app.config["DATABASE_PATH"])) as conn:
@@ -318,6 +327,18 @@ def migrate_db(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE stock_daily_cache ADD COLUMN high REAL")
         if "low" not in daily_columns:
             conn.execute("ALTER TABLE stock_daily_cache ADD COLUMN low REAL")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stock_macd_alert_state (
+            ticker TEXT NOT NULL,
+            signal_type TEXT NOT NULL,
+            last_signal_date TEXT NOT NULL,
+            last_triggered_at TEXT NOT NULL,
+            PRIMARY KEY (ticker, signal_type)
+        )
+        """
+    )
 
     entry_columns = {row["name"] for row in conn.execute("PRAGMA table_info(snapshot_entries)")}
     if "amount" in entry_columns:
