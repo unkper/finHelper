@@ -622,3 +622,32 @@ thead th {
   padding: 8px 14px;
   font-size: 0.92rem;
 }
+
+.captcha-warning {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.captcha-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.captcha-row input {
+  flex: 1;
+}
+
+.captcha-image {
+  width: 140px;
+  height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--panel-strong);
+}
+
+.captcha-hint {
+  margin: -4px 0 0;
+  font-size: 0.85rem;
+}

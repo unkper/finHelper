@@ -51,7 +51,7 @@ def require_login():
         return None
 
     endpoint = request.endpoint or ""
-    if endpoint in {"auth.login", "bot.feishu_callback"}:
+    if endpoint in {"auth.login", "auth.captcha_image", "bot.feishu_callback"}:
         return None
 
     if endpoint == "static":
