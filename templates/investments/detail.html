@@ -48,6 +48,25 @@
   }
   .timeline-date { font-size: 12px; color: #6b778c; font-weight: bold; }
   .timeline-desc { font-size: 13px; margin-top: 4px; }
+  .timeline-pnl { font-size: 12px; font-weight: bold; margin-top: 6px; }
+  .timeline-pnl.positive { color: #006644; }
+  .timeline-pnl.negative { color: #bf2600; }
+  .timeline-actions { display: flex; align-items: center; gap: 6px; }
+  .btn-link { font-size: 12px; color: #0052cc; cursor: pointer; border: none; background: none; padding: 0; }
+  .btn-link:hover { text-decoration: underline; }
+  .theme-score-badge {
+    display: inline-block; margin-left: 8px; padding: 4px 10px; border-radius: 4px;
+    font-size: 13px; font-weight: bold;
+  }
+  .theme-score-badge.positive { background: #e3fcef; color: #006644; }
+  .theme-score-badge.negative { background: #ffebe6; color: #bf2600; }
+  .theme-score-badge.neutral { background: #f4f5f7; color: #5e6c84; }
+  .detail-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .danger-btn {
+    background: #fff; color: #de350b; border: 1px solid #de350b; padding: 8px 14px;
+    border-radius: 4px; cursor: pointer; font-size: 13px;
+  }
+  .danger-btn:hover { background: #ffebe6; }
 
   /* 文章列表样式 */
   .article-item { padding: 12px 0; border-bottom: 1px dashed #e1e4e8; }
@@ -79,8 +98,6 @@
   .btn-icon {
     border: none; background: none; color: #de350b; cursor: pointer; font-size: 18px; padding: 0 0 8px 0;
   }
-  .btn-link { font-size: 12px; color: #0052cc; cursor: pointer; border: none; background: none; padding: 0; }
-  .btn-link:hover { text-decoration: underline; }
   .modal-overlay {
     display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(9, 30, 66, 0.54); z-index: 1000; justify-content: center; align-items: center;
@@ -118,8 +135,48 @@
         <label>事件描述 (Description)</label>
         <textarea name="description" rows="2" placeholder="例如：美联储议息会议决议公布" required></textarea>
       </div>
+      <div class="form-group">
+        <label>盈亏金额（可选，正数盈利 / 负数亏损）</label>
+        <input type="number" step="0.01" name="profit_loss" placeholder="留空则不纳入评分">
+      </div>
       <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
         <button type="submit" class="primary-btn">确认添加</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="editMilestoneModal" class="modal-overlay">
+  <div class="modal-content">
+    <button class="modal-close" onclick="document.getElementById('editMilestoneModal').style.display='none'">✕</button>
+    <h3 style="margin-top: 0; margin-bottom: 20px;">编辑时间节点</h3>
+    <form id="editMilestoneForm" method="POST">
+      <div class="inline-form-row">
+        <div class="form-group">
+          <label>日期 (Event Date)</label>
+          <input type="date" name="event_date" id="editEventDate" required>
+        </div>
+        <div class="form-group" style="flex: 0 0 140px;">
+          <label>提醒时刻</label>
+          <input type="time" name="reminder_time" id="editReminderTime" value="12:00" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>事件描述 (Description)</label>
+        <textarea name="description" id="editDescription" rows="2" required></textarea>
+      </div>
+      <div class="form-group">
+        <label>盈亏金额（可选，正数盈利 / 负数亏损）</label>
+        <input type="number" step="0.01" name="profit_loss" id="editProfitLoss" placeholder="留空则不纳入评分">
+      </div>
+      <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+          <input type="checkbox" name="is_completed" id="editIsCompleted" value="1">
+          标记为已发生
+        </label>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+        <button type="submit" class="primary-btn">保存修改</button>
       </div>
     </form>
   </div>
@@ -181,20 +238,42 @@
 <div class="detail-header">
   <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
     <div>
-      <h2>{{ theme.title }} <span class="badge">{{ theme.assistant_name }}</span></h2>
+      <h2 style="margin: 0 0 8px 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+        {{ theme.title }}
+        <span class="badge">{{ theme.assistant_name }}</span>
+        {% if theme_score.scored_milestones > 0 %}
+          {% if theme_score.theme_score > 0 %}
+          <span class="theme-score-badge positive">评分 {{ "%+.2f"|format(theme_score.theme_score) }}</span>
+          {% elif theme_score.theme_score < 0 %}
+          <span class="theme-score-badge negative">评分 {{ "%+.2f"|format(theme_score.theme_score) }}</span>
+          {% else %}
+          <span class="theme-score-badge neutral">评分 0.00</span>
+          {% endif %}
+        {% else %}
+          <span class="theme-score-badge neutral">暂无评分</span>
+        {% endif %}
+      </h2>
       <p style="color: #5e6c84; margin-top: 8px; line-height: 1.5;">{{ theme.description }}</p>
+      {% if theme_score.scored_milestones > 0 %}
+      <p style="font-size: 12px; color: #8c939f; margin: 8px 0 0;">
+        基于 {{ theme_score.scored_milestones }} 个已记录盈亏的时间节点
+      </p>
+      {% endif %}
     </div>
-    <form class="assistant-move-form" method="post" action="{{ url_for('investments.move_assistant', theme_id=theme.id) }}">
-      <label style="font-size: 12px; color: #5e6c84; font-weight: bold;">移至助手</label>
-      <select name="assistant_id" required>
-        {% for assistant in assistants %}
-        <option value="{{ assistant.id }}" {% if assistant.id == theme.assistant_id %}selected{% endif %}>
-          {{ assistant.name }}
-        </option>
-        {% endfor %}
-      </select>
-      <button type="submit" class="secondary-btn">保存</button>
-    </form>
+    <div class="detail-actions">
+      <form class="assistant-move-form" method="post" action="{{ url_for('investments.move_assistant', theme_id=theme.id) }}">
+        <label style="font-size: 12px; color: #5e6c84; font-weight: bold;">移至助手</label>
+        <select name="assistant_id" required>
+          {% for assistant in assistants %}
+          <option value="{{ assistant.id }}" {% if assistant.id == theme.assistant_id %}selected{% endif %}>
+            {{ assistant.name }}
+          </option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="secondary-btn">保存</button>
+      </form>
+      {{ delete_button(url_for('investments.delete_theme_route', theme_id=theme.id), '确定删除整个主题？此操作不可恢复，将同时删除所有时间节点、文章和监控标的。', '删除主题') }}
+    </div>
   </div>
 </div>
 
@@ -208,10 +287,28 @@
       {% for milestone in milestones %}
       <div class="timeline-item" style="{% if milestone.is_completed %}opacity: 0.5;{% endif %}">
         <div class="item-row-header">
-          <div class="timeline-date">{{ milestone.event_date }} {{ milestone.reminder_time or '12:00' }} 提醒</div>
-          {{ delete_button(url_for('investments.delete_milestone', theme_id=theme.id, milestone_id=milestone.id), '确定删除此时间线节点？') }}
+          <div class="timeline-date">
+            {{ milestone.event_date }} {{ milestone.reminder_time or '12:00' }} 提醒
+            {% if milestone.is_completed %} · 已发生{% endif %}
+          </div>
+          <div class="timeline-actions">
+            <button type="button" class="btn-link"
+              onclick="openEditMilestoneModal(this)"
+              data-edit-url="{{ url_for('investments.edit_milestone', theme_id=theme.id, milestone_id=milestone.id) }}"
+              data-event-date="{{ milestone.event_date }}"
+              data-reminder-time="{{ milestone.reminder_time or '12:00' }}"
+              data-description="{{ milestone.description|replace('\n', ' ')|e }}"
+              data-profit-loss="{{ milestone.profit_loss if milestone.profit_loss is not none else '' }}"
+              data-is-completed="{{ milestone.is_completed }}">编辑</button>
+            {{ delete_button(url_for('investments.delete_milestone', theme_id=theme.id, milestone_id=milestone.id), '确定删除此时间线节点？') }}
+          </div>
         </div>
         <div class="timeline-desc">{{ milestone.description }}</div>
+        {% if milestone.profit_loss is not none %}
+        <div class="timeline-pnl {% if milestone.profit_loss > 0 %}positive{% elif milestone.profit_loss < 0 %}negative{% endif %}">
+          盈亏 {{ "%+.2f"|format(milestone.profit_loss) }}
+        </div>
+        {% endif %}
       </div>
       {% else %}
       <p style="font-size: 13px; color: #8c939f;">暂未设定关键时间点。</p>
@@ -328,6 +425,17 @@
     addPriceAlertRow();
     addPriceAlertRow();
     document.getElementById('addAssetModal').style.display = 'flex';
+  }
+
+  function openEditMilestoneModal(button) {
+    const form = document.getElementById('editMilestoneForm');
+    form.action = button.dataset.editUrl;
+    document.getElementById('editEventDate').value = button.dataset.eventDate || '';
+    document.getElementById('editReminderTime').value = (button.dataset.reminderTime || '12:00').slice(0, 5);
+    document.getElementById('editDescription').value = button.dataset.description || '';
+    document.getElementById('editProfitLoss').value = button.dataset.profitLoss || '';
+    document.getElementById('editIsCompleted').checked = button.dataset.isCompleted === '1';
+    document.getElementById('editMilestoneModal').style.display = 'flex';
   }
 
   window.onclick = function(event) {

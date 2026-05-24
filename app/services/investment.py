@@ -29,7 +29,17 @@ def get_default_assistant_id():
 def fetch_all_assistants():
     db = get_db()
     return db.execute(
-        "SELECT * FROM investment_assistants ORDER BY is_default DESC, name ASC"
+        """
+        SELECT
+            a.*,
+            COALESCE(SUM(m.profit_loss), 0) AS total_pnl,
+            COUNT(CASE WHEN m.profit_loss IS NOT NULL THEN 1 END) AS scored_milestones
+        FROM investment_assistants a
+        LEFT JOIN themes t ON t.assistant_id = a.id
+        LEFT JOIN theme_milestones m ON m.theme_id = t.id
+        GROUP BY a.id
+        ORDER BY total_pnl DESC, a.is_default DESC, a.name ASC
+        """
     ).fetchall()
 
 
@@ -55,11 +65,20 @@ def create_assistant(name, description=None):
 
 
 def fetch_assistants_with_themes():
-    """返回 [(assistant, [themes...]), ...] 供列表页分组展示。"""
+    """返回 [(assistant, [themes...]), ...] 供列表页分组展示；助手按累计盈亏排名。"""
     assistants = fetch_all_assistants()
     db = get_db()
     themes = db.execute(
-        "SELECT * FROM themes ORDER BY updated_at DESC"
+        """
+        SELECT
+            t.*,
+            COALESCE(SUM(m.profit_loss), 0) AS theme_score,
+            COUNT(CASE WHEN m.profit_loss IS NOT NULL THEN 1 END) AS scored_milestones
+        FROM themes t
+        LEFT JOIN theme_milestones m ON m.theme_id = t.id
+        GROUP BY t.id
+        ORDER BY t.updated_at DESC
+        """
     ).fetchall()
     grouped = {assistant["id"]: [] for assistant in assistants}
     for theme in themes:
@@ -135,6 +154,33 @@ def move_theme_to_assistant(theme_id, assistant_id):
     )
     db.commit()
     return True
+
+
+def delete_theme(theme_id):
+    """删除投资主题（子表 CASCADE 自动清理）。"""
+    db = get_db()
+    row = db.execute("SELECT id, title FROM themes WHERE id = ?", (theme_id,)).fetchone()
+    if not row:
+        return None
+    db.execute("DELETE FROM themes WHERE id = ?", (theme_id,))
+    db.commit()
+    return row["title"]
+
+
+def fetch_theme_score(theme_id):
+    """主题评分 = 已填写盈亏的时间节点之和。"""
+    db = get_db()
+    row = db.execute(
+        """
+        SELECT
+            COALESCE(SUM(profit_loss), 0) AS theme_score,
+            COUNT(CASE WHEN profit_loss IS NOT NULL THEN 1 END) AS scored_milestones
+        FROM theme_milestones
+        WHERE theme_id = ?
+        """,
+        (theme_id,),
+    ).fetchone()
+    return dict(row) if row else {"theme_score": 0, "scored_milestones": 0}
 
 
 # --- 关联内容 (Articles, Assets, Milestones) 相关 ---
@@ -231,17 +277,67 @@ def add_asset_price_alert(asset_id, target_price, direction, note=None, commit=T
         db.commit()
 
 
-def add_theme_milestone(theme_id, event_date, description, reminder_time='12:00'):
+def add_theme_milestone(theme_id, event_date, description, reminder_time='12:00', profit_loss=None):
     """为主题添加时间线节点"""
     db = get_db()
     db.execute(
         """
-        INSERT INTO theme_milestones (theme_id, event_date, description, reminder_time)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO theme_milestones (theme_id, event_date, description, reminder_time, profit_loss)
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (theme_id, event_date, description, reminder_time)
+        (theme_id, event_date, description, reminder_time, profit_loss)
+    )
+    db.execute(
+        "UPDATE themes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (theme_id,),
     )
     db.commit()
+
+
+def update_theme_milestone(
+    theme_id,
+    milestone_id,
+    event_date,
+    description,
+    reminder_time='12:00',
+    profit_loss=None,
+    is_completed=None,
+):
+    """编辑时间线节点（盈亏为空则不纳入评分）。"""
+    db = get_db()
+    row = db.execute(
+        "SELECT id FROM theme_milestones WHERE id = ? AND theme_id = ?",
+        (milestone_id, theme_id),
+    ).fetchone()
+    if not row:
+        return False
+
+    completed_value = 1 if is_completed else 0 if is_completed is not None else None
+    if completed_value is not None:
+        db.execute(
+            """
+            UPDATE theme_milestones
+            SET event_date = ?, description = ?, reminder_time = ?,
+                profit_loss = ?, is_completed = ?
+            WHERE id = ?
+            """,
+            (event_date, description, reminder_time, profit_loss, completed_value, milestone_id),
+        )
+    else:
+        db.execute(
+            """
+            UPDATE theme_milestones
+            SET event_date = ?, description = ?, reminder_time = ?, profit_loss = ?
+            WHERE id = ?
+            """,
+            (event_date, description, reminder_time, profit_loss, milestone_id),
+        )
+    db.execute(
+        "UPDATE themes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (theme_id,),
+    )
+    db.commit()
+    return True
 
 
 def delete_theme_milestone(theme_id, milestone_id):
@@ -254,6 +350,10 @@ def delete_theme_milestone(theme_id, milestone_id):
     if not row:
         return False
     db.execute("DELETE FROM theme_milestones WHERE id = ?", (milestone_id,))
+    db.execute(
+        "UPDATE themes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (theme_id,),
+    )
     db.commit()
     return True
 
@@ -294,3 +394,57 @@ def add_theme_article(theme_id, title, url=None, summary=None):
         (theme_id, title, url or None, summary or None)
     )
     db.commit()
+
+
+def fetch_tracked_assets_overview():
+    """汇总所有主题下的监控标的（按 ticker 去重）。"""
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT
+            s.id AS asset_id,
+            s.ticker,
+            s.exchange,
+            t.id AS theme_id,
+            t.title AS theme_title,
+            a.name AS assistant_name
+        FROM theme_assets s
+        JOIN themes t ON s.theme_id = t.id
+        JOIN investment_assistants a ON t.assistant_id = a.id
+        ORDER BY s.ticker, t.title
+        """
+    ).fetchall()
+
+    grouped = {}
+    for row in rows:
+        key = (row["ticker"].upper(), row["exchange"])
+        if key not in grouped:
+            grouped[key] = {
+                "ticker": row["ticker"].upper(),
+                "exchange": row["exchange"],
+                "themes": [],
+                "alerts": [],
+            }
+        grouped[key]["themes"].append({
+            "theme_id": row["theme_id"],
+            "theme_title": row["theme_title"],
+            "assistant_name": row["assistant_name"],
+            "asset_id": row["asset_id"],
+        })
+
+    for item in grouped.values():
+        asset_ids = {theme["asset_id"] for theme in item["themes"]}
+        placeholders = ",".join("?" for _ in asset_ids)
+        alerts = db.execute(
+            f"""
+            SELECT target_price, direction, note
+            FROM theme_asset_price_alerts
+            WHERE asset_id IN ({placeholders})
+            ORDER BY target_price
+            """,
+            tuple(asset_ids),
+        ).fetchall()
+        item["alerts"] = [dict(alert) for alert in alerts]
+
+    return list(grouped.values())
+

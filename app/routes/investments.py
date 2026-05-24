@@ -1,11 +1,14 @@
 # app/routes/investments.py
-from flask import Blueprint, render_template, request, flash, redirect, url_for
+from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify
 from app.services.investment import (
     fetch_assistants_with_themes, fetch_all_assistants, fetch_theme_by_id,
-    fetch_theme_details, create_theme, create_assistant, move_theme_to_assistant,
-    add_theme_asset, add_theme_milestone, add_theme_article,
+    fetch_theme_details, fetch_theme_score, create_theme, create_assistant,
+    move_theme_to_assistant, delete_theme,
+    add_theme_asset, add_theme_milestone, update_theme_milestone, add_theme_article,
     delete_theme_milestone, delete_theme_asset, delete_theme_article,
 )
+from app.services.stock_charts import build_stock_chart_payload
+from app.services.rate_limit import consume_rate_limit, get_client_ip
 
 bp = Blueprint('investments', __name__, url_prefix='/investments')
 
@@ -21,6 +24,32 @@ def index():
     )
 
 
+@bp.route('/stocks')
+def stocks():
+    return render_template("investments/stocks.html")
+
+
+@bp.route('/stocks/api/chart-data')
+def stocks_chart_data():
+    ip = get_client_ip()
+    force_refresh = request.args.get("refresh") == "1"
+    if force_refresh:
+        allowed, retry_after = consume_rate_limit(
+            f"chart-refresh:{ip}", max_calls=5, window_seconds=300
+        )
+    else:
+        allowed, retry_after = consume_rate_limit(
+            f"chart-data:{ip}", max_calls=60, window_seconds=60
+        )
+    if not allowed:
+        return jsonify({
+            "error": "请求过于频繁，请稍后再试",
+            "retry_after": retry_after,
+        }), 429
+
+    return jsonify(build_stock_chart_payload(force_refresh=force_refresh))
+
+
 @bp.route('/<int:theme_id>')
 def detail(theme_id):
     theme = fetch_theme_by_id(theme_id)
@@ -29,9 +58,11 @@ def detail(theme_id):
         return redirect(url_for('investments.index'))
 
     details = fetch_theme_details(theme_id)
+    theme_score = fetch_theme_score(theme_id)
     return render_template(
         "investments/detail.html",
         theme=theme,
+        theme_score=theme_score,
         assistants=fetch_all_assistants(),
         articles=details['articles'],
         assets=details['assets'],
@@ -136,9 +167,30 @@ def add_asset(theme_id):
 def _normalize_reminder_time(raw: str) -> str:
     """将表单时间规范为 HH:MM，默认 12:00。"""
     value = (raw or "12:00").strip()
-    if len(value) >= 5:
+    if (len(value) >= 5):
         return value[:5]
     return "12:00"
+
+
+def _parse_profit_loss(raw: str):
+    """解析盈亏金额；空值表示不纳入评分。"""
+    value = (raw or "").strip()
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        raise ValueError("盈亏金额格式无效，请输入数字")
+
+
+@bp.route('/<int:theme_id>/delete', methods=['POST'])
+def delete_theme_route(theme_id):
+    title = delete_theme(theme_id)
+    if title:
+        flash(f"已删除投资主题：{title}", "success")
+    else:
+        flash("主题不存在或已删除", "error")
+    return redirect(url_for('investments.index'))
 
 
 @bp.route('/<int:theme_id>/add_milestone', methods=['POST'])
@@ -149,10 +201,49 @@ def add_milestone(theme_id):
 
     if not event_date or not description:
         flash("日期和描述不能为空", "error")
-    else:
-        add_theme_milestone(theme_id, event_date, description, reminder_time)
-        flash(f"时间线节点已添加，将于 {event_date} {reminder_time} 飞书提醒", "success")
+        return redirect(url_for('investments.detail', theme_id=theme_id))
 
+    try:
+        profit_loss = _parse_profit_loss(request.form.get('profit_loss'))
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for('investments.detail', theme_id=theme_id))
+
+    add_theme_milestone(theme_id, event_date, description, reminder_time, profit_loss)
+    score_hint = f"，盈亏 {profit_loss:+.2f}" if profit_loss is not None else ""
+    flash(f"时间线节点已添加，将于 {event_date} {reminder_time} 飞书提醒{score_hint}", "success")
+    return redirect(url_for('investments.detail', theme_id=theme_id))
+
+
+@bp.route('/<int:theme_id>/milestones/<int:milestone_id>/edit', methods=['POST'])
+def edit_milestone(theme_id, milestone_id):
+    event_date = request.form.get('event_date')
+    description = request.form.get('description', '').strip()
+    reminder_time = _normalize_reminder_time(request.form.get('reminder_time'))
+    is_completed = request.form.get('is_completed') == '1'
+
+    if not event_date or not description:
+        flash("日期和描述不能为空", "error")
+        return redirect(url_for('investments.detail', theme_id=theme_id))
+
+    try:
+        profit_loss = _parse_profit_loss(request.form.get('profit_loss'))
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for('investments.detail', theme_id=theme_id))
+
+    if update_theme_milestone(
+        theme_id,
+        milestone_id,
+        event_date,
+        description,
+        reminder_time,
+        profit_loss,
+        is_completed,
+    ):
+        flash("时间线节点已更新", "success")
+    else:
+        flash("节点不存在或已删除", "error")
     return redirect(url_for('investments.detail', theme_id=theme_id))
 
 

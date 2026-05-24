@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}全局配置 · FinHelper{% endblock %}
+{% block content %}
+<main class="layout">
+  <section class="panel">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Settings</p>
+        <h2>全局配置</h2>
+        <p>控制投资监控任务的检查频率、行情 API 缓存策略与飞书提醒行为。</p>
+      </div>
+    </div>
+
+    <form method="post" action="{{ url_for('main.settings') }}" class="settings-form">
+      <div class="settings-field">
+        <label for="monitor_interval_minutes">监控检查频率（分钟）</label>
+        <div class="settings-input-row">
+          <input
+            type="number"
+            id="monitor_interval_minutes"
+            name="monitor_interval_minutes"
+            min="1"
+            max="1440"
+            step="1"
+            value="{{ monitor_interval_minutes }}"
+            required
+          >
+          <span class="settings-unit">分钟 / 次</span>
+        </div>
+        <p class="hint">
+          股价提醒与时间线提醒均按此间隔轮询。设为 1 可精确到分钟级节点提醒；间隔越大，API 调用越少。
+        </p>
+      </div>
+
+      <div class="settings-field">
+        <label for="quote_cache_minutes">现价缓存时长（分钟）</label>
+        <div class="settings-input-row">
+          <input
+            type="number"
+            id="quote_cache_minutes"
+            name="quote_cache_minutes"
+            min="1"
+            max="120"
+            step="1"
+            value="{{ quote_cache_minutes }}"
+            required
+          >
+          <span class="settings-unit">分钟内复用</span>
+        </div>
+        <p class="hint">
+          详情页现价、价格监控、走势页头部报价共用此缓存，减少对 Alpha Vantage / FMP 的重复请求。
+        </p>
+      </div>
+
+      <div class="settings-field">
+        <label for="history_cache_hours">历史 K 线缓存时长（小时）</label>
+        <div class="settings-input-row">
+          <input
+            type="number"
+            id="history_cache_hours"
+            name="history_cache_hours"
+            min="1"
+            max="168"
+            step="1"
+            value="{{ history_cache_hours }}"
+            required
+          >
+          <span class="settings-unit">小时内复用</span>
+        </div>
+        <p class="hint">
+          股票走势页的历史日 K 数据缓存。API 失败时会降级使用过期缓存。
+        </p>
+      </div>
+
+      <div class="settings-actions">
+        <button type="submit" class="primary-btn">保存配置</button>
+      </div>
+    </form>
+  </section>
+</main>
+{% endblock %}

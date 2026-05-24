@@ -28,4 +28,10 @@ class Config:
     # Alpha Vantage（美股行情，支持 REALTIME_BULK_QUOTES 批量）
     ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
 
+    # EOD Historical Data（优先数据源；.env 中可用 EODHD_API 或 EODHD_API_KEY）
+    EODHD_API_KEY = os.environ.get("EODHD_API_KEY") or os.environ.get("EODHD_API", "")
+
+    # 网页访问密码（必填后才会开放登录）
+    WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "")
+
 # 这样你的 app 初始化时，直接 app.config.from_object(Config) 即可，不需要再调 from_env() 了

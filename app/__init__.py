@@ -36,6 +36,9 @@ def create_app(config: Config = None) -> Flask:
     app.config["FEISHU_ALERT_RECEIVER_TYPE"] = getattr(config, "FEISHU_ALERT_RECEIVER_TYPE", "open_id")
     app.config["FMP_API_KEY"] = getattr(config, "FMP_API_KEY", "")
     app.config["ALPHA_VANTAGE_API_KEY"] = getattr(config, "ALPHA_VANTAGE_API_KEY", "")
+    app.config["EODHD_API_KEY"] = getattr(config, "EODHD_API_KEY", "")
+    app.config["WEB_PASSWORD"] = getattr(config, "WEB_PASSWORD", "")
+    app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 7
 
     # 6. 注册数据库清理机制与 CLI 初始化命令
     from app.database import close_db, init_db_command
@@ -43,15 +46,23 @@ def create_app(config: Config = None) -> Flask:
     app.cli.add_command(init_db_command)
 
     # 7. 统一注册所有的路由蓝图 (去重，每个蓝图只注册一次)
+    from app.routes.auth import bp as auth_bp
     from app.routes.main import bp as main_bp
     from app.routes.investments import bp as investments_bp
     from app.routes.bot import bp as bot_bp  # 飞书机器人回调蓝图
     from app.routes.debug import bp as debug_bp
 
+    app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(investments_bp)
     app.register_blueprint(bot_bp)
     app.register_blueprint(debug_bp)
+
+    from app.services.auth import require_login
+
+    @app.before_request
+    def enforce_login():
+        return require_login()
 
     # 8. ================= 核心：后台定时任务配置 =================
     scheduler.init_app(app)

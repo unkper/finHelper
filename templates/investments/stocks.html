@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}股票走势 · FinHelper{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='stock-charts.css') }}">
+
+<main class="layout stocks-page">
+  <section class="panel stocks-hero">
+    <div class="stocks-hero-inner">
+      <div>
+        <p class="eyebrow">Market Charts</p>
+        <h2>监控标的走势</h2>
+        <p class="hint">汇总所有投资主题下的股票标的，使用 ECharts 绘制日 K 收盘价走势，并标注价格提醒位。</p>
+      </div>
+      <div class="stocks-hero-actions">
+        <a href="{{ url_for('investments.index') }}" class="secondary-btn">← 返回主题列表</a>
+        <button type="button" class="primary-btn" id="refreshChartsBtn">刷新数据</button>
+      </div>
+    </div>
+    <div class="stocks-summary" id="stocksSummary">
+      <div class="summary-pill"><span id="summaryTickerCount">--</span> 个标的</div>
+      <div class="summary-pill"><span id="summaryThemeLinks">--</span> 处主题关联</div>
+    </div>
+  </section>
+
+  <section class="panel stocks-toolbar">
+    <label class="stocks-search">
+      <span>筛选标的</span>
+      <input type="search" id="tickerFilter" placeholder="输入代码，如 AAPL">
+    </label>
+  </section>
+
+  <div id="stocksLoading" class="stocks-loading">
+    <div class="loading-spinner"></div>
+    <p>正在拉取行情与历史数据，请稍候…</p>
+  </div>
+
+  <div id="stocksEmpty" class="stocks-empty" hidden>
+    <h3>暂无监控标的</h3>
+    <p>请先在投资主题详情页添加监控标的。</p>
+    <a href="{{ url_for('investments.index') }}" class="primary-btn">去添加标的</a>
+  </div>
+
+  <div id="stocksGrid" class="stocks-grid" hidden></div>
+</main>
+
+<script src="{{ url_for('static', filename='stock-charts.js') }}"></script>
+{% endblock %}

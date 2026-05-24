@@ -118,6 +118,7 @@ def init_db() -> None:
         reminded_advance_at TEXT,       -- 已发送「提前3天」提醒的日期
         reminded_day_at TEXT,           -- 已发送「当天」提醒的日期
         is_completed INTEGER DEFAULT 0, -- 0 未发生, 1 已发生
+        profit_loss REAL,               -- 该节点盈亏（可选，空则不纳入评分）
         FOREIGN KEY(theme_id) REFERENCES themes(id) ON DELETE CASCADE
     );
 
@@ -125,6 +126,26 @@ def init_db() -> None:
     CREATE TABLE IF NOT EXISTS app_settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
+    );
+
+    -- 6. 股票日 K 缓存
+    CREATE TABLE IF NOT EXISTS stock_daily_cache (
+        ticker TEXT NOT NULL,
+        bar_date TEXT NOT NULL,
+        close REAL NOT NULL,
+        PRIMARY KEY (ticker, bar_date)
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_daily_cache_meta (
+        ticker TEXT PRIMARY KEY,
+        updated_at TEXT NOT NULL
+    );
+
+    -- 7. 股票现价缓存
+    CREATE TABLE IF NOT EXISTS stock_quote_cache (
+        ticker TEXT PRIMARY KEY,
+        price REAL NOT NULL,
+        updated_at TEXT NOT NULL
     );
     """
     # 修改点 2：使用 current_app.config 替代 g.flask_app.config
@@ -244,8 +265,31 @@ def _migrate_investment_assistants(conn: sqlite3.Connection) -> None:
         )
 
 
+def _migrate_stock_daily_cache(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS stock_daily_cache (
+            ticker TEXT NOT NULL,
+            bar_date TEXT NOT NULL,
+            close REAL NOT NULL,
+            PRIMARY KEY (ticker, bar_date)
+        );
+        CREATE TABLE IF NOT EXISTS stock_daily_cache_meta (
+            ticker TEXT PRIMARY KEY,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS stock_quote_cache (
+            ticker TEXT PRIMARY KEY,
+            price REAL NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+
+
 def migrate_db(conn: sqlite3.Connection) -> None:
     _migrate_investment_assistants(conn)
+    _migrate_stock_daily_cache(conn)
     _migrate_app_settings(conn)
     _migrate_asset_price_alerts(conn)
 
@@ -259,6 +303,8 @@ def migrate_db(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE theme_milestones ADD COLUMN reminded_advance_at TEXT")
         if "reminded_day_at" not in milestone_columns:
             conn.execute("ALTER TABLE theme_milestones ADD COLUMN reminded_day_at TEXT")
+        if "profit_loss" not in milestone_columns:
+            conn.execute("ALTER TABLE theme_milestones ADD COLUMN profit_loss REAL")
 
     account_columns = {row["name"] for row in conn.execute("PRAGMA table_info(accounts)")}
     if "currency" not in account_columns:

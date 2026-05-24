@@ -3,6 +3,7 @@ import json
 import threading
 from flask import Blueprint, request, jsonify, current_app
 from app.services.feishu import get_cipher, reply_feishu_message
+from app.services.rate_limit import consume_rate_limit, get_client_ip, rate_limit_response_message
 
 bp = Blueprint('bot', __name__, url_prefix='/bot')
 
@@ -30,6 +31,11 @@ def handle_feishu_event_async(app, data):
 
 @bp.route('/callback', methods=['POST'])
 def feishu_callback():
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(f"feishu:callback:{ip}", max_calls=120, window_seconds=60)
+    if not allowed:
+        return jsonify({"message": rate_limit_response_message(retry_after)}), 429
+
     raw_data = request.json
     data = raw_data
 

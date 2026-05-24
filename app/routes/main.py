@@ -5,7 +5,14 @@ from flask import flash, redirect, render_template, request, url_for, current_ap
 from app.database import SUPPORTED_CURRENCIES
 from app.database import get_db
 from app.scheduler_setup import configure_monitor_jobs
-from app.services.settings import get_monitor_interval_minutes, set_monitor_interval_minutes
+from app.services.settings import (
+    get_history_cache_hours,
+    get_monitor_interval_minutes,
+    get_quote_cache_minutes,
+    set_history_cache_hours,
+    set_monitor_interval_minutes,
+    set_quote_cache_minutes,
+)
 from app.services.snapshot import (
     build_pie_data,
     fetch_accounts,
@@ -60,17 +67,26 @@ def create_snapshot():
 def settings():
     if request.method == "POST":
         try:
-            minutes = int(request.form.get("monitor_interval_minutes", "1"))
+            monitor_minutes = int(request.form.get("monitor_interval_minutes", "1"))
+            quote_cache_minutes = int(request.form.get("quote_cache_minutes", "5"))
+            history_cache_hours = int(request.form.get("history_cache_hours", "12"))
         except ValueError:
-            flash("监控频率必须是整数（分钟）", "error")
+            flash("配置项必须是整数", "error")
             return redirect(url_for(".settings"))
 
-        interval = set_monitor_interval_minutes(minutes)
+        interval = set_monitor_interval_minutes(monitor_minutes)
+        quote_ttl = set_quote_cache_minutes(quote_cache_minutes)
+        history_ttl = set_history_cache_hours(history_cache_hours)
         configure_monitor_jobs(current_app._get_current_object())
-        flash(f"监控频率已更新为每 {interval} 分钟检查一次", "success")
+        flash(
+            f"已保存：监控 {interval} 分钟/次，现价缓存 {quote_ttl} 分钟，历史缓存 {history_ttl} 小时",
+            "success",
+        )
         return redirect(url_for(".settings"))
 
     return render_template(
         "settings.html",
         monitor_interval_minutes=get_monitor_interval_minutes(),
+        quote_cache_minutes=get_quote_cache_minutes(),
+        history_cache_hours=get_history_cache_hours(),
     )

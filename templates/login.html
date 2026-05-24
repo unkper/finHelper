@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>登录 - FinHelper</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Asset Journal</p>
+          <h1>FinHelper</h1>
+          <p class="subtitle">请先登录后访问</p>
+        </div>
+      </header>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <section class="flash-stack">
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          </section>
+        {% endif %}
+      {% endwith %}
+
+      <section class="panel-card login-panel">
+        {% if auth_disabled %}
+        <h2>未启用访问保护</h2>
+        <p class="hint">请在 <code>.env</code> 中配置 <code>WEB_PASSWORD</code> 后重启应用。</p>
+        {% else %}
+        <h2>登录</h2>
+        <p class="hint">输入访问密码以继续使用 FinHelper。</p>
+        <form method="post" action="{{ url_for('auth.login') }}" class="login-form">
+          {% if next_url %}
+          <input type="hidden" name="next" value="{{ next_url }}">
+          {% endif %}
+          <label class="field-label" for="password">访问密码</label>
+          <input id="password" type="password" name="password" autocomplete="current-password" required autofocus>
+          <button type="submit" class="primary-btn">登录</button>
+        </form>
+        {% endif %}
+      </section>
+    </div>
+  </body>
+</html>
