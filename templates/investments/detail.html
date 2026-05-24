@@ -98,6 +98,17 @@
   .btn-icon {
     border: none; background: none; color: #de350b; cursor: pointer; font-size: 18px; padding: 0 0 8px 0;
   }
+  .asset-macd-alerts {
+    margin: 0 0 16px; padding: 12px; background: #fff; border: 1px solid #dfe1e6; border-radius: 6px;
+  }
+  .asset-macd-alerts-title { font-size: 12px; font-weight: bold; color: #172b4d; margin: 0 0 4px; }
+  .asset-macd-alerts-hint { font-size: 11px; color: #8c939f; margin: 0 0 10px; line-height: 1.4; }
+  .asset-macd-alert-options { display: flex; flex-direction: column; gap: 8px; }
+  .asset-macd-alert-option {
+    display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #172b4d; cursor: pointer;
+  }
+  .asset-macd-alert-option input { margin-top: 2px; accent-color: #0052cc; }
+  #macdAlertStatus { font-size: 11px; color: #8c939f; margin-top: 8px; min-height: 1em; }
   .modal-overlay {
     display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(9, 30, 66, 0.54); z-index: 1000; justify-content: center; align-items: center;
@@ -347,6 +358,23 @@
       <span>🎯 监控标的池</span>
       <button class="add-btn" onclick="openAddAssetModal()">+ 标的</button>
     </h3>
+    <div class="asset-macd-alerts">
+      <p class="asset-macd-alerts-title">MACD 飞书报警</p>
+      <p class="asset-macd-alerts-hint">作用于所有主题下的美股监控标的，按全局监控频率检查并推送飞书。</p>
+      <div class="asset-macd-alert-options">
+        <label class="asset-macd-alert-option" title="DIF 上穿 DEA，且均在零轴上方">
+          <input type="checkbox" id="macdAlertGolden" data-macd-alert="golden_cross_above_zero"
+            {% if macd_alerts.golden_cross_above_zero %}checked{% endif %}>
+          <span>零轴上方金叉（DIF 上穿 DEA，看涨）</span>
+        </label>
+        <label class="asset-macd-alert-option" title="DIF 下穿 DEA，且均在零轴下方">
+          <input type="checkbox" id="macdAlertDeath" data-macd-alert="death_cross_below_zero"
+            {% if macd_alerts.death_cross_below_zero %}checked{% endif %}>
+          <span>零轴下方死叉（DIF 下穿 DEA，看跌）</span>
+        </label>
+      </div>
+      <p id="macdAlertStatus"></p>
+    </div>
     <div style="margin-top: 10px;">
       {% for asset in assets %}
       <div class="asset-card">
@@ -443,6 +471,51 @@
       event.target.style.display = "none";
     }
   }
+
+  const macdAlertSettings = {
+    golden_cross_above_zero: {{ 'true' if macd_alerts.golden_cross_above_zero else 'false' }},
+    death_cross_below_zero: {{ 'true' if macd_alerts.death_cross_below_zero else 'false' }},
+  };
+  let macdAlertSaving = false;
+
+  async function saveMacdAlertSettings() {
+    if (macdAlertSaving) return;
+    macdAlertSaving = true;
+    const status = document.getElementById('macdAlertStatus');
+    if (status) status.textContent = '正在保存…';
+    try {
+      const response = await fetch('{{ url_for("investments.macd_alerts") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(macdAlertSettings),
+      });
+      if (!response.ok) throw new Error('保存失败');
+      const payload = await response.json();
+      Object.assign(macdAlertSettings, payload.macd_alerts || {});
+      document.getElementById('macdAlertGolden').checked = !!macdAlertSettings.golden_cross_above_zero;
+      document.getElementById('macdAlertDeath').checked = !!macdAlertSettings.death_cross_below_zero;
+      if (status) {
+        status.textContent = macdAlertSettings.golden_cross_above_zero || macdAlertSettings.death_cross_below_zero
+          ? '已开启，按监控频率推送飞书'
+          : '';
+      }
+    } catch (error) {
+      if (status) status.textContent = '保存失败，请重试';
+      console.error(error);
+    } finally {
+      macdAlertSaving = false;
+    }
+  }
+
+  document.querySelectorAll('[data-macd-alert]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const key = input.dataset.macdAlert;
+      if (key in macdAlertSettings) {
+        macdAlertSettings[key] = input.checked;
+        saveMacdAlertSettings();
+      }
+    });
+  });
 </script>
 
 {% endblock %}

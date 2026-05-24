@@ -10,7 +10,7 @@
       <div>
         <p class="eyebrow">Market Charts</p>
         <h2>监控标的走势</h2>
-        <p class="hint">汇总所有投资主题下的监控标的。配置 EODHD 时显示日 K 蜡烛图，否则为收盘价折线；可开关 MA / MACD / RSI(6,12,24)。开启 MACD 报警后按监控频率推送飞书。</p>
+        <p class="hint">汇总所有投资主题下的监控标的。配置 EODHD 时显示日 K 蜡烛图，否则为收盘价折线；可开关 MA / MACD / RSI(6,12,24)。</p>
         <p class="hint" id="chartModeHint"></p>
       </div>
       <div class="stocks-hero-actions">
@@ -38,16 +38,6 @@
       <label class="indicator-toggle"><input type="checkbox" data-indicator="rsi6"> RSI6</label>
       <label class="indicator-toggle"><input type="checkbox" data-indicator="rsi12"> RSI12</label>
       <label class="indicator-toggle"><input type="checkbox" data-indicator="rsi24"> RSI24</label>
-    </div>
-    <div class="indicator-toggles macd-alert-toggles" role="group" aria-label="MACD飞书报警">
-      <span class="indicator-toggles-label">MACD 报警</span>
-      <label class="indicator-toggle" title="DIF 上穿 DEA，且均在零轴上方">
-        <input type="checkbox" id="macdAlertGolden" data-macd-alert="golden_cross_above_zero"> 零轴上方金叉
-      </label>
-      <label class="indicator-toggle" title="DIF 下穿 DEA，且均在零轴下方">
-        <input type="checkbox" id="macdAlertDeath" data-macd-alert="death_cross_below_zero"> 零轴下方死叉
-      </label>
-      <span class="macd-alert-hint" id="macdAlertHint">开启后按监控频率推送飞书</span>
     </div>
   </section>
 

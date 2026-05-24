@@ -43,8 +43,7 @@ def build_stock_chart_payload(force_refresh: bool = False) -> Dict[str, Any]:
                 "ticker_count": 0,
                 "theme_link_count": 0,
                 "eodhd_configured": eodhd.has_api_key(),
-            },
-            "macd_alerts": get_macd_alert_settings(),
+            }
         }
 
     us_tickers = [item["ticker"] for item in assets if item["exchange"] == "US"]

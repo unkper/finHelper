@@ -56,8 +56,8 @@ def stocks_chart_data():
     return jsonify(build_stock_chart_payload(force_refresh=force_refresh))
 
 
-@bp.route('/stocks/api/macd-alerts', methods=['POST'])
-def stocks_macd_alerts():
+@bp.route('/api/macd-alerts', methods=['POST'])
+def macd_alerts():
     data = request.get_json(silent=True) or {}
     golden = bool(data.get("golden_cross_above_zero"))
     death = bool(data.get("death_cross_below_zero"))
@@ -86,7 +86,8 @@ def detail(theme_id):
         assistants=fetch_all_assistants(),
         articles=details['articles'],
         assets=details['assets'],
-        milestones=details['milestones']
+        milestones=details['milestones'],
+        macd_alerts=get_macd_alert_settings(),
     )
 
 

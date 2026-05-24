@@ -35,11 +35,6 @@
   }
 
   let indicatorSettings = loadIndicatorSettings();
-  let macdAlertSettings = {
-    golden_cross_above_zero: false,
-    death_cross_below_zero: false,
-  };
-  let macdAlertSaving = false;
 
   function buildMacdSignalTags(macd) {
     if (!macd || !macd.ready) return "";
@@ -50,45 +45,6 @@
       const cls = item.type === "golden_cross_above_zero" ? "golden" : "death";
       return `<span class="macd-signal-tag ${cls}">${item.label}${dateNote}</span>`;
     }).join("");
-  }
-
-  function syncMacdAlertToolbar() {
-    const golden = document.getElementById("macdAlertGolden");
-    const death = document.getElementById("macdAlertDeath");
-    if (golden) golden.checked = !!macdAlertSettings.golden_cross_above_zero;
-    if (death) death.checked = !!macdAlertSettings.death_cross_below_zero;
-  }
-
-  async function saveMacdAlertSettings() {
-    if (macdAlertSaving) return;
-    macdAlertSaving = true;
-    const hint = document.getElementById("macdAlertHint");
-    const prevHint = hint ? hint.textContent : "";
-    if (hint) hint.textContent = "正在保存…";
-    try {
-      const response = await fetch("/investments/stocks/api/macd-alerts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(macdAlertSettings),
-      });
-      if (!response.ok) throw new Error("保存失败");
-      const payload = await response.json();
-      macdAlertSettings = payload.macd_alerts || macdAlertSettings;
-      syncMacdAlertToolbar();
-      if (hint) {
-        hint.textContent = macdAlertSettings.golden_cross_above_zero || macdAlertSettings.death_cross_below_zero
-          ? "已开启，按监控频率推送飞书"
-          : "开启后按监控频率推送飞书";
-      }
-    } catch (error) {
-      if (hint) hint.textContent = "保存失败，请重试";
-      console.error(error);
-    } finally {
-      macdAlertSaving = false;
-      if (hint && hint.textContent === "正在保存…") {
-        hint.textContent = prevHint;
-      }
-    }
   }
 
   function saveIndicatorSettings() {
@@ -561,11 +517,6 @@
 
     loading.hidden = true;
 
-    if (payload.macd_alerts) {
-      macdAlertSettings = payload.macd_alerts;
-      syncMacdAlertToolbar();
-    }
-
     if (!payload.assets || !payload.assets.length) {
       empty.hidden = false;
       grid.hidden = true;
@@ -635,7 +586,6 @@
     if (!document.querySelector(".stocks-page")) return;
 
     syncIndicatorToolbar();
-    syncMacdAlertToolbar();
 
     document.querySelectorAll("[data-indicator]").forEach((input) => {
       input.addEventListener("change", () => {
@@ -643,16 +593,6 @@
         indicatorSettings[key] = input.checked;
         saveIndicatorSettings();
         remountAllCharts();
-      });
-    });
-
-    document.querySelectorAll("[data-macd-alert]").forEach((input) => {
-      input.addEventListener("change", () => {
-        const key = input.dataset.macdAlert;
-        if (key in macdAlertSettings) {
-          macdAlertSettings[key] = input.checked;
-          saveMacdAlertSettings();
-        }
       });
     });
 
