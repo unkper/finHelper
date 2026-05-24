@@ -8,14 +8,27 @@
     ma10: true,
     ma20: true,
     macd: false,
-    rsi: false,
+    rsi6: false,
+    rsi12: false,
+    rsi24: false,
   };
+
+  function hasAnyRsi(settings) {
+    return settings.rsi6 || settings.rsi12 || settings.rsi24;
+  }
 
   function loadIndicatorSettings() {
     try {
       const raw = localStorage.getItem(INDICATOR_STORAGE_KEY);
       if (!raw) return { ...defaultIndicators };
-      return { ...defaultIndicators, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw);
+      if (parsed.rsi === true) {
+        parsed.rsi6 = parsed.rsi6 ?? true;
+        parsed.rsi12 = parsed.rsi12 ?? true;
+        parsed.rsi24 = parsed.rsi24 ?? true;
+      }
+      delete parsed.rsi;
+      return { ...defaultIndicators, ...parsed };
     } catch (e) {
       return { ...defaultIndicators };
     }
@@ -132,29 +145,30 @@
     return { macdLine, signalLine, histogram };
   }
 
-  function calcRsi(closes, period) {
-    const out = [];
-    if (closes.length < period + 1) {
-      return closes.map(() => null);
+  /** Wilder 平滑 RSI（与通达信/同花顺默认算法一致） */
+  function calcRsiWilder(closes, period) {
+    const out = new Array(closes.length).fill(null);
+    if (closes.length <= period) return out;
+
+    let avgGain = 0;
+    let avgLoss = 0;
+    for (let i = 1; i <= period; i += 1) {
+      const change = closes[i] - closes[i - 1];
+      avgGain += change > 0 ? change : 0;
+      avgLoss += change < 0 ? -change : 0;
     }
-    for (let i = 0; i < closes.length; i += 1) {
-      if (i < period) {
-        out.push(null);
-        continue;
-      }
-      let gains = 0;
-      let losses = 0;
-      for (let j = i - period + 1; j <= i; j += 1) {
-        const change = closes[j] - closes[j - 1];
-        if (change >= 0) gains += change;
-        else losses -= change;
-      }
-      if (losses === 0) {
-        out.push(100);
-      } else {
-        const rs = gains / losses;
-        out.push(100 - 100 / (1 + rs));
-      }
+    avgGain /= period;
+    avgLoss /= period;
+
+    out[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+
+    for (let i = period + 1; i < closes.length; i += 1) {
+      const change = closes[i] - closes[i - 1];
+      const gain = change > 0 ? change : 0;
+      const loss = change < 0 ? -change : 0;
+      avgGain = (avgGain * (period - 1) + gain) / period;
+      avgLoss = (avgLoss * (period - 1) + loss) / period;
+      out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
     }
     return out;
   }
@@ -175,7 +189,7 @@
 
   function buildChartLayout(settings) {
     const showMacd = settings.macd;
-    const showRsi = settings.rsi;
+    const showRsi = hasAnyRsi(settings);
     const grids = [{ left: 52, right: 20, top: 28, height: showMacd || showRsi ? "52%" : "72%" }];
     const xAxes = [{ type: "category", gridIndex: 0, boundaryGap: true, axisLabel: { color: "#75614d" } }];
     const yAxes = [{
@@ -320,21 +334,31 @@
     }
 
     if (layout.showRsi) {
-      series.push({
-        name: "RSI",
-        type: "line",
-        xAxisIndex: subAxisIndex,
-        yAxisIndex: subAxisIndex,
-        data: calcRsi(closes, 14),
-        symbol: "none",
-        lineStyle: { width: 1.2, color: "#8c6b4f" },
-        markLine: {
+      const rsiConfigs = [
+        { key: "rsi6", period: 6, color: "#d76636", label: "RSI(6)" },
+        { key: "rsi12", period: 12, color: "#3957b8", label: "RSI(12)" },
+        { key: "rsi24", period: 24, color: "#1f6f5f", label: "RSI(24)" },
+      ];
+      let firstRsi = true;
+      rsiConfigs.forEach(({ key, period, color, label }) => {
+        if (!settings[key]) return;
+        series.push({
+          name: label,
+          type: "line",
+          xAxisIndex: subAxisIndex,
+          yAxisIndex: subAxisIndex,
+          data: calcRsiWilder(closes, period),
           symbol: "none",
-          data: [
-            { yAxis: 70, lineStyle: { type: "dashed", color: "#d76636", opacity: 0.5 } },
-            { yAxis: 30, lineStyle: { type: "dashed", color: "#1f6f5f", opacity: 0.5 } },
-          ],
-        },
+          lineStyle: { width: 1.2, color },
+          markLine: firstRsi ? {
+            symbol: "none",
+            data: [
+              { yAxis: 70, lineStyle: { type: "dashed", color: "rgba(215,102,54,0.45)" } },
+              { yAxis: 30, lineStyle: { type: "dashed", color: "rgba(31,111,95,0.45)" } },
+            ],
+          } : undefined,
+        });
+        firstRsi = false;
       });
     }
 
@@ -361,9 +385,10 @@
               );
             } else if (item.data != null && item.seriesName !== "MACD") {
               const val = Number(item.data);
-              const prefix = item.seriesName === "RSI" ? "" : "$";
-              const suffix = item.seriesName === "RSI" ? "" : "";
-              lines.push(`${item.seriesName}: ${prefix}${val.toFixed(2)}${suffix}`);
+              const isRsi = String(item.seriesName).startsWith("RSI");
+              lines.push(
+                `${item.seriesName}: ${isRsi ? val.toFixed(2) : "$" + val.toFixed(2)}`
+              );
             }
           });
           return lines.join("<br/>");
@@ -435,7 +460,7 @@
       existing.dispose();
     }
 
-    const chartHeight = indicatorSettings.macd || indicatorSettings.rsi ? 360 : 300;
+    const chartHeight = indicatorSettings.macd || hasAnyRsi(indicatorSettings) ? 360 : 300;
     dom.style.height = `${chartHeight}px`;
 
     const chart = echarts.init(dom);
