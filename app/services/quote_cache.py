@@ -109,13 +109,21 @@ def read_cached_daily_series(ticker: str, *, allow_stale: bool = False) -> List[
 
     rows = db.execute(
         """
-        SELECT bar_date, close FROM stock_daily_cache
+        SELECT bar_date, open, high, low, close FROM stock_daily_cache
         WHERE ticker = ?
         ORDER BY bar_date ASC
         """,
         (ticker,),
     ).fetchall()
-    return [{"date": row["bar_date"], "close": row["close"]} for row in rows]
+    series = []
+    for row in rows:
+        point = {"date": row["bar_date"], "close": row["close"]}
+        if row["open"] is not None and row["high"] is not None and row["low"] is not None:
+            point["open"] = row["open"]
+            point["high"] = row["high"]
+            point["low"] = row["low"]
+        series.append(point)
+    return series
 
 
 def write_cached_daily_series(ticker: str, series: List[Dict]) -> None:
@@ -127,10 +135,17 @@ def write_cached_daily_series(ticker: str, series: List[Dict]) -> None:
     for point in series:
         db.execute(
             """
-            INSERT INTO stock_daily_cache (ticker, bar_date, close)
-            VALUES (?, ?, ?)
+            INSERT INTO stock_daily_cache (ticker, bar_date, open, high, low, close)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (ticker, point["date"], point["close"]),
+            (
+                ticker,
+                point["date"],
+                point.get("open"),
+                point.get("high"),
+                point.get("low"),
+                point["close"],
+            ),
         )
     db.execute(
         """

@@ -40,6 +40,54 @@
 .stocks-toolbar {
   padding-top: 16px;
   padding-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 20px;
+}
+
+.indicator-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.indicator-toggles-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.indicator-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.indicator-toggle input {
+  accent-color: var(--accent);
+}
+
+.chart-type-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  vertical-align: middle;
+}
+
+.chart-type-tag.muted {
+  background: rgba(47, 36, 25, 0.06);
+  color: var(--muted);
 }
 
 .stocks-search {
@@ -186,7 +234,8 @@
 
 .stock-chart-canvas {
   width: 100%;
-  height: 280px;
+  height: 300px;
+  min-height: 280px;
 }
 
 .stock-chart-empty-note {

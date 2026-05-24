@@ -103,8 +103,17 @@ def fetch_us_daily_series(ticker: str) -> List[Dict[str, float | str]]:
             continue
         bar_date = bar.get("date")
         close = parse_price(bar.get("adjusted_close")) or parse_price(bar.get("close"))
-        if bar_date and close is not None:
-            points.append({"date": bar_date, "close": close})
+        open_ = parse_price(bar.get("open"))
+        high = parse_price(bar.get("high"))
+        low = parse_price(bar.get("low"))
+        if not bar_date or close is None:
+            continue
+        point = {"date": bar_date, "close": close}
+        if open_ is not None and high is not None and low is not None:
+            point["open"] = open_
+            point["high"] = high
+            point["low"] = low
+        points.append(point)
     points.sort(key=lambda item: item["date"])
     return points[-120:]
 

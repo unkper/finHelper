@@ -3,8 +3,23 @@ from typing import Any, Dict, List
 
 from app.services.investment import fetch_tracked_assets_overview
 from app.services.quote_cache import invalidate_daily_cache, invalidate_quote_cache
+from app.services.quote_providers import eodhd
 from app.services.quotes import fetch_us_quotes
 from app.services.stock_history import fetch_daily_series_batch
+
+
+def _series_has_ohlc(series: List[Dict[str, Any]]) -> bool:
+    """EODHD 日 K 含 open/high/low 时可绘制蜡烛图。"""
+    if len(series) < 2:
+        return False
+    for point in series:
+        if (
+            point.get("open") is None
+            or point.get("high") is None
+            or point.get("low") is None
+        ):
+            return False
+    return True
 
 
 def _calc_change_pct(series: List[Dict[str, Any]]) -> float | None:
@@ -20,7 +35,14 @@ def _calc_change_pct(series: List[Dict[str, Any]]) -> float | None:
 def build_stock_chart_payload(force_refresh: bool = False) -> Dict[str, Any]:
     assets = fetch_tracked_assets_overview()
     if not assets:
-        return {"assets": [], "summary": {"ticker_count": 0, "theme_link_count": 0}}
+        return {
+            "assets": [],
+            "summary": {
+                "ticker_count": 0,
+                "theme_link_count": 0,
+                "eodhd_configured": eodhd.has_api_key(),
+            },
+        }
 
     us_tickers = [item["ticker"] for item in assets if item["exchange"] == "US"]
     if force_refresh and us_tickers:
@@ -46,6 +68,7 @@ def build_stock_chart_payload(force_refresh: bool = False) -> Dict[str, Any]:
             current_price = series[-1]["close"]
 
         theme_link_count += len(item["themes"])
+        use_candlestick = _series_has_ohlc(series)
         payload_assets.append({
             "ticker": ticker,
             "exchange": item["exchange"],
@@ -54,6 +77,7 @@ def build_stock_chart_payload(force_refresh: bool = False) -> Dict[str, Any]:
             "themes": item["themes"],
             "alerts": item["alerts"],
             "series": series,
+            "chart_type": "candlestick" if use_candlestick else "line",
         })
 
     payload_assets.sort(key=lambda row: row["ticker"])
@@ -62,5 +86,6 @@ def build_stock_chart_payload(force_refresh: bool = False) -> Dict[str, Any]:
         "summary": {
             "ticker_count": len(payload_assets),
             "theme_link_count": theme_link_count,
+            "eodhd_configured": eodhd.has_api_key(),
         },
     }

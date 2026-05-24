@@ -10,7 +10,8 @@
       <div>
         <p class="eyebrow">Market Charts</p>
         <h2>监控标的走势</h2>
-        <p class="hint">汇总所有投资主题下的股票标的，使用 ECharts 绘制日 K 收盘价走势，并标注价格提醒位。</p>
+        <p class="hint">汇总所有投资主题下的监控标的。配置 EODHD 时显示日 K 蜡烛图，否则为收盘价折线；可开关 MA / MACD / RSI。</p>
+        <p class="hint" id="chartModeHint"></p>
       </div>
       <div class="stocks-hero-actions">
         <a href="{{ url_for('investments.index') }}" class="secondary-btn">← 返回主题列表</a>
@@ -28,6 +29,14 @@
       <span>筛选标的</span>
       <input type="search" id="tickerFilter" placeholder="输入代码，如 AAPL">
     </label>
+    <div class="indicator-toggles" role="group" aria-label="技术指标">
+      <span class="indicator-toggles-label">指标</span>
+      <label class="indicator-toggle"><input type="checkbox" data-indicator="ma5" checked> MA5</label>
+      <label class="indicator-toggle"><input type="checkbox" data-indicator="ma10" checked> MA10</label>
+      <label class="indicator-toggle"><input type="checkbox" data-indicator="ma20" checked> MA20</label>
+      <label class="indicator-toggle"><input type="checkbox" data-indicator="macd"> MACD</label>
+      <label class="indicator-toggle"><input type="checkbox" data-indicator="rsi"> RSI</label>
+    </div>
   </section>
 
   <div id="stocksLoading" class="stocks-loading">

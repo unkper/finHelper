@@ -310,6 +310,15 @@ def migrate_db(conn: sqlite3.Connection) -> None:
     if "currency" not in account_columns:
         conn.execute("ALTER TABLE accounts ADD COLUMN currency TEXT NOT NULL DEFAULT 'CNY'")
 
+    daily_columns = {row["name"] for row in conn.execute("PRAGMA table_info(stock_daily_cache)")}
+    if daily_columns:
+        if "open" not in daily_columns:
+            conn.execute("ALTER TABLE stock_daily_cache ADD COLUMN open REAL")
+        if "high" not in daily_columns:
+            conn.execute("ALTER TABLE stock_daily_cache ADD COLUMN high REAL")
+        if "low" not in daily_columns:
+            conn.execute("ALTER TABLE stock_daily_cache ADD COLUMN low REAL")
+
     entry_columns = {row["name"] for row in conn.execute("PRAGMA table_info(snapshot_entries)")}
     if "amount" in entry_columns:
         return
