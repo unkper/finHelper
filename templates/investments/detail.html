@@ -69,10 +69,83 @@
   .danger-btn:hover { background: #ffebe6; }
 
   /* 文章列表样式 */
-  .article-item { padding: 12px 0; border-bottom: 1px dashed #e1e4e8; }
-  .article-item a { color: #0052cc; text-decoration: none; font-weight: 500; font-size: 14px;}
-  .article-item p { font-size: 12px; color: #5e6c84; margin: 4px 0 0 0; }
+  .articles-panel-body {
+    margin-top: 10px;
+    max-height: 420px;
+    overflow-y: auto;
+  }
+  .article-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 0;
+    border-bottom: 1px dashed #e1e4e8;
+  }
+  .article-item:last-child { border-bottom: none; }
   .article-item-body { flex: 1; min-width: 0; }
+  .article-item-title {
+    color: #0052cc;
+    font-weight: 500;
+    font-size: 14px;
+    line-height: 1.4;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+  .article-item-title:hover { text-decoration: underline; }
+  .article-item-title.is-link {
+    display: inline;
+    text-decoration: none;
+  }
+  .article-item-title.is-link:hover { text-decoration: underline; }
+  .article-summary-preview {
+    font-size: 12px;
+    color: #5e6c84;
+    margin: 6px 0 0;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: pre-wrap;
+  }
+  .article-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .modal-content.modal-article { width: min(640px, 92vw); max-height: 85vh; display: flex; flex-direction: column; }
+  .article-detail-title {
+    margin: 0 48px 12px 0;
+    font-size: 18px;
+    line-height: 1.4;
+    color: #172b4d;
+  }
+  .article-detail-meta { margin-bottom: 16px; }
+  .article-detail-link {
+    font-size: 13px;
+    color: #0052cc;
+    word-break: break-all;
+  }
+  .article-detail-body {
+    flex: 1;
+    overflow-y: auto;
+    font-size: 14px;
+    line-height: 1.65;
+    color: #172b4d;
+    white-space: pre-wrap;
+    margin: 0;
+  }
+  .article-detail-empty {
+    font-size: 13px;
+    color: #8c939f;
+    margin: 0;
+  }
 
   /* 资产监控池样式 */
   .asset-card {
@@ -217,6 +290,18 @@
   </div>
 </div>
 
+<div id="articleDetailModal" class="modal-overlay">
+  <div class="modal-content modal-article">
+    <button class="modal-close" onclick="document.getElementById('articleDetailModal').style.display='none'">✕</button>
+    <h3 class="article-detail-title" id="articleDetailTitle"></h3>
+    <div class="article-detail-meta" id="articleDetailMeta" hidden>
+      <a id="articleDetailLink" class="article-detail-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+    </div>
+    <p class="article-detail-body" id="articleDetailSummary"></p>
+    <p class="article-detail-empty" id="articleDetailEmpty" hidden>暂无摘要内容</p>
+  </div>
+</div>
+
 <div id="addAssetModal" class="modal-overlay">
   <div class="modal-content modal-wide">
     <button class="modal-close" onclick="document.getElementById('addAssetModal').style.display='none'">✕</button>
@@ -332,20 +417,31 @@
       <span>📚 研报 & 资讯</span>
       <button class="add-btn" onclick="document.getElementById('addArticleModal').style.display='flex'">+ 文章</button>
     </h3>
-    <div style="margin-top: 10px;">
+    <div class="articles-panel-body">
       {% for article in articles %}
-      <div class="article-item item-row-header">
+      <div class="article-item">
         <div class="article-item-body">
-          {% if article.url %}
-          <a href="{{ article.url }}" target="_blank">{{ article.title }}</a>
+          {% if article.summary %}
+          <button type="button" class="article-item-title"
+            onclick="openArticleDetailModal({{ article.id }})">{{ article.title }}</button>
+          {% elif article.url %}
+          <a href="{{ article.url }}" class="article-item-title is-link" target="_blank" rel="noopener noreferrer">{{ article.title }}</a>
           {% else %}
-          <span style="color: #0052cc; font-weight: 500; font-size: 14px;">{{ article.title }}</span>
+          <span class="article-item-title" style="cursor: default; color: #172b4d;">{{ article.title }}</span>
           {% endif %}
           {% if article.summary %}
-          <p>{{ article.summary }}</p>
+          <p class="article-summary-preview">{{ article.summary }}</p>
+          <button type="button" class="btn-link" onclick="openArticleDetailModal({{ article.id }})">查看详情</button>
           {% endif %}
         </div>
-        {{ delete_button(url_for('investments.delete_article', theme_id=theme.id, article_id=article.id), '确定删除此文章？') }}
+        <div class="article-item-actions">
+          {{ delete_button(url_for('investments.delete_article', theme_id=theme.id, article_id=article.id), '确定删除此文章？') }}
+        </div>
+        <div id="article-source-{{ article.id }}" hidden>
+          <span class="article-source-title">{{ article.title }}</span>
+          <span class="article-source-url">{{ article.url or '' }}</span>
+          <span class="article-source-summary">{{ article.summary or '' }}</span>
+        </div>
       </div>
       {% else %}
       <p style="font-size: 13px; color: #8c939f;">暂无关联资料。</p>
@@ -453,6 +549,40 @@
     addPriceAlertRow();
     addPriceAlertRow();
     document.getElementById('addAssetModal').style.display = 'flex';
+  }
+
+  function openArticleDetailModal(articleId) {
+    const source = document.getElementById('article-source-' + articleId);
+    if (!source) return;
+
+    const title = source.querySelector('.article-source-title')?.textContent || '';
+    const url = source.querySelector('.article-source-url')?.textContent || '';
+    const summary = source.querySelector('.article-source-summary')?.textContent || '';
+
+    document.getElementById('articleDetailTitle').textContent = title;
+
+    const meta = document.getElementById('articleDetailMeta');
+    const link = document.getElementById('articleDetailLink');
+    if (url) {
+      link.href = url;
+      link.textContent = url;
+      meta.hidden = false;
+    } else {
+      meta.hidden = true;
+    }
+
+    const summaryEl = document.getElementById('articleDetailSummary');
+    const emptyEl = document.getElementById('articleDetailEmpty');
+    if (summary.trim()) {
+      summaryEl.textContent = summary;
+      summaryEl.hidden = false;
+      emptyEl.hidden = true;
+    } else {
+      summaryEl.hidden = true;
+      emptyEl.hidden = false;
+    }
+
+    document.getElementById('articleDetailModal').style.display = 'flex';
   }
 
   function openEditMilestoneModal(button) {
