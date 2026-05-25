@@ -4,6 +4,7 @@ from flask import current_app
 
 from app.database import get_db
 from app.services.feishu import push_feishu_message
+from app.services.quotes import fetch_us_quotes
 
 
 def _mark_reminded(db, milestone_id: int, field: str) -> None:
@@ -15,8 +16,46 @@ def _mark_reminded(db, milestone_id: int, field: str) -> None:
     )
 
 
+def _milestone_range_label(event_date: str, end_date: str | None, today_str: str) -> str:
+    end = end_date or event_date
+    if event_date == end:
+        if today_str == event_date:
+            return "【就是今天】"
+        return f"【提醒期内 {today_str}】"
+    return f"【提醒期内 {today_str}】{event_date} ~ {end} "
+
+
+def _fetch_milestone_sync_assets(db, theme_id: int, milestone_id: int) -> list:
+    rows = db.execute(
+        """
+        SELECT s.ticker, s.exchange
+        FROM theme_asset_price_alerts a
+        JOIN theme_assets s ON a.asset_id = s.id
+        WHERE s.theme_id = ?
+          AND a.alert_type = 'milestone'
+          AND s.exchange = 'US'
+          AND (a.milestone_id = ? OR a.milestone_id IS NULL)
+        ORDER BY s.ticker
+        """,
+        (theme_id, milestone_id),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _build_theme_stock_lines(assets: list, quotes: dict) -> list[str]:
+    lines = []
+    for asset in assets:
+        ticker = asset["ticker"].upper()
+        price = quotes.get(ticker)
+        if price is None:
+            lines.append(f"  · {ticker}：现价不可用")
+        else:
+            lines.append(f"  · {ticker}：${price:.2f}")
+    return lines
+
+
 def check_upcoming_milestones():
-    """在节点设定的日期/时刻，通过飞书推送时间线提醒（当天 + 提前3天）。"""
+    """在节点时间范围内按设定时刻推送飞书提醒（每天一次）；开始日前 3 天额外提醒。"""
     db = get_db()
     today = date.today()
     today_str = today.isoformat()
@@ -25,21 +64,22 @@ def check_upcoming_milestones():
 
     day_rows = db.execute(
         """
-        SELECT m.id, m.event_date, m.description, m.reminder_time,
+        SELECT m.id, m.theme_id, m.event_date, m.end_date, m.description, m.reminder_time,
                t.title AS theme_title
         FROM theme_milestones m
         JOIN themes t ON m.theme_id = t.id
         WHERE m.is_completed = 0
-          AND m.event_date = ?
+          AND ? >= m.event_date
+          AND ? <= COALESCE(m.end_date, m.event_date)
           AND m.reminder_time = ?
           AND (m.reminded_day_at IS NULL OR m.reminded_day_at != ?)
         """,
-        (today_str, now_time, today_str),
+        (today_str, today_str, now_time, today_str),
     ).fetchall()
 
     advance_rows = db.execute(
         """
-        SELECT m.id, m.event_date, m.description, m.reminder_time,
+        SELECT m.id, m.theme_id, m.event_date, m.end_date, m.description, m.reminder_time,
                t.title AS theme_title
         FROM theme_milestones m
         JOIN themes t ON m.theme_id = t.id
@@ -55,21 +95,60 @@ def check_upcoming_milestones():
         return
 
     messages = []
+
     for row in advance_rows:
+        end = row["end_date"] or row["event_date"]
+        range_hint = f"（提醒期 {row['event_date']} ~ {end}）" if end != row["event_date"] else ""
         messages.append(
             f"📌 主题：{row['theme_title']}\n"
-            f"⏱️ 节点：【还有 3 天】{row['event_date']} {row['reminder_time']}\n"
+            f"⏱️ 节点：【还有 3 天】{row['event_date']} {row['reminder_time']}{range_hint}\n"
             f"📝 描述：{row['description']}"
         )
         _mark_reminded(db, row["id"], "reminded_advance_at")
 
+    all_tickers: set[str] = set()
     for row in day_rows:
+        for asset in _fetch_milestone_sync_assets(db, row["theme_id"], row["id"]):
+            all_tickers.add(asset["ticker"].upper())
+    quotes = fetch_us_quotes(sorted(all_tickers)) if all_tickers else {}
+
+    for row in day_rows:
+        label = _milestone_range_label(row["event_date"], row["end_date"], today_str)
         messages.append(
             f"📌 主题：{row['theme_title']}\n"
-            f"⏱️ 节点：【就是今天】{row['event_date']} {row['reminder_time']}\n"
+            f"⏱️ 节点：{label}{row['event_date']} {row['reminder_time']}\n"
             f"📝 描述：{row['description']}"
         )
         _mark_reminded(db, row["id"], "reminded_day_at")
+
+        assets = _fetch_milestone_sync_assets(db, row["theme_id"], row["id"])
+        if assets:
+            stock_lines = _build_theme_stock_lines(assets, quotes)
+            if stock_lines:
+                desc_short = row["description"]
+                if len(desc_short) > 24:
+                    desc_short = desc_short[:24] + "…"
+                messages.append(
+                    f"📌 主题：{row['theme_title']}\n"
+                    f"📈 随节点标的行情 · {desc_short}（{today_str} {now_time}）\n"
+                    + "\n".join(stock_lines)
+                )
+            now_iso = datetime.now().isoformat(timespec="seconds")
+            db.execute(
+                """
+                UPDATE theme_asset_price_alerts
+                SET last_triggered_at = ?
+                WHERE alert_type = 'milestone'
+                  AND (milestone_id = ? OR milestone_id IS NULL)
+                  AND asset_id IN (
+                    SELECT id FROM theme_assets WHERE theme_id = ?
+                  )
+                """,
+                (now_iso, row["id"], row["theme_id"]),
+            )
+
+    if not messages:
+        return
 
     db.commit()
 

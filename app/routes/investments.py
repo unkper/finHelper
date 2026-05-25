@@ -1,11 +1,13 @@
 # app/routes/investments.py
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, current_app
+from app.database import get_db
 from app.services.investment import (
     fetch_assistants_with_themes, fetch_all_assistants, fetch_theme_by_id,
     fetch_theme_details, fetch_theme_score, create_theme, create_assistant,
     move_theme_to_assistant, delete_theme,
     add_theme_asset, add_theme_milestone, update_theme_milestone, add_theme_article,
     delete_theme_milestone, delete_theme_asset, delete_theme_article,
+    build_milestone_index,
 )
 from app.services.settings import (
     get_macd_alert_settings,
@@ -79,6 +81,8 @@ def detail(theme_id):
 
     details = fetch_theme_details(theme_id)
     theme_score = fetch_theme_score(theme_id)
+    milestones = details["milestones"]
+    milestone_index = build_milestone_index(milestones)
     return render_template(
         "investments/detail.html",
         theme=theme,
@@ -86,7 +90,8 @@ def detail(theme_id):
         assistants=fetch_all_assistants(),
         articles=details['articles'],
         assets=details['assets'],
-        milestones=details['milestones'],
+        milestones=milestones,
+        milestone_index=milestone_index,
         macd_alerts=get_macd_alert_settings(),
     )
 
@@ -157,6 +162,47 @@ def _parse_price_alerts_from_form():
     return alerts
 
 
+def _parse_milestone_dates(event_date: str, end_date_raw: str | None):
+    """解析节点起止日期，默认同一天。"""
+    if not event_date:
+        raise ValueError("开始日期不能为空")
+    end_date = (end_date_raw or event_date).strip() or event_date
+    if end_date < event_date:
+        raise ValueError("结束日期不能早于开始日期")
+    return event_date, end_date
+
+
+def _parse_milestone_ids_from_form(theme_id: int) -> list[int]:
+    """解析表单中选中的时间节点 ID，并校验归属当前主题。"""
+    raw_ids = request.form.getlist("milestone_ids")
+    milestone_ids: list[int] = []
+    for raw in raw_ids:
+        raw = (raw or "").strip()
+        if not raw:
+            continue
+        try:
+            milestone_ids.append(int(raw))
+        except ValueError:
+            raise ValueError("时间节点选择无效")
+    if not milestone_ids:
+        return []
+
+    db = get_db()
+    placeholders = ",".join("?" * len(milestone_ids))
+    rows = db.execute(
+        f"""
+        SELECT id FROM theme_milestones
+        WHERE theme_id = ? AND id IN ({placeholders})
+        """,
+        (theme_id, *milestone_ids),
+    ).fetchall()
+    found = {row["id"] for row in rows}
+    missing = set(milestone_ids) - found
+    if missing:
+        raise ValueError("所选时间节点不存在或不属于当前主题")
+    return milestone_ids
+
+
 @bp.route('/<int:theme_id>/add_asset', methods=['POST'])
 def add_asset(theme_id):
     ticker = request.form.get('ticker', '').upper().strip()
@@ -172,16 +218,25 @@ def add_asset(theme_id):
 
     try:
         price_alerts = _parse_price_alerts_from_form()
+        milestone_ids = _parse_milestone_ids_from_form(theme_id)
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for('investments.detail', theme_id=theme_id))
 
-    if not price_alerts:
-        flash("请至少添加一条价格提醒", "error")
+    if not price_alerts and not milestone_ids:
+        flash("请至少添加一条价位提醒，或选择要随节点提醒的时间点", "error")
         return redirect(url_for('investments.detail', theme_id=theme_id))
 
-    add_theme_asset(theme_id, ticker, exchange, price_alerts)
-    flash(f"已添加监控标的 {ticker}，共 {len(price_alerts)} 条价格提醒", "success")
+    add_theme_asset(theme_id, ticker, exchange, price_alerts, milestone_ids)
+    parts = []
+    if price_alerts:
+        parts.append(f"{len(price_alerts)} 条价位提醒")
+    if milestone_ids:
+        details = fetch_theme_details(theme_id)
+        idx = build_milestone_index(details["milestones"])
+        labels = [f"#{idx[mid]}" for mid in milestone_ids if mid in idx]
+        parts.append(f"随 {'、'.join(labels)} 节点提醒" if labels else f"随 {len(milestone_ids)} 个节点提醒")
+    flash(f"已添加监控标的 {ticker}（{'、'.join(parts)}）", "success")
     return redirect(url_for('investments.detail', theme_id=theme_id))
 
 
@@ -226,13 +281,18 @@ def add_milestone(theme_id):
 
     try:
         profit_loss = _parse_profit_loss(request.form.get('profit_loss'))
+        event_date, end_date = _parse_milestone_dates(
+            event_date,
+            request.form.get('end_date'),
+        )
     except ValueError as exc:
         flash(str(exc), "error")
         return redirect(url_for('investments.detail', theme_id=theme_id))
 
-    add_theme_milestone(theme_id, event_date, description, reminder_time, profit_loss)
+    add_theme_milestone(theme_id, event_date, description, reminder_time, profit_loss, end_date)
+    range_hint = f"{event_date} ~ {end_date}" if end_date != event_date else event_date
     score_hint = f"，盈亏 {profit_loss:+.2f}" if profit_loss is not None else ""
-    flash(f"时间线节点已添加，将于 {event_date} {reminder_time} 飞书提醒{score_hint}", "success")
+    flash(f"时间线节点已添加，将于 {range_hint} 每日 {reminder_time} 飞书提醒{score_hint}", "success")
     return redirect(url_for('investments.detail', theme_id=theme_id))
 
 
@@ -249,6 +309,10 @@ def edit_milestone(theme_id, milestone_id):
 
     try:
         profit_loss = _parse_profit_loss(request.form.get('profit_loss'))
+        event_date, end_date = _parse_milestone_dates(
+            event_date,
+            request.form.get('end_date'),
+        )
     except ValueError as exc:
         flash(str(exc), "error")
         return redirect(url_for('investments.detail', theme_id=theme_id))
@@ -261,6 +325,7 @@ def edit_milestone(theme_id, milestone_id):
         reminder_time,
         profit_loss,
         is_completed,
+        end_date,
     ):
         flash("时间线节点已更新", "success")
     else:

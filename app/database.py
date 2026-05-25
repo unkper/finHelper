@@ -103,9 +103,12 @@ def init_db() -> None:
         asset_id INTEGER NOT NULL,
         target_price REAL NOT NULL,
         direction TEXT NOT NULL DEFAULT 'below', -- below: 跌至/跌破, above: 涨至/涨破
+        alert_type TEXT NOT NULL DEFAULT 'price', -- price: 价位提醒, milestone: 随时间节点提醒
+        milestone_id INTEGER,           -- 随节点提醒时关联的时间节点（NULL 表示全部节点，兼容旧数据）
         note TEXT,
         last_triggered_at TEXT,
-        FOREIGN KEY(asset_id) REFERENCES theme_assets(id) ON DELETE CASCADE
+        FOREIGN KEY(asset_id) REFERENCES theme_assets(id) ON DELETE CASCADE,
+        FOREIGN KEY(milestone_id) REFERENCES theme_milestones(id) ON DELETE CASCADE
     );
 
     -- 4. 主题时间线/里程碑
@@ -117,6 +120,7 @@ def init_db() -> None:
         reminder_time TEXT NOT NULL DEFAULT '12:00', -- 飞书提醒时刻 (HH:MM)
         reminded_advance_at TEXT,       -- 已发送「提前3天」提醒的日期
         reminded_day_at TEXT,           -- 已发送「当天」提醒的日期
+        end_date TEXT,                  -- 提醒结束日期（默认同 event_date，即仅一天）
         is_completed INTEGER DEFAULT 0, -- 0 未发生, 1 已发生
         profit_loss REAL,               -- 该节点盈亏（可选，空则不纳入评分）
         FOREIGN KEY(theme_id) REFERENCES themes(id) ON DELETE CASCADE
@@ -314,6 +318,22 @@ def migrate_db(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE theme_milestones ADD COLUMN reminded_day_at TEXT")
         if "profit_loss" not in milestone_columns:
             conn.execute("ALTER TABLE theme_milestones ADD COLUMN profit_loss REAL")
+        if "end_date" not in milestone_columns:
+            conn.execute("ALTER TABLE theme_milestones ADD COLUMN end_date TEXT")
+            conn.execute(
+                "UPDATE theme_milestones SET end_date = event_date WHERE end_date IS NULL"
+            )
+
+    alert_columns = {row["name"] for row in conn.execute("PRAGMA table_info(theme_asset_price_alerts)")}
+    if alert_columns and "alert_type" not in alert_columns:
+        conn.execute(
+            "ALTER TABLE theme_asset_price_alerts ADD COLUMN alert_type TEXT NOT NULL DEFAULT 'price'"
+        )
+        alert_columns = {row["name"] for row in conn.execute("PRAGMA table_info(theme_asset_price_alerts)")}
+    if alert_columns and "milestone_id" not in alert_columns:
+        conn.execute(
+            "ALTER TABLE theme_asset_price_alerts ADD COLUMN milestone_id INTEGER"
+        )
 
     account_columns = {row["name"] for row in conn.execute("PRAGMA table_info(accounts)")}
     if "currency" not in account_columns:

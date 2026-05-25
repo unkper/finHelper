@@ -188,12 +188,62 @@ def fetch_theme_score(theme_id):
 def _fetch_price_alerts_for_asset(db, asset_id):
     return db.execute(
         """
-        SELECT * FROM theme_asset_price_alerts
-        WHERE asset_id = ?
-        ORDER BY direction, target_price
+        SELECT a.*,
+               m.event_date AS milestone_event_date,
+               m.end_date AS milestone_end_date,
+               m.description AS milestone_description,
+               m.reminder_time AS milestone_reminder_time
+        FROM theme_asset_price_alerts a
+        LEFT JOIN theme_milestones m ON a.milestone_id = m.id
+        WHERE a.asset_id = ?
+        ORDER BY a.alert_type, a.target_price
         """,
         (asset_id,),
     ).fetchall()
+
+
+def build_milestone_index(milestones) -> dict[int, int]:
+    """按时间线顺序为节点编号（从 1 开始）。"""
+    return {m["id"]: i for i, m in enumerate(milestones, 1)}
+
+
+def _fetch_theme_milestone_index(db, theme_id: int) -> dict[int, int]:
+    rows = db.execute(
+        "SELECT id FROM theme_milestones WHERE theme_id = ? ORDER BY event_date ASC",
+        (theme_id,),
+    ).fetchall()
+    return {row["id"]: i for i, row in enumerate(rows, 1)}
+
+
+def _milestone_alert_note(milestone: dict, seq: int | None = None) -> str:
+    """生成随节点提醒的展示备注（精简为编号）。"""
+    if seq is not None:
+        return f"#{seq}"
+    event_date = milestone["event_date"]
+    end_date = milestone.get("end_date") or event_date
+    if end_date != event_date:
+        date_part = f"{event_date} ~ {end_date}"
+    else:
+        date_part = event_date
+    desc = (milestone.get("description") or "").strip()
+    if len(desc) > 40:
+        desc = desc[:40] + "…"
+    time_part = (milestone.get("reminder_time") or "12:00")[:5]
+    return f"{date_part} {time_part} · {desc}" if desc else f"{date_part} {time_part}"
+
+
+def _fetch_milestones_by_ids(db, theme_id: int, milestone_ids: list[int]) -> list[dict]:
+    if not milestone_ids:
+        return []
+    placeholders = ",".join("?" * len(milestone_ids))
+    rows = db.execute(
+        f"""
+        SELECT * FROM theme_milestones
+        WHERE theme_id = ? AND id IN ({placeholders})
+        """,
+        (theme_id, *milestone_ids),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def fetch_assets_with_alerts(theme_id):
@@ -241,8 +291,35 @@ def fetch_theme_details(theme_id):
     }
 
 
-def add_theme_asset(theme_id, ticker, exchange='US', price_alerts=None):
-    """为主题添加监控标的（可附带多条价格提醒）。"""
+def add_asset_price_alert(
+    asset_id,
+    target_price,
+    direction,
+    note=None,
+    alert_type="price",
+    milestone_id=None,
+    commit=True,
+):
+    """为标的添加一条提醒（价位或随时间节点）。"""
+    if alert_type not in ("price", "milestone"):
+        alert_type = "price"
+    if direction not in ("below", "above"):
+        direction = "below"
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO theme_asset_price_alerts
+            (asset_id, target_price, direction, note, alert_type, milestone_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (asset_id, target_price, direction, note or None, alert_type, milestone_id),
+    )
+    if commit:
+        db.commit()
+
+
+def add_theme_asset(theme_id, ticker, exchange='US', price_alerts=None, milestone_ids=None):
+    """为主题添加监控标的（可附带多条价格提醒及随节点提醒）。"""
     db = get_db()
     cursor = db.execute(
         "INSERT INTO theme_assets (theme_id, ticker, exchange) VALUES (?, ?, ?)",
@@ -255,37 +332,45 @@ def add_theme_asset(theme_id, ticker, exchange='US', price_alerts=None):
             alert["target_price"],
             alert["direction"],
             alert.get("note"),
+            alert_type="price",
+            commit=False,
+        )
+    milestones = _fetch_milestones_by_ids(db, theme_id, milestone_ids or [])
+    index_map = _fetch_theme_milestone_index(db, theme_id)
+    for milestone in milestones:
+        seq = index_map.get(milestone["id"])
+        add_asset_price_alert(
+            asset_id,
+            0,
+            "below",
+            _milestone_alert_note(milestone, seq),
+            alert_type="milestone",
+            milestone_id=milestone["id"],
             commit=False,
         )
     db.commit()
     return asset_id
 
 
-def add_asset_price_alert(asset_id, target_price, direction, note=None, commit=True):
-    """为标的添加一条价格提醒。"""
-    if direction not in ("below", "above"):
-        direction = "below"
-    db = get_db()
-    db.execute(
-        """
-        INSERT INTO theme_asset_price_alerts (asset_id, target_price, direction, note)
-        VALUES (?, ?, ?, ?)
-        """,
-        (asset_id, target_price, direction, note or None),
-    )
-    if commit:
-        db.commit()
-
-
-def add_theme_milestone(theme_id, event_date, description, reminder_time='12:00', profit_loss=None):
+def add_theme_milestone(
+    theme_id,
+    event_date,
+    description,
+    reminder_time='12:00',
+    profit_loss=None,
+    end_date=None,
+):
     """为主题添加时间线节点"""
+    if not end_date:
+        end_date = event_date
     db = get_db()
     db.execute(
         """
-        INSERT INTO theme_milestones (theme_id, event_date, description, reminder_time, profit_loss)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO theme_milestones
+            (theme_id, event_date, end_date, description, reminder_time, profit_loss)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (theme_id, event_date, description, reminder_time, profit_loss)
+        (theme_id, event_date, end_date, description, reminder_time, profit_loss)
     )
     db.execute(
         "UPDATE themes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -302,8 +387,11 @@ def update_theme_milestone(
     reminder_time='12:00',
     profit_loss=None,
     is_completed=None,
+    end_date=None,
 ):
     """编辑时间线节点（盈亏为空则不纳入评分）。"""
+    if not end_date:
+        end_date = event_date
     db = get_db()
     row = db.execute(
         "SELECT id FROM theme_milestones WHERE id = ? AND theme_id = ?",
@@ -317,20 +405,20 @@ def update_theme_milestone(
         db.execute(
             """
             UPDATE theme_milestones
-            SET event_date = ?, description = ?, reminder_time = ?,
+            SET event_date = ?, end_date = ?, description = ?, reminder_time = ?,
                 profit_loss = ?, is_completed = ?
             WHERE id = ?
             """,
-            (event_date, description, reminder_time, profit_loss, completed_value, milestone_id),
+            (event_date, end_date, description, reminder_time, profit_loss, completed_value, milestone_id),
         )
     else:
         db.execute(
             """
             UPDATE theme_milestones
-            SET event_date = ?, description = ?, reminder_time = ?, profit_loss = ?
+            SET event_date = ?, end_date = ?, description = ?, reminder_time = ?, profit_loss = ?
             WHERE id = ?
             """,
-            (event_date, description, reminder_time, profit_loss, milestone_id),
+            (event_date, end_date, description, reminder_time, profit_loss, milestone_id),
         )
     db.execute(
         "UPDATE themes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",

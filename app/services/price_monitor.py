@@ -40,6 +40,7 @@ def check_asset_price_alerts():
         JOIN theme_assets s ON a.asset_id = s.id
         JOIN themes t ON s.theme_id = t.id
         WHERE s.exchange = 'US'
+          AND COALESCE(a.alert_type, 'price') = 'price'
         """
     ).fetchall()
 

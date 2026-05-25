@@ -47,6 +47,11 @@
     width: 10px; height: 10px; border-radius: 50%; background: #0052cc;
   }
   .timeline-date { font-size: 12px; color: #6b778c; font-weight: bold; }
+  .timeline-no {
+    display: inline-block; min-width: 26px; padding: 1px 6px; margin-right: 6px;
+    background: #deebff; color: #0052cc; border-radius: 4px; font-size: 11px; font-weight: bold;
+    text-align: center; vertical-align: middle;
+  }
   .timeline-desc { font-size: 13px; margin-top: 4px; }
   .timeline-pnl { font-size: 12px; font-weight: bold; margin-top: 6px; }
   .timeline-pnl.positive { color: #006644; }
@@ -163,11 +168,64 @@
   .asset-alert-row .alert-dir.above { background: #ffebe6; color: #bf2600; }
   .asset-alert-row .alert-price { font-weight: bold; color: #172b4d; }
   .asset-alert-row .alert-note { color: #5e6c84; flex: 1; }
+  .asset-alert-row .alert-dir.milestone { background: #deebff; color: #0052cc; }
+  .milestone-range-hint { font-size: 11px; color: #8c939f; font-weight: normal; margin: 4px 0 0; line-height: 1.4; }
   .price-alert-form-row {
     display: grid; grid-template-columns: 88px 1fr 1fr 28px; gap: 8px; align-items: end; margin-bottom: 10px;
   }
   .price-alert-form-row .form-group { margin-bottom: 0; }
-  .modal-content.modal-wide { width: 520px; max-width: 95vw; }
+  .modal-content.modal-wide { width: 560px; max-width: 95vw; }
+  .modal-content.modal-form { width: 480px; max-width: 95vw; }
+  .modal-form-title { margin: 0 36px 4px 0; font-size: 18px; color: #172b4d; }
+  .modal-form-subtitle { margin: 0 0 20px; font-size: 12px; color: #8c939f; line-height: 1.4; }
+  .modal-form-section { margin-bottom: 18px; }
+  .modal-form-section:last-of-type { margin-bottom: 0; }
+  .modal-form-section-title {
+    font-size: 11px; font-weight: bold; color: #6b778c; letter-spacing: 0.03em;
+    margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid #ebecf0;
+  }
+  .modal-form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .modal-form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 110px; gap: 12px; align-items: start; }
+  .modal-form-grid-2 .form-group,
+  .modal-form-grid-3 .form-group { margin-bottom: 0; }
+  .modal-form-actions {
+    display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
+    padding-top: 16px; border-top: 1px solid #ebecf0;
+  }
+  .modal-form-panel {
+    background: #fafbfc; border: 1px solid #ebecf0; border-radius: 6px; padding: 12px;
+  }
+  .milestone-pick-list {
+    max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+  }
+  .milestone-pick-item {
+    display: flex; align-items: flex-start; gap: 10px; padding: 10px;
+    background: #fff; border: 1px solid #dfe1e6; border-radius: 6px; cursor: pointer;
+  }
+  .milestone-pick-item:hover { border-color: #b3d4ff; background: #f4f9ff; }
+  .milestone-pick-item input { margin-top: 3px; accent-color: #0052cc; flex-shrink: 0; }
+  .milestone-pick-meta { font-size: 11px; color: #6b778c; font-weight: bold; margin-bottom: 2px; }
+  .milestone-pick-desc { font-size: 12px; color: #172b4d; line-height: 1.4; }
+  .milestone-pick-empty { font-size: 12px; color: #8c939f; margin: 0; padding: 8px 4px; line-height: 1.5; }
+  .milestone-no-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .milestone-no-chip { position: relative; cursor: pointer; margin: 0; }
+  .milestone-no-chip input {
+    position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; padding: 0;
+  }
+  .milestone-no-label {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 40px; height: 40px; padding: 0 12px;
+    border: 2px solid #dfe1e6; border-radius: 8px;
+    font-size: 15px; font-weight: bold; color: #172b4d; background: #fff;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+  }
+  .milestone-no-chip:hover .milestone-no-label { border-color: #b3d4ff; background: #f4f9ff; }
+  .milestone-no-chip input:checked + .milestone-no-label {
+    border-color: #0052cc; background: #deebff; color: #0052cc;
+  }
+  .milestone-no-chip input:focus-visible + .milestone-no-label { outline: 2px solid #4c9aff; outline-offset: 2px; }
+  .price-alerts-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .price-alerts-toolbar label { margin: 0; font-size: 11px; font-weight: bold; color: #6b778c; }
   .btn-icon {
     border: none; background: none; color: #de350b; cursor: pointer; font-size: 18px; padding: 0 0 8px 0;
   }
@@ -201,29 +259,42 @@
 </style>
 
 <div id="addMilestoneModal" class="modal-overlay">
-  <div class="modal-content">
+  <div class="modal-content modal-form">
     <button class="modal-close" onclick="document.getElementById('addMilestoneModal').style.display='none'">✕</button>
-    <h3 style="margin-top: 0; margin-bottom: 20px;">添加关键时间节点</h3>
+    <h3 class="modal-form-title">添加关键时间节点</h3>
+    <p class="modal-form-subtitle">设定提醒日期与时刻；跨多日时在范围内每天推送一次飞书提醒。</p>
     <form action="{{ url_for('investments.add_milestone', theme_id=theme.id) }}" method="POST">
-      <div class="inline-form-row">
-        <div class="form-group">
-          <label>日期 (Event Date)</label>
-          <input type="date" name="event_date" required>
+      <div class="modal-form-section">
+        <div class="modal-form-section-title">提醒时间</div>
+        <div class="modal-form-grid-3">
+          <div class="form-group">
+            <label>开始日期</label>
+            <input type="date" name="event_date" id="addEventDate" required>
+          </div>
+          <div class="form-group">
+            <label>结束日期</label>
+            <input type="date" name="end_date" id="addEndDate">
+            <p class="milestone-range-hint">默认同开始日</p>
+          </div>
+          <div class="form-group">
+            <label>时刻</label>
+            <input type="time" name="reminder_time" value="12:00" required>
+          </div>
         </div>
-        <div class="form-group" style="flex: 0 0 140px;">
-          <label>提醒时刻</label>
-          <input type="time" name="reminder_time" value="12:00" required>
+      </div>
+      <div class="modal-form-section">
+        <div class="modal-form-section-title">事件内容</div>
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label>事件描述</label>
+          <textarea name="description" rows="2" placeholder="例如：美联储议息会议决议公布" required></textarea>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>盈亏金额（可选）</label>
+          <input type="number" step="0.01" name="profit_loss" placeholder="正数盈利 / 负数亏损，留空不纳入评分">
         </div>
       </div>
-      <div class="form-group">
-        <label>事件描述 (Description)</label>
-        <textarea name="description" rows="2" placeholder="例如：美联储议息会议决议公布" required></textarea>
-      </div>
-      <div class="form-group">
-        <label>盈亏金额（可选，正数盈利 / 负数亏损）</label>
-        <input type="number" step="0.01" name="profit_loss" placeholder="留空则不纳入评分">
-      </div>
-      <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+      <div class="modal-form-actions">
+        <button type="button" class="secondary-btn" onclick="document.getElementById('addMilestoneModal').style.display='none'">取消</button>
         <button type="submit" class="primary-btn">确认添加</button>
       </div>
     </form>
@@ -231,35 +302,46 @@
 </div>
 
 <div id="editMilestoneModal" class="modal-overlay">
-  <div class="modal-content">
+  <div class="modal-content modal-form">
     <button class="modal-close" onclick="document.getElementById('editMilestoneModal').style.display='none'">✕</button>
-    <h3 style="margin-top: 0; margin-bottom: 20px;">编辑时间节点</h3>
+    <h3 class="modal-form-title">编辑时间节点</h3>
+    <p class="modal-form-subtitle">修改提醒范围、描述或标记节点已发生。</p>
     <form id="editMilestoneForm" method="POST">
-      <div class="inline-form-row">
-        <div class="form-group">
-          <label>日期 (Event Date)</label>
-          <input type="date" name="event_date" id="editEventDate" required>
+      <div class="modal-form-section">
+        <div class="modal-form-section-title">提醒时间</div>
+        <div class="modal-form-grid-3">
+          <div class="form-group">
+            <label>开始日期</label>
+            <input type="date" name="event_date" id="editEventDate" required>
+          </div>
+          <div class="form-group">
+            <label>结束日期</label>
+            <input type="date" name="end_date" id="editEndDate">
+            <p class="milestone-range-hint">默认同开始日</p>
+          </div>
+          <div class="form-group">
+            <label>时刻</label>
+            <input type="time" name="reminder_time" id="editReminderTime" value="12:00" required>
+          </div>
         </div>
-        <div class="form-group" style="flex: 0 0 140px;">
-          <label>提醒时刻</label>
-          <input type="time" name="reminder_time" id="editReminderTime" value="12:00" required>
+      </div>
+      <div class="modal-form-section">
+        <div class="modal-form-section-title">事件内容</div>
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label>事件描述</label>
+          <textarea name="description" id="editDescription" rows="2" required></textarea>
         </div>
-      </div>
-      <div class="form-group">
-        <label>事件描述 (Description)</label>
-        <textarea name="description" id="editDescription" rows="2" required></textarea>
-      </div>
-      <div class="form-group">
-        <label>盈亏金额（可选，正数盈利 / 负数亏损）</label>
-        <input type="number" step="0.01" name="profit_loss" id="editProfitLoss" placeholder="留空则不纳入评分">
-      </div>
-      <div class="form-group">
-        <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label>盈亏金额（可选）</label>
+          <input type="number" step="0.01" name="profit_loss" id="editProfitLoss" placeholder="正数盈利 / 负数亏损，留空不纳入评分">
+        </div>
+        <label class="asset-macd-alert-option" style="font-weight: normal;">
           <input type="checkbox" name="is_completed" id="editIsCompleted" value="1">
-          标记为已发生
+          <span>标记为已发生</span>
         </label>
       </div>
-      <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+      <div class="modal-form-actions">
+        <button type="button" class="secondary-btn" onclick="document.getElementById('editMilestoneModal').style.display='none'">取消</button>
         <button type="submit" class="primary-btn">保存修改</button>
       </div>
     </form>
@@ -305,26 +387,58 @@
 <div id="addAssetModal" class="modal-overlay">
   <div class="modal-content modal-wide">
     <button class="modal-close" onclick="document.getElementById('addAssetModal').style.display='none'">✕</button>
-    <h3 style="margin-top: 0; margin-bottom: 20px;">添加监控标的（美股）</h3>
+    <h3 class="modal-form-title">添加监控标的（美股）</h3>
+    <p class="modal-form-subtitle">可设置价位提醒；随节点推送请勾选左侧时间线对应编号。</p>
     <form id="addAssetForm" action="{{ url_for('investments.add_asset', theme_id=theme.id) }}" method="POST">
 
-      <div class="inline-form-row">
-        <div class="form-group" style="flex: 2;">
-          <label>股票代码 (Ticker)</label>
-          <input type="text" name="ticker" placeholder="如 AAPL" required>
-        </div>
-        <div class="form-group" style="flex: 1;">
-          <label>市场</label>
-          <input type="hidden" name="exchange" value="US">
-          <input type="text" value="US（美股）" disabled style="background: #f4f5f7;">
+      <div class="modal-form-section">
+        <div class="modal-form-section-title">标的信息</div>
+        <div class="modal-form-grid-2">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>股票代码</label>
+            <input type="text" name="ticker" placeholder="如 AAPL" required>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>市场</label>
+            <input type="hidden" name="exchange" value="US">
+            <input type="text" value="US（美股）" disabled style="background: #f4f5f7;">
+          </div>
         </div>
       </div>
 
-      <label style="display: block; font-size: 12px; font-weight: bold; margin-bottom: 8px; color: #5e6c84;">价格提醒（可添加多条）</label>
-      <div id="priceAlertsContainer"></div>
-      <button type="button" class="btn-link" onclick="addPriceAlertRow()">+ 添加价位提醒</button>
+      <div class="modal-form-section">
+        <div class="price-alerts-toolbar">
+          <label>价位提醒（可选）</label>
+          <button type="button" class="btn-link" onclick="addPriceAlertRow()">+ 添加一条</button>
+        </div>
+        <div class="modal-form-panel">
+          <div id="priceAlertsContainer"></div>
+          <p class="milestone-range-hint" id="priceAlertsEmptyHint">暂未添加价位提醒，可点击右上角添加</p>
+        </div>
+      </div>
 
-      <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+      <div class="modal-form-section">
+        <div class="modal-form-section-title">随节点提醒（可选）</div>
+        <p class="milestone-range-hint" style="margin: 0 0 10px;">勾选编号，对应左侧时间线；节点飞书提醒时一并推送现价</p>
+        <div class="modal-form-panel">
+          {% if milestones %}
+          <div class="milestone-no-grid">
+            {% for milestone in milestones %}
+            <label class="milestone-no-chip" title="{{ milestone.description|e }}">
+              <input type="checkbox" name="milestone_ids" value="{{ milestone.id }}">
+              <span class="milestone-no-label">#{{ loop.index }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="milestone-pick-empty">暂无时间节点，请先在左侧时间线添加节点。</p>
+          {% endif %}
+        </div>
+        <p class="milestone-range-hint" style="margin-top: 8px;">价位提醒与节点提醒至少选一种</p>
+      </div>
+
+      <div class="modal-form-actions">
+        <button type="button" class="secondary-btn" onclick="document.getElementById('addAssetModal').style.display='none'">取消</button>
         <button type="submit" class="primary-btn">确认添加</button>
       </div>
     </form>
@@ -384,7 +498,13 @@
       <div class="timeline-item" style="{% if milestone.is_completed %}opacity: 0.5;{% endif %}">
         <div class="item-row-header">
           <div class="timeline-date">
+            <span class="timeline-no">#{{ loop.index }}</span>
+            {% set end_date = milestone.end_date or milestone.event_date %}
+            {% if end_date != milestone.event_date %}
+            {{ milestone.event_date }} ~ {{ end_date }} 每日 {{ milestone.reminder_time or '12:00' }} 提醒
+            {% else %}
             {{ milestone.event_date }} {{ milestone.reminder_time or '12:00' }} 提醒
+            {% endif %}
             {% if milestone.is_completed %} · 已发生{% endif %}
           </div>
           <div class="timeline-actions">
@@ -392,6 +512,7 @@
               onclick="openEditMilestoneModal(this)"
               data-edit-url="{{ url_for('investments.edit_milestone', theme_id=theme.id, milestone_id=milestone.id) }}"
               data-event-date="{{ milestone.event_date }}"
+              data-end-date="{{ milestone.end_date or milestone.event_date }}"
               data-reminder-time="{{ milestone.reminder_time or '12:00' }}"
               data-description="{{ milestone.description|replace('\n', ' ')|e }}"
               data-profit-loss="{{ milestone.profit_loss if milestone.profit_loss is not none else '' }}"
@@ -496,6 +617,20 @@
         <div class="asset-alerts">
           {% for alert in asset.price_alerts %}
           <div class="asset-alert-row">
+            {% if (alert.alert_type or 'price') == 'milestone' %}
+            <span class="alert-dir milestone">随节点</span>
+            <span class="alert-note">
+              {% if alert.milestone_id and milestone_index.get(alert.milestone_id) %}
+              #{{ milestone_index[alert.milestone_id] }}
+              {% elif alert.note and alert.note.startswith('#') %}
+              {{ alert.note }}
+              {% elif alert.milestone_id %}
+              节点 {{ alert.milestone_id }}
+              {% else %}
+              全部节点
+              {% endif %}
+            </span>
+            {% else %}
             <span class="alert-dir {{ alert.direction }}">
               {% if alert.direction == 'above' %}涨至{% else %}跌至{% endif %}
             </span>
@@ -503,11 +638,12 @@
             {% if alert.note %}
             <span class="alert-note">{{ alert.note }}</span>
             {% endif %}
+            {% endif %}
           </div>
           {% endfor %}
         </div>
         {% else %}
-        <p style="font-size: 11px; color: #8c939f; margin: 8px 0 0;">暂无价格提醒</p>
+        <p style="font-size: 11px; color: #8c939f; margin: 8px 0 0;">暂无提醒</p>
         {% endif %}
       </div>
       {% else %}
@@ -518,6 +654,13 @@
 </div>
 
 <script>
+  function updatePriceAlertsEmptyHint() {
+    const container = document.getElementById('priceAlertsContainer');
+    const hint = document.getElementById('priceAlertsEmptyHint');
+    if (!container || !hint) return;
+    hint.hidden = container.children.length > 0;
+  }
+
   function addPriceAlertRow() {
     const container = document.getElementById('priceAlertsContainer');
     const row = document.createElement('div');
@@ -532,23 +675,35 @@
       </div>
       <div class="form-group">
         <label>目标价 ($)</label>
-        <input type="number" step="0.01" name="alert_target_price" placeholder="如 150.00" required>
+        <input type="number" step="0.01" name="alert_target_price" placeholder="如 150.00">
       </div>
       <div class="form-group">
         <label>备注</label>
         <input type="text" name="alert_note" placeholder="可选">
       </div>
-      <button type="button" class="btn-icon" title="删除" onclick="this.closest('.price-alert-form-row').remove()">×</button>
+      <button type="button" class="btn-icon" title="删除" onclick="this.closest('.price-alert-form-row').remove(); updatePriceAlertsEmptyHint();">×</button>
     `;
     container.appendChild(row);
+    updatePriceAlertsEmptyHint();
   }
 
   function openAddAssetModal() {
     const container = document.getElementById('priceAlertsContainer');
     container.innerHTML = '';
-    addPriceAlertRow();
-    addPriceAlertRow();
+    const form = document.getElementById('addAssetForm');
+    if (form) {
+      form.querySelectorAll('input[name="milestone_ids"]').forEach((cb) => { cb.checked = false; });
+    }
+    updatePriceAlertsEmptyHint();
     document.getElementById('addAssetModal').style.display = 'flex';
+  }
+
+  function syncMilestoneEndDate(startInput, endInput) {
+    if (!startInput || !endInput) return;
+    if (!endInput.value || endInput.value < startInput.value) {
+      endInput.value = startInput.value;
+    }
+    endInput.min = startInput.value;
   }
 
   function openArticleDetailModal(articleId) {
@@ -588,12 +743,27 @@
   function openEditMilestoneModal(button) {
     const form = document.getElementById('editMilestoneForm');
     form.action = button.dataset.editUrl;
-    document.getElementById('editEventDate').value = button.dataset.eventDate || '';
+    const eventDateInput = document.getElementById('editEventDate');
+    const endDateInput = document.getElementById('editEndDate');
+    eventDateInput.value = button.dataset.eventDate || '';
+    endDateInput.value = button.dataset.endDate || button.dataset.eventDate || '';
+    syncMilestoneEndDate(eventDateInput, endDateInput);
     document.getElementById('editReminderTime').value = (button.dataset.reminderTime || '12:00').slice(0, 5);
     document.getElementById('editDescription').value = button.dataset.description || '';
     document.getElementById('editProfitLoss').value = button.dataset.profitLoss || '';
     document.getElementById('editIsCompleted').checked = button.dataset.isCompleted === '1';
     document.getElementById('editMilestoneModal').style.display = 'flex';
+  }
+
+  const addEventDateInput = document.getElementById('addEventDate');
+  const addEndDateInput = document.getElementById('addEndDate');
+  if (addEventDateInput && addEndDateInput) {
+    addEventDateInput.addEventListener('change', () => syncMilestoneEndDate(addEventDateInput, addEndDateInput));
+  }
+  const editEventDateInput = document.getElementById('editEventDate');
+  const editEndDateInput = document.getElementById('editEndDate');
+  if (editEventDateInput && editEndDateInput) {
+    editEventDateInput.addEventListener('change', () => syncMilestoneEndDate(editEventDateInput, editEndDateInput));
   }
 
   window.onclick = function(event) {
