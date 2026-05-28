@@ -1,9 +1,12 @@
 # app/services/investment.py
+from datetime import datetime
+
 from app.database import get_db
 from app.services.quotes import fetch_us_quotes
 
 
 DEFAULT_ASSISTANT_NAME = "默认助手"
+ACTIVE_THEME_SQL = "t.archived_at IS NULL"
 
 
 # --- 投资助手 (Assistants) ---
@@ -35,7 +38,7 @@ def fetch_all_assistants():
             COALESCE(SUM(m.profit_loss), 0) AS total_pnl,
             COUNT(CASE WHEN m.profit_loss IS NOT NULL THEN 1 END) AS scored_milestones
         FROM investment_assistants a
-        LEFT JOIN themes t ON t.assistant_id = a.id
+        LEFT JOIN themes t ON t.assistant_id = a.id AND t.archived_at IS NULL
         LEFT JOIN theme_milestones m ON m.theme_id = t.id
         GROUP BY a.id
         ORDER BY total_pnl DESC, a.is_default DESC, a.name ASC
@@ -76,6 +79,7 @@ def fetch_assistants_with_themes():
             COUNT(CASE WHEN m.profit_loss IS NOT NULL THEN 1 END) AS scored_milestones
         FROM themes t
         LEFT JOIN theme_milestones m ON m.theme_id = t.id
+        WHERE t.archived_at IS NULL
         GROUP BY t.id
         ORDER BY t.updated_at DESC
         """
@@ -91,27 +95,65 @@ def fetch_assistants_with_themes():
 # --- 主题 (Themes) ---
 
 def fetch_all_themes():
-    """获取所有投资主题"""
+    """获取所有活跃投资主题"""
     db = get_db()
     return db.execute(
         """
         SELECT t.*, a.name AS assistant_name
         FROM themes t
         JOIN investment_assistants a ON t.assistant_id = a.id
+        WHERE t.archived_at IS NULL
         ORDER BY t.updated_at DESC
         """
     ).fetchall()
 
 
-def fetch_theme_by_id(theme_id):
-    """获取单个主题的基础信息（含所属助手）。"""
+def fetch_archived_themes():
+    """回收站：已封存主题列表。"""
     db = get_db()
     return db.execute(
         """
         SELECT t.*, a.name AS assistant_name
         FROM themes t
         JOIN investment_assistants a ON t.assistant_id = a.id
-        WHERE t.id = ?
+        WHERE t.archived_at IS NOT NULL
+        ORDER BY t.archived_at DESC
+        """
+    ).fetchall()
+
+
+def count_archived_themes() -> int:
+    db = get_db()
+    row = db.execute(
+        "SELECT COUNT(*) AS cnt FROM themes WHERE archived_at IS NOT NULL"
+    ).fetchone()
+    return int(row["cnt"]) if row else 0
+
+
+def fetch_theme_by_id(theme_id, include_archived=False):
+    """获取单个主题的基础信息（含所属助手）。默认仅活跃主题。"""
+    db = get_db()
+    archived_clause = "" if include_archived else "AND t.archived_at IS NULL"
+    return db.execute(
+        f"""
+        SELECT t.*, a.name AS assistant_name
+        FROM themes t
+        JOIN investment_assistants a ON t.assistant_id = a.id
+        WHERE t.id = ? {archived_clause}
+        """,
+        (theme_id,),
+    ).fetchone()
+
+
+def fetch_archived_theme_by_id(theme_id):
+    """获取已封存主题（必须 archived_at 非空）。"""
+    db = get_db()
+    return db.execute(
+        """
+        SELECT t.*, a.name AS assistant_name
+        FROM themes t
+        JOIN investment_assistants a ON t.assistant_id = a.id
+        WHERE t.id = ? AND t.archived_at IS NOT NULL
         """,
         (theme_id,),
     ).fetchone()
@@ -141,7 +183,10 @@ def move_theme_to_assistant(theme_id, assistant_id):
     if not fetch_assistant_by_id(assistant_id):
         return False
     db = get_db()
-    row = db.execute("SELECT id FROM themes WHERE id = ?", (theme_id,)).fetchone()
+    row = db.execute(
+        "SELECT id FROM themes WHERE id = ? AND archived_at IS NULL",
+        (theme_id,),
+    ).fetchone()
     if not row:
         return False
     db.execute(
@@ -156,7 +201,51 @@ def move_theme_to_assistant(theme_id, assistant_id):
     return True
 
 
+def update_theme(theme_id, title, description):
+    """更新活跃主题的标题与描述。"""
+    db = get_db()
+    row = db.execute(
+        "SELECT id FROM themes WHERE id = ? AND archived_at IS NULL",
+        (theme_id,),
+    ).fetchone()
+    if not row:
+        return False
+    db.execute(
+        """
+        UPDATE themes
+        SET title = ?, description = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (title.strip(), (description or "").strip() or None, theme_id),
+    )
+    db.commit()
+    return True
+
+
+def archive_theme(theme_id):
+    """将主题移入回收站（软删除，不可恢复）。"""
+    db = get_db()
+    row = db.execute(
+        "SELECT id, title FROM themes WHERE id = ? AND archived_at IS NULL",
+        (theme_id,),
+    ).fetchone()
+    if not row:
+        return None
+    now_iso = datetime.now().isoformat(timespec="seconds")
+    db.execute(
+        """
+        UPDATE themes
+        SET archived_at = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (now_iso, theme_id),
+    )
+    db.commit()
+    return row["title"]
+
+
 def delete_theme(theme_id):
+    """物理删除（保留供内部兼容，UI 不再使用）。"""
     """删除投资主题（子表 CASCADE 自动清理）。"""
     db = get_db()
     row = db.execute("SELECT id, title FROM themes WHERE id = ?", (theme_id,)).fetchone()
@@ -499,6 +588,7 @@ def fetch_tracked_assets_overview():
         FROM theme_assets s
         JOIN themes t ON s.theme_id = t.id
         JOIN investment_assistants a ON t.assistant_id = a.id
+        WHERE t.archived_at IS NULL
         ORDER BY s.ticker, t.title
         """
     ).fetchall()

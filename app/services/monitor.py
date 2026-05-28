@@ -31,7 +31,9 @@ def _fetch_milestone_sync_assets(db, theme_id: int, milestone_id: int) -> list:
         SELECT s.ticker, s.exchange
         FROM theme_asset_price_alerts a
         JOIN theme_assets s ON a.asset_id = s.id
+        JOIN themes t ON s.theme_id = t.id
         WHERE s.theme_id = ?
+          AND t.archived_at IS NULL
           AND a.alert_type = 'milestone'
           AND s.exchange = 'US'
           AND (a.milestone_id = ? OR a.milestone_id IS NULL)
@@ -69,6 +71,7 @@ def check_upcoming_milestones():
         FROM theme_milestones m
         JOIN themes t ON m.theme_id = t.id
         WHERE m.is_completed = 0
+          AND t.archived_at IS NULL
           AND ? >= m.event_date
           AND ? <= COALESCE(m.end_date, m.event_date)
           AND m.reminder_time = ?
@@ -84,6 +87,7 @@ def check_upcoming_milestones():
         FROM theme_milestones m
         JOIN themes t ON m.theme_id = t.id
         WHERE m.is_completed = 0
+          AND t.archived_at IS NULL
           AND m.event_date = ?
           AND m.reminder_time = ?
           AND (m.reminded_advance_at IS NULL OR m.reminded_advance_at != ?)

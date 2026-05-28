@@ -45,6 +45,7 @@
     <p style="font-size: 12px; color: #8c939f; margin: 6px 0 0;">投资助手按累计盈亏排名；主题评分来自已填写盈亏的时间节点</p>
   </div>
   <div class="invest-actions">
+    <a href="{{ url_for('investments.archive_list') }}" class="secondary-btn">🗑 回收站{% if archived_count %} ({{ archived_count }}){% endif %}</a>
     <a href="{{ url_for('investments.stocks') }}" class="secondary-btn">📈 股票走势</a>
     <button class="secondary-btn" onclick="document.getElementById('createAssistantModal').style.display='flex'">+ 新建投资助手</button>
     <button class="primary-btn" onclick="document.getElementById('createThemeModal').style.display='flex'">+ 新建投资主题</button>

@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  .detail-header {
+    margin-bottom: 24px; border-bottom: 1px solid #e1e4e8; padding-bottom: 16px;
+  }
+  .archive-readonly-banner {
+    background: #fffae6; border: 1px solid #ffe58f; border-radius: 6px;
+    padding: 10px 14px; font-size: 13px; color: #974f0c; margin-bottom: 16px;
+  }
+  .badge {
+    background: #ffebe6; color: #bf2600;
+    padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;
+  }
+  .assistant-badge { background: #e3fcef; color: #006644; }
+  .dashboard-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px;
+  }
+  .panel {
+    background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 20px;
+  }
+  .panel h3 {
+    margin-top: 0; border-bottom: 2px solid #f4f5f7; padding-bottom: 10px;
+  }
+  .timeline-item {
+    border-left: 2px solid #dfe1e6; padding-left: 12px; margin-bottom: 16px; position: relative;
+  }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -6px; top: 4px;
+    width: 10px; height: 10px; border-radius: 50%; background: #8c939f;
+  }
+  .timeline-date { font-size: 12px; color: #6b778c; font-weight: bold; }
+  .timeline-no {
+    display: inline-block; min-width: 26px; padding: 1px 6px; margin-right: 6px;
+    background: #f4f5f7; color: #5e6c84; border-radius: 4px; font-size: 11px; font-weight: bold;
+    text-align: center;
+  }
+  .timeline-desc { font-size: 13px; margin-top: 4px; }
+  .timeline-pnl { font-size: 12px; font-weight: bold; margin-top: 6px; }
+  .timeline-pnl.positive { color: #006644; }
+  .timeline-pnl.negative { color: #bf2600; }
+  .theme-score-badge {
+    display: inline-block; margin-left: 8px; padding: 4px 10px; border-radius: 4px;
+    font-size: 13px; font-weight: bold;
+  }
+  .theme-score-badge.positive { background: #e3fcef; color: #006644; }
+  .theme-score-badge.negative { background: #ffebe6; color: #bf2600; }
+  .theme-score-badge.neutral { background: #f4f5f7; color: #5e6c84; }
+  .article-item { padding: 12px 0; border-bottom: 1px dashed #e1e4e8; }
+  .article-item:last-child { border-bottom: none; }
+  .article-item-title { color: #172b4d; font-weight: 500; font-size: 14px; }
+  .article-summary-preview { font-size: 12px; color: #5e6c84; margin: 6px 0 0; line-height: 1.5; white-space: pre-wrap; }
+  .asset-card {
+    background: #fafbfc; border: 1px solid #dfe1e6; border-radius: 6px; padding: 12px; margin-bottom: 12px;
+  }
+  .asset-card-header { font-weight: bold; font-size: 16px; margin-bottom: 8px; }
+  .asset-alert-row {
+    display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px;
+    background: #fff; border: 1px solid #eee; border-radius: 4px; margin-bottom: 6px; font-size: 12px;
+  }
+  .alert-dir { flex-shrink: 0; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: bold; }
+  .alert-dir.below { background: #e3fcef; color: #006644; }
+  .alert-dir.above { background: #ffebe6; color: #bf2600; }
+  .alert-dir.milestone { background: #deebff; color: #0052cc; }
+</style>
+
+<div class="archive-readonly-banner">
+  此主题已永久封存，仅供只读查阅，无法编辑或恢复。
+</div>
+
+<div class="detail-header">
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
+    <div>
+      <h2 style="margin: 0 0 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+        {{ theme.title }}
+        <span class="badge">已封存</span>
+        <span class="badge assistant-badge">{{ theme.assistant_name }}</span>
+        {% if theme_score.scored_milestones > 0 %}
+          {% if theme_score.theme_score > 0 %}
+          <span class="theme-score-badge positive">评分 {{ "%+.2f"|format(theme_score.theme_score) }}</span>
+          {% elif theme_score.theme_score < 0 %}
+          <span class="theme-score-badge negative">评分 {{ "%+.2f"|format(theme_score.theme_score) }}</span>
+          {% else %}
+          <span class="theme-score-badge neutral">评分 0.00</span>
+          {% endif %}
+        {% else %}
+          <span class="theme-score-badge neutral">暂无评分</span>
+        {% endif %}
+      </h2>
+      {% if theme.description %}
+      <p style="color: #5e6c84; margin-top: 8px; line-height: 1.5;">{{ theme.description }}</p>
+      {% endif %}
+      <p style="font-size: 12px; color: #8c939f; margin: 8px 0 0;">
+        封存于 {{ theme.archived_at[:19].replace('T', ' ') if theme.archived_at else '—' }}
+      </p>
+    </div>
+    <a href="{{ url_for('investments.archive_list') }}" class="secondary-btn">← 返回回收站</a>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <div class="panel">
+    <h3>⏳ 关键时间线</h3>
+    <div style="margin-top: 20px;">
+      {% for milestone in milestones %}
+      <div class="timeline-item" style="{% if milestone.is_completed %}opacity: 0.5;{% endif %}">
+        <div class="timeline-date">
+          <span class="timeline-no">#{{ loop.index }}</span>
+          {% set end_date = milestone.end_date or milestone.event_date %}
+          {% if end_date != milestone.event_date %}
+          {{ milestone.event_date }} ~ {{ end_date }} 每日 {{ milestone.reminder_time or '12:00' }} 提醒
+          {% else %}
+          {{ milestone.event_date }} {{ milestone.reminder_time or '12:00' }} 提醒
+          {% endif %}
+          {% if milestone.is_completed %} · 已发生{% endif %}
+        </div>
+        <div class="timeline-desc">{{ milestone.description }}</div>
+        {% if milestone.profit_loss is not none %}
+        <div class="timeline-pnl {% if milestone.profit_loss > 0 %}positive{% elif milestone.profit_loss < 0 %}negative{% endif %}">
+          盈亏 {{ "%+.2f"|format(milestone.profit_loss) }}
+        </div>
+        {% endif %}
+      </div>
+      {% else %}
+      <p style="font-size: 13px; color: #8c939f;">暂无时间节点。</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>📚 研报 & 资讯</h3>
+    <div style="margin-top: 10px;">
+      {% for article in articles %}
+      <div class="article-item">
+        {% if article.url %}
+        <a href="{{ article.url }}" class="article-item-title" target="_blank" rel="noopener noreferrer">{{ article.title }}</a>
+        {% else %}
+        <div class="article-item-title">{{ article.title }}</div>
+        {% endif %}
+        {% if article.summary %}
+        <p class="article-summary-preview">{{ article.summary }}</p>
+        {% endif %}
+      </div>
+      {% else %}
+      <p style="font-size: 13px; color: #8c939f;">暂无关联资料。</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>🎯 监控标的（封存前配置）</h3>
+    <div style="margin-top: 10px;">
+      {% for asset in assets %}
+      <div class="asset-card">
+        <div class="asset-card-header">{{ asset.ticker }} <span style="font-size: 12px; color: #6b778c; font-weight: normal;">{{ asset.exchange }}</span></div>
+        {% if asset.price_alerts %}
+        <div>
+          {% for alert in asset.price_alerts %}
+          <div class="asset-alert-row">
+            {% if (alert.alert_type or 'price') == 'milestone' %}
+            <span class="alert-dir milestone">随节点</span>
+            <span>
+              {% if alert.milestone_id and milestone_index.get(alert.milestone_id) %}
+              #{{ milestone_index[alert.milestone_id] }}
+              {% else %}
+              节点提醒
+              {% endif %}
+            </span>
+            {% else %}
+            <span class="alert-dir {{ alert.direction }}">
+              {% if alert.direction == 'above' %}涨至{% else %}跌至{% endif %}
+            </span>
+            <span>${{ "%.2f"|format(alert.target_price) }}</span>
+            {% if alert.note %}<span>{{ alert.note }}</span>{% endif %}
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p style="font-size: 11px; color: #8c939f; margin: 0;">无提醒配置</p>
+        {% endif %}
+      </div>
+      {% else %}
+      <p style="font-size: 13px; color: #8c939f;">暂无关注标的。</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -4,7 +4,8 @@ from app.database import get_db
 from app.services.investment import (
     fetch_assistants_with_themes, fetch_all_assistants, fetch_theme_by_id,
     fetch_theme_details, fetch_theme_score, create_theme, create_assistant,
-    move_theme_to_assistant, delete_theme,
+    move_theme_to_assistant, archive_theme, update_theme,
+    fetch_archived_themes, fetch_archived_theme_by_id, count_archived_themes,
     add_theme_asset, add_theme_milestone, update_theme_milestone, add_theme_article,
     delete_theme_milestone, delete_theme_asset, delete_theme_article,
     build_milestone_index,
@@ -34,6 +35,7 @@ def index():
         "investments/index.html",
         assistant_groups=assistant_groups,
         assistants=assistants,
+        archived_count=count_archived_themes(),
     )
 
 
@@ -133,8 +135,63 @@ def earnings_settings_api():
     })
 
 
+def _redirect_if_archived(theme_id):
+    """若主题已封存则 redirect 到回收站详情，否则返回 None。"""
+    row = fetch_theme_by_id(theme_id, include_archived=True)
+    if row and row["archived_at"]:
+        return redirect(url_for("investments.archive_detail", theme_id=theme_id))
+    return None
+
+
+def _require_active_theme(theme_id):
+    """校验主题为活跃状态；否则返回 (None, redirect_response)。"""
+    archived_redirect = _redirect_if_archived(theme_id)
+    if archived_redirect:
+        return None, archived_redirect
+    theme = fetch_theme_by_id(theme_id)
+    if not theme:
+        flash("投资主题不存在或已封存", "error")
+        return None, redirect(url_for("investments.index"))
+    return theme, None
+
+
+@bp.route('/archive')
+def archive_list():
+    return render_template(
+        "investments/archive.html",
+        archived_themes=fetch_archived_themes(),
+    )
+
+
+@bp.route('/archive/<int:theme_id>')
+def archive_detail(theme_id):
+    theme = fetch_archived_theme_by_id(theme_id)
+    if not theme:
+        flash("封存主题不存在", "error")
+        return redirect(url_for("investments.archive_list"))
+
+    details = fetch_theme_details(theme_id)
+    theme_score = fetch_theme_score(theme_id)
+    milestones = details["milestones"]
+    milestone_index = build_milestone_index(milestones)
+    return render_template(
+        "investments/archive_detail.html",
+        theme=theme,
+        theme_score=theme_score,
+        articles=details["articles"],
+        assets=details["assets"],
+        milestones=milestones,
+        milestone_index=milestone_index,
+        readonly=True,
+    )
+
+
 @bp.route('/<int:theme_id>')
 def detail(theme_id):
+    archived_redirect = _redirect_if_archived(theme_id)
+    if archived_redirect:
+        return archived_redirect
+
     theme = fetch_theme_by_id(theme_id)
     if not theme:
         flash("投资主题不存在", "error")
@@ -183,8 +240,46 @@ def create_assistant_route():
     return redirect(url_for('investments.index'))
 
 
+@bp.route('/<int:theme_id>/edit', methods=['POST'])
+def edit_theme(theme_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
+
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    if not title:
+        flash("标题不能为空", "error")
+        return redirect(url_for("investments.detail", theme_id=theme_id))
+
+    if update_theme(theme_id, title, description):
+        flash("主题信息已更新", "success")
+    else:
+        flash("更新失败，主题不存在或已封存", "error")
+    return redirect(url_for("investments.detail", theme_id=theme_id))
+
+
+@bp.route('/<int:theme_id>/archive', methods=['POST'])
+def archive_theme_route(theme_id):
+    title = archive_theme(theme_id)
+    if title:
+        flash(f"主题「{title}」已移入回收站并永久封存，相关提醒已停止", "success")
+    else:
+        flash("封存失败，主题不存在或已在回收站", "error")
+    return redirect(url_for("investments.index"))
+
+
+@bp.route('/<int:theme_id>/delete', methods=['POST'])
+def delete_theme_route(theme_id):
+    """兼容旧链接：改为移入回收站。"""
+    return archive_theme_route(theme_id)
+
+
 @bp.route('/<int:theme_id>/move_assistant', methods=['POST'])
 def move_assistant(theme_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
     assistant_id = request.form.get('assistant_id', type=int)
     if not assistant_id:
         flash("请选择目标投资助手", "error")
@@ -266,6 +361,10 @@ def _parse_milestone_ids_from_form(theme_id: int) -> list[int]:
 
 @bp.route('/<int:theme_id>/add_asset', methods=['POST'])
 def add_asset(theme_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
+
     ticker = request.form.get('ticker', '').upper().strip()
     exchange = request.form.get('exchange', 'US').upper().strip()
 
@@ -320,18 +419,12 @@ def _parse_profit_loss(raw: str):
         raise ValueError("盈亏金额格式无效，请输入数字")
 
 
-@bp.route('/<int:theme_id>/delete', methods=['POST'])
-def delete_theme_route(theme_id):
-    title = delete_theme(theme_id)
-    if title:
-        flash(f"已删除投资主题：{title}", "success")
-    else:
-        flash("主题不存在或已删除", "error")
-    return redirect(url_for('investments.index'))
-
-
 @bp.route('/<int:theme_id>/add_milestone', methods=['POST'])
 def add_milestone(theme_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
+
     event_date = request.form.get('event_date')
     description = request.form.get('description', '').strip()
     reminder_time = _normalize_reminder_time(request.form.get('reminder_time'))
@@ -359,6 +452,10 @@ def add_milestone(theme_id):
 
 @bp.route('/<int:theme_id>/milestones/<int:milestone_id>/edit', methods=['POST'])
 def edit_milestone(theme_id, milestone_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
+
     event_date = request.form.get('event_date')
     description = request.form.get('description', '').strip()
     reminder_time = _normalize_reminder_time(request.form.get('reminder_time'))
@@ -396,6 +493,10 @@ def edit_milestone(theme_id, milestone_id):
 
 @bp.route('/<int:theme_id>/milestones/<int:milestone_id>/delete', methods=['POST'])
 def delete_milestone(theme_id, milestone_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
+
     if delete_theme_milestone(theme_id, milestone_id):
         flash("时间线节点已删除", "success")
     else:
@@ -405,6 +506,10 @@ def delete_milestone(theme_id, milestone_id):
 
 @bp.route('/<int:theme_id>/assets/<int:asset_id>/delete', methods=['POST'])
 def delete_asset(theme_id, asset_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
+
     ticker = delete_theme_asset(theme_id, asset_id)
     if ticker:
         flash(f"已删除监控标的 {ticker}", "success")
@@ -415,6 +520,10 @@ def delete_asset(theme_id, asset_id):
 
 @bp.route('/<int:theme_id>/articles/<int:article_id>/delete', methods=['POST'])
 def delete_article(theme_id, article_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
+
     title = delete_theme_article(theme_id, article_id)
     if title:
         flash(f"已删除文章：{title}", "success")
@@ -425,6 +534,10 @@ def delete_article(theme_id, article_id):
 
 @bp.route('/<int:theme_id>/add_article', methods=['POST'])
 def add_article(theme_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
+
     title = request.form.get('title', '').strip()
     url = request.form.get('url', '').strip()
     summary = request.form.get('summary', '').strip()

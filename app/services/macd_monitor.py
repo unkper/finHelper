@@ -19,7 +19,9 @@ def _fetch_tracked_us_tickers() -> list[str]:
         """
         SELECT DISTINCT UPPER(s.ticker) AS ticker
         FROM theme_assets s
+        JOIN themes t ON s.theme_id = t.id
         WHERE s.exchange = 'US'
+          AND t.archived_at IS NULL
         ORDER BY ticker
         """
     ).fetchall()

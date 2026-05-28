@@ -74,6 +74,7 @@ def init_db() -> None:
         assistant_id INTEGER NOT NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        archived_at TEXT,               -- NULL=活跃；非空=已封存
         FOREIGN KEY(assistant_id) REFERENCES investment_assistants(id) ON DELETE RESTRICT
     );
 
@@ -370,6 +371,10 @@ def migrate_db(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE theme_asset_price_alerts ADD COLUMN milestone_id INTEGER"
         )
+
+    theme_columns = {row["name"] for row in conn.execute("PRAGMA table_info(themes)")}
+    if theme_columns and "archived_at" not in theme_columns:
+        conn.execute("ALTER TABLE themes ADD COLUMN archived_at TEXT")
 
     account_columns = {row["name"] for row in conn.execute("PRAGMA table_info(accounts)")}
     if "currency" not in account_columns:

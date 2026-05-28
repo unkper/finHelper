@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  .archive-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+  }
+  .archive-list { display: flex; flex-direction: column; gap: 12px; }
+  .archive-card {
+    background: #fff; border: 1px solid #e1e4e8; border-radius: 8px;
+    padding: 16px 20px; cursor: pointer; transition: box-shadow 0.2s, border-color 0.2s;
+    text-decoration: none; color: inherit; display: block;
+  }
+  .archive-card:hover {
+    border-color: #b3d4ff; box-shadow: 0 2px 8px rgba(9, 30, 66, 0.12);
+  }
+  .archive-card h4 { margin: 0 0 8px; color: #172b4d; font-size: 16px; }
+  .archive-card p {
+    margin: 0 0 10px; font-size: 13px; color: #6b778c; line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .archive-meta { font-size: 12px; color: #8c939f; display: flex; flex-wrap: wrap; gap: 12px; }
+  .archive-badge {
+    display: inline-block; background: #ffebe6; color: #bf2600;
+    padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;
+  }
+  .archive-empty { font-size: 14px; color: #8c939f; padding: 40px 0; text-align: center; }
+</style>
+
+<div class="archive-header">
+  <div>
+    <h2 style="margin: 0;">回收站</h2>
+    <p style="font-size: 12px; color: #8c939f; margin: 6px 0 0;">已封存的投资主题，只读查阅，不可恢复</p>
+  </div>
+  <a href="{{ url_for('investments.index') }}" class="secondary-btn">← 返回投资看板</a>
+</div>
+
+{% if archived_themes %}
+<div class="archive-list">
+  {% for theme in archived_themes %}
+  <a class="archive-card" href="{{ url_for('investments.archive_detail', theme_id=theme.id) }}">
+    <h4>{{ theme.title }} <span class="archive-badge">已封存</span></h4>
+    {% if theme.description %}
+    <p>{{ theme.description }}</p>
+    {% endif %}
+    <div class="archive-meta">
+      <span>助手：{{ theme.assistant_name }}</span>
+      <span>封存于 {{ theme.archived_at[:19].replace('T', ' ') if theme.archived_at else '—' }}</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="archive-empty">回收站为空</p>
+{% endif %}
+{% endblock %}
