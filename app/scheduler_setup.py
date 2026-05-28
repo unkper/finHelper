@@ -19,6 +19,12 @@ def _run_macd_alert_check(app) -> None:
         check_macd_alerts()
 
 
+def _run_earnings_reminder_check(app) -> None:
+    with app.app_context():
+        from app.services.earnings_monitor import check_earnings_reminders
+        check_earnings_reminders()
+
+
 def configure_monitor_jobs(app) -> int:
     """按全局配置注册/更新监控定时任务，返回当前间隔（分钟）。"""
     with app.app_context():
@@ -26,7 +32,7 @@ def configure_monitor_jobs(app) -> int:
         ensure_default_settings()
         interval = get_monitor_interval_minutes()
 
-    for job_id in ("milestone_job", "price_alert_job", "macd_alert_job"):
+    for job_id in ("milestone_job", "price_alert_job", "macd_alert_job", "earnings_reminder_job"):
         if scheduler.get_job(job_id):
             scheduler.remove_job(job_id)
 
@@ -47,6 +53,13 @@ def configure_monitor_jobs(app) -> int:
     scheduler.add_job(
         id="macd_alert_job",
         func=lambda: _run_macd_alert_check(app),
+        trigger="interval",
+        minutes=interval,
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        id="earnings_reminder_job",
+        func=lambda: _run_earnings_reminder_check(app),
         trigger="interval",
         minutes=interval,
         replace_existing=True,

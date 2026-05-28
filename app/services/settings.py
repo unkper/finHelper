@@ -5,9 +5,18 @@ QUOTE_CACHE_MINUTES_KEY = "quote_cache_minutes"
 HISTORY_CACHE_HOURS_KEY = "history_cache_hours"
 MACD_ALERT_GOLDEN_ABOVE_KEY = "macd_alert_golden_cross_above_zero"
 MACD_ALERT_DEATH_BELOW_KEY = "macd_alert_death_cross_below_zero"
+EARNINGS_HORIZON_DAYS_KEY = "earnings_horizon_days"
+EARNINGS_REMIND_DAYS_BEFORE_KEY = "earnings_remind_days_before"
+EARNINGS_REMIND_ENABLED_KEY = "earnings_remind_enabled"
 DEFAULT_MONITOR_INTERVAL = 1
 DEFAULT_QUOTE_CACHE_MINUTES = 5
 DEFAULT_HISTORY_CACHE_HOURS = 12
+DEFAULT_EARNINGS_HORIZON_DAYS = 30
+DEFAULT_EARNINGS_REMIND_DAYS_BEFORE = 3
+MIN_EARNINGS_HORIZON_DAYS = 7
+MAX_EARNINGS_HORIZON_DAYS = 60
+MIN_EARNINGS_REMIND_DAYS = 1
+MAX_EARNINGS_REMIND_DAYS = 30
 MIN_MONITOR_INTERVAL = 1
 MAX_MONITOR_INTERVAL = 1440
 MIN_QUOTE_CACHE_MINUTES = 1
@@ -24,6 +33,9 @@ def ensure_default_settings() -> None:
         (HISTORY_CACHE_HOURS_KEY, str(DEFAULT_HISTORY_CACHE_HOURS)),
         (MACD_ALERT_GOLDEN_ABOVE_KEY, "0"),
         (MACD_ALERT_DEATH_BELOW_KEY, "0"),
+        (EARNINGS_HORIZON_DAYS_KEY, str(DEFAULT_EARNINGS_HORIZON_DAYS)),
+        (EARNINGS_REMIND_DAYS_BEFORE_KEY, str(DEFAULT_EARNINGS_REMIND_DAYS_BEFORE)),
+        (EARNINGS_REMIND_ENABLED_KEY, "1"),
     )
     for key, value in defaults:
         db.execute(
@@ -120,4 +132,50 @@ def get_macd_alert_settings() -> dict:
     return {
         "golden_cross_above_zero": is_macd_alert_golden_cross_above_zero_enabled(),
         "death_cross_below_zero": is_macd_alert_death_cross_below_zero_enabled(),
+    }
+
+
+def get_earnings_horizon_days() -> int:
+    raw = get_setting(EARNINGS_HORIZON_DAYS_KEY, str(DEFAULT_EARNINGS_HORIZON_DAYS))
+    try:
+        days = int(raw)
+    except ValueError:
+        days = DEFAULT_EARNINGS_HORIZON_DAYS
+    return max(MIN_EARNINGS_HORIZON_DAYS, min(MAX_EARNINGS_HORIZON_DAYS, days))
+
+
+def set_earnings_horizon_days(days: int) -> int:
+    clamped = max(MIN_EARNINGS_HORIZON_DAYS, min(MAX_EARNINGS_HORIZON_DAYS, int(days)))
+    set_setting(EARNINGS_HORIZON_DAYS_KEY, str(clamped))
+    return clamped
+
+
+def get_earnings_remind_days_before() -> int:
+    raw = get_setting(EARNINGS_REMIND_DAYS_BEFORE_KEY, str(DEFAULT_EARNINGS_REMIND_DAYS_BEFORE))
+    try:
+        days = int(raw)
+    except ValueError:
+        days = DEFAULT_EARNINGS_REMIND_DAYS_BEFORE
+    return max(MIN_EARNINGS_REMIND_DAYS, min(MAX_EARNINGS_REMIND_DAYS, days))
+
+
+def set_earnings_remind_days_before(days: int) -> int:
+    clamped = max(MIN_EARNINGS_REMIND_DAYS, min(MAX_EARNINGS_REMIND_DAYS, int(days)))
+    set_setting(EARNINGS_REMIND_DAYS_BEFORE_KEY, str(clamped))
+    return clamped
+
+
+def is_earnings_remind_enabled() -> bool:
+    return _is_truthy_setting(EARNINGS_REMIND_ENABLED_KEY)
+
+
+def set_earnings_remind_enabled(enabled: bool) -> None:
+    set_setting(EARNINGS_REMIND_ENABLED_KEY, "1" if enabled else "0")
+
+
+def get_earnings_settings() -> dict:
+    return {
+        "horizon_days": get_earnings_horizon_days(),
+        "remind_days_before": get_earnings_remind_days_before(),
+        "remind_enabled": is_earnings_remind_enabled(),
     }

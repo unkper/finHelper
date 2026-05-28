@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}财报日历 · FinHelper{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='earnings-calendar.css') }}">
+
+<main class="layout earnings-page">
+  <section class="panel earnings-hero">
+    <div class="earnings-hero-inner">
+      <div>
+        <p class="eyebrow">Earnings Calendar</p>
+        <h2>财报时间轴</h2>
+        <p class="hint">汇总所有投资主题下美股监控标的的未来财报发布日；可设置提前 N 天飞书提醒。</p>
+        <p class="hint earnings-meta" id="earningsMeta"></p>
+      </div>
+      <div class="earnings-hero-actions">
+        <a href="{{ url_for('investments.index') }}" class="secondary-btn">← 主题列表</a>
+        <button type="button" class="primary-btn" id="refreshEarningsBtn">刷新数据</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel earnings-settings">
+    <h3 class="earnings-settings-title">提醒设置</h3>
+    <form id="earningsSettingsForm" class="earnings-settings-form">
+      <label>
+        <span>展望天数</span>
+        <input type="number" name="horizon_days" id="horizonDays"
+          min="7" max="60" value="{{ earnings_settings.horizon_days }}" required>
+        <small>时间轴展示未来 N 天内的财报</small>
+      </label>
+      <label>
+        <span>提前提醒（天）</span>
+        <input type="number" name="remind_days_before" id="remindDaysBefore"
+          min="1" max="30" value="{{ earnings_settings.remind_days_before }}" required>
+        <small>在财报发布日前 N 天发送飞书提醒</small>
+      </label>
+      <label class="earnings-toggle">
+        <input type="checkbox" name="remind_enabled" id="remindEnabled"
+          {% if earnings_settings.remind_enabled %}checked{% endif %}>
+        <span>启用飞书财报提醒</span>
+      </label>
+      <button type="submit" class="primary-btn">保存设置</button>
+    </form>
+    <p class="earnings-settings-status" id="settingsStatus"></p>
+  </section>
+
+  <section class="panel earnings-timeline-panel">
+    <div class="earnings-timeline-head">
+      <h3>财报时间线</h3>
+      <span class="earnings-count" id="earningsCount"></span>
+    </div>
+
+    <div id="earningsLoading" class="earnings-loading">
+      <div class="loading-spinner"></div>
+      <p>正在拉取财报日历…</p>
+    </div>
+
+    <div id="earningsEmpty" class="earnings-empty" hidden>
+      <p id="earningsEmptyText">暂无数据</p>
+    </div>
+
+    <div id="earningsTimeline" class="earnings-timeline" hidden></div>
+  </section>
+</main>
+
+<script>
+  window.EARNINGS_PAGE = {
+    calendarUrl: {{ url_for('investments.earnings_calendar_api')|tojson }},
+    settingsUrl: {{ url_for('investments.earnings_settings_api')|tojson }},
+    apiConfigured: {{ api_configured|tojson }},
+    initialSettings: {{ earnings_settings|tojson }},
+  };
+</script>
+<script src="{{ url_for('static', filename='earnings-calendar.js') }}"></script>
+{% endblock %}

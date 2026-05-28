@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -13,18 +13,10 @@
         <div>
           <p class="eyebrow">Asset Journal</p>
           <h1>FinHelper</h1>
-          <p class="subtitle">A clean personal asset tracker for desktop and mobile.</p>
+          <p class="subtitle">个人资产记录与投资管理</p>
         </div>
-        <nav class="nav-links">
-          <a href="{{ url_for('main.index') }}">Home</a>
-          <a href="{{ url_for('main.manage_accounts') }}">Accounts</a>
-          <a href="{{ url_for('investments.index') }}" class="nav-link">investments</a>
-          <a href="{{ url_for('investments.stocks') }}">Stocks</a>
-          <a href="{{ url_for('main.settings') }}">Settings</a>
-          <form method="post" action="{{ url_for('auth.logout') }}" class="inline-logout-form">
-            <button type="submit" class="secondary-btn nav-logout-btn">退出</button>
-          </form>
-        </nav>
+        {% from 'macros.html' import main_nav %}
+        {{ main_nav() }}
       </header>
 
       {% with messages = get_flashed_messages(with_categories=true) %}

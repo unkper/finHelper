@@ -13,7 +13,12 @@ from app.services.settings import (
     get_macd_alert_settings,
     set_macd_alert_death_cross_below_zero,
     set_macd_alert_golden_cross_above_zero,
+    get_earnings_settings,
+    set_earnings_horizon_days,
+    set_earnings_remind_days_before,
+    set_earnings_remind_enabled,
 )
+from app.services.earnings_calendar import build_earnings_payload, is_earnings_api_configured
 from app.services.stock_charts import build_stock_chart_payload
 from app.services.rate_limit import consume_rate_limit, get_client_ip
 from app.scheduler_setup import configure_monitor_jobs
@@ -69,6 +74,62 @@ def macd_alerts():
     return jsonify({
         "status": "ok",
         "macd_alerts": get_macd_alert_settings(),
+    })
+
+
+@bp.route('/earnings')
+def earnings():
+    return render_template(
+        "investments/earnings.html",
+        earnings_settings=get_earnings_settings(),
+        api_configured=is_earnings_api_configured(),
+    )
+
+
+@bp.route('/earnings/api/calendar')
+def earnings_calendar_api():
+    ip = get_client_ip()
+    force_refresh = request.args.get("refresh") == "1"
+    if force_refresh:
+        allowed, retry_after = consume_rate_limit(
+            f"earnings-refresh:{ip}", max_calls=5, window_seconds=300
+        )
+    else:
+        allowed, retry_after = consume_rate_limit(
+            f"earnings-calendar:{ip}", max_calls=30, window_seconds=60
+        )
+    if not allowed:
+        return jsonify({
+            "error": "请求过于频繁，请稍后再试",
+            "retry_after": retry_after,
+        }), 429
+
+    horizon = request.args.get("horizon_days", type=int)
+    if horizon is None:
+        horizon = get_earnings_settings()["horizon_days"]
+    payload = build_earnings_payload(horizon_days=horizon, force_refresh=force_refresh)
+    payload["settings"] = get_earnings_settings()
+    return jsonify(payload)
+
+
+@bp.route('/earnings/api/settings', methods=['POST'])
+def earnings_settings_api():
+    data = request.get_json(silent=True) or {}
+    horizon = data.get("horizon_days")
+    remind_before = data.get("remind_days_before")
+    remind_enabled = data.get("remind_enabled")
+
+    if horizon is not None:
+        set_earnings_horizon_days(int(horizon))
+    if remind_before is not None:
+        set_earnings_remind_days_before(int(remind_before))
+    if remind_enabled is not None:
+        set_earnings_remind_enabled(bool(remind_enabled))
+
+    configure_monitor_jobs(current_app._get_current_object())
+    return jsonify({
+        "status": "ok",
+        "settings": get_earnings_settings(),
     })
 
 

@@ -160,6 +160,22 @@ def init_db() -> None:
         last_triggered_at TEXT NOT NULL,
         PRIMARY KEY (ticker, signal_type)
     );
+
+    -- 9. 财报日历 API 缓存
+    CREATE TABLE IF NOT EXISTS earnings_calendar_cache (
+        cache_key TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        fetched_at TEXT NOT NULL
+    );
+
+    -- 10. 财报提前提醒去重
+    CREATE TABLE IF NOT EXISTS earnings_reminder_log (
+        ticker TEXT NOT NULL,
+        report_date TEXT NOT NULL,
+        remind_days_before INTEGER NOT NULL,
+        reminded_on TEXT NOT NULL,
+        PRIMARY KEY (ticker, report_date, remind_days_before)
+    );
     """
     # 修改点 2：使用 current_app.config 替代 g.flask_app.config
     with closing(sqlite3.connect(current_app.config["DATABASE_PATH"])) as conn:
@@ -300,11 +316,31 @@ def _migrate_stock_daily_cache(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_earnings_tables(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS earnings_calendar_cache (
+            cache_key TEXT PRIMARY KEY,
+            payload_json TEXT NOT NULL,
+            fetched_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS earnings_reminder_log (
+            ticker TEXT NOT NULL,
+            report_date TEXT NOT NULL,
+            remind_days_before INTEGER NOT NULL,
+            reminded_on TEXT NOT NULL,
+            PRIMARY KEY (ticker, report_date, remind_days_before)
+        );
+        """
+    )
+
+
 def migrate_db(conn: sqlite3.Connection) -> None:
     _migrate_investment_assistants(conn)
     _migrate_stock_daily_cache(conn)
     _migrate_app_settings(conn)
     _migrate_asset_price_alerts(conn)
+    _migrate_earnings_tables(conn)
 
     milestone_columns = {row["name"] for row in conn.execute("PRAGMA table_info(theme_milestones)")}
     if milestone_columns:
