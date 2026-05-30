@@ -453,7 +453,7 @@ def add_theme_milestone(
     if not end_date:
         end_date = event_date
     db = get_db()
-    db.execute(
+    cursor = db.execute(
         """
         INSERT INTO theme_milestones
             (theme_id, event_date, end_date, description, reminder_time, profit_loss)
@@ -466,6 +466,7 @@ def add_theme_milestone(
         (theme_id,),
     )
     db.commit()
+    return cursor.lastrowid
 
 
 def update_theme_milestone(

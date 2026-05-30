@@ -8,6 +8,9 @@ MACD_ALERT_DEATH_BELOW_KEY = "macd_alert_death_cross_below_zero"
 EARNINGS_HORIZON_DAYS_KEY = "earnings_horizon_days"
 EARNINGS_REMIND_DAYS_BEFORE_KEY = "earnings_remind_days_before"
 EARNINGS_REMIND_ENABLED_KEY = "earnings_remind_enabled"
+AI_ARTICLE_MODEL_KEY = "ai_article_model"
+ALLOWED_AI_ARTICLE_MODELS = ("deepseek-v4-flash", "deepseek-v4-pro")
+DEFAULT_AI_ARTICLE_MODEL = "deepseek-v4-flash"
 DEFAULT_MONITOR_INTERVAL = 1
 DEFAULT_QUOTE_CACHE_MINUTES = 5
 DEFAULT_HISTORY_CACHE_HOURS = 12
@@ -36,6 +39,7 @@ def ensure_default_settings() -> None:
         (EARNINGS_HORIZON_DAYS_KEY, str(DEFAULT_EARNINGS_HORIZON_DAYS)),
         (EARNINGS_REMIND_DAYS_BEFORE_KEY, str(DEFAULT_EARNINGS_REMIND_DAYS_BEFORE)),
         (EARNINGS_REMIND_ENABLED_KEY, "1"),
+        (AI_ARTICLE_MODEL_KEY, DEFAULT_AI_ARTICLE_MODEL),
     )
     for key, value in defaults:
         db.execute(
@@ -178,4 +182,24 @@ def get_earnings_settings() -> dict:
         "horizon_days": get_earnings_horizon_days(),
         "remind_days_before": get_earnings_remind_days_before(),
         "remind_enabled": is_earnings_remind_enabled(),
+    }
+
+
+def get_ai_article_model() -> str:
+    raw = get_setting(AI_ARTICLE_MODEL_KEY, DEFAULT_AI_ARTICLE_MODEL)
+    if raw not in ALLOWED_AI_ARTICLE_MODELS:
+        return DEFAULT_AI_ARTICLE_MODEL
+    return raw
+
+
+def set_ai_article_model(model: str) -> str:
+    value = model if model in ALLOWED_AI_ARTICLE_MODELS else DEFAULT_AI_ARTICLE_MODEL
+    set_setting(AI_ARTICLE_MODEL_KEY, value)
+    return value
+
+
+def get_ai_article_settings() -> dict:
+    return {
+        "model": get_ai_article_model(),
+        "allowed_models": list(ALLOWED_AI_ARTICLE_MODELS),
     }

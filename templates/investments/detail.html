@@ -151,6 +151,74 @@
     color: #8c939f;
     margin: 0;
   }
+  .article-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #ebecf0;
+  }
+  .ai-source-quote {
+    font-size: 12px;
+    color: #8c939f;
+    line-height: 1.5;
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    background: #fafbfc;
+    border-radius: 6px;
+    border-left: 3px solid #dfe1e6;
+  }
+  .ai-wizard-progress {
+    font-size: 12px;
+    color: #6b778c;
+    margin: 0 0 16px;
+    font-weight: bold;
+  }
+  .ai-wizard-status {
+    font-size: 13px;
+    color: #5e6c84;
+    margin: 0 0 16px;
+    min-height: 1.2em;
+  }
+  .ai-validation-warn {
+    font-size: 12px;
+    color: #974f0c;
+    background: #fff7e6;
+    border: 1px solid #ffc400;
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+  }
+  .ai-duplicate-warn {
+    font-size: 12px;
+    color: #974f0c;
+    background: #fff7e6;
+    border: 1px solid #ffc400;
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+  }
+  .ai-asset-current-price {
+    font-size: 13px;
+    font-weight: bold;
+    color: #172b4d;
+    margin: 0 0 12px;
+  }
+  .btn-ai-link {
+    font-size: 12px;
+    color: #6554c0;
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 0;
+  }
+  .btn-ai-link:hover { text-decoration: underline; }
+  .btn-ai-link:disabled {
+    color: #a5adba;
+    cursor: not-allowed;
+    text-decoration: none;
+  }
 
   /* 资产监控池样式 */
   .asset-card {
@@ -381,6 +449,88 @@
     </div>
     <p class="article-detail-body" id="articleDetailSummary"></p>
     <p class="article-detail-empty" id="articleDetailEmpty" hidden>暂无摘要内容</p>
+    <div class="article-detail-actions" id="articleDetailActions" hidden>
+      <button type="button" class="secondary-btn" id="articleDetailAiBtn" onclick="ArticleAiWizard.startFromDetail()">🤖 AI 分析</button>
+    </div>
+  </div>
+</div>
+
+<div id="aiAnalysisModal" class="modal-overlay">
+  <div class="modal-content modal-form modal-wide">
+    <button class="modal-close" type="button" onclick="ArticleAiWizard.close()">✕</button>
+    <h3 class="modal-form-title">AI 分析结果确认</h3>
+    <p class="modal-form-subtitle">请逐条核对 AI 提取的时间节点与监控标的，确认后写入当前主题。</p>
+    <p class="ai-wizard-progress" id="aiWizardProgress"></p>
+    <p class="ai-wizard-status" id="aiWizardStatus"></p>
+    <div id="aiWizardLoading" hidden>
+      <p style="font-size: 14px; color: #5e6c84; margin: 0;">正在分析研报，请稍候…</p>
+    </div>
+    <div id="aiWizardDone" hidden>
+      <p style="font-size: 14px; color: #006644; margin: 0;">分析结果已全部处理，页面即将刷新…</p>
+    </div>
+    <div id="aiWizardEmpty" hidden>
+      <p style="font-size: 14px; color: #5e6c84; margin: 0;">未从摘要中识别到可添加的时间节点或监控标的。</p>
+      <div class="modal-form-actions">
+        <button type="button" class="primary-btn" onclick="ArticleAiWizard.close()">关闭</button>
+      </div>
+    </div>
+    <form id="aiWizardMilestoneForm" hidden>
+      <div id="aiMilestoneDuplicateWarn" class="ai-duplicate-warn" hidden></div>
+      <div class="modal-form-section">
+        <div class="modal-form-section-title">关键时间节点</div>
+        <div class="modal-form-grid-3">
+          <div class="form-group">
+            <label>开始日期</label>
+            <input type="date" id="aiMilestoneEventDate" required>
+          </div>
+          <div class="form-group">
+            <label>结束日期</label>
+            <input type="date" id="aiMilestoneEndDate">
+          </div>
+          <div class="form-group">
+            <label>时刻</label>
+            <input type="time" id="aiMilestoneReminderTime" value="12:00" required>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>事件描述</label>
+          <textarea id="aiMilestoneDescription" rows="2" required></textarea>
+        </div>
+        <p class="ai-source-quote" id="aiMilestoneSourceQuote" hidden></p>
+      </div>
+      <div class="modal-form-actions">
+        <button type="button" class="secondary-btn" onclick="ArticleAiWizard.skip()">跳过</button>
+        <button type="submit" class="primary-btn">确认添加</button>
+      </div>
+    </form>
+    <form id="aiWizardAssetForm" hidden>
+      <div id="aiAssetValidationWarn" class="ai-validation-warn" hidden></div>
+      <div id="aiAssetDuplicateWarn" class="ai-duplicate-warn" hidden></div>
+      <div class="modal-form-section">
+        <div class="modal-form-section-title">监控标的</div>
+        <div class="form-group">
+          <label>股票代码（美股）</label>
+          <input type="text" id="aiAssetTicker" placeholder="如 NVDA" required>
+        </div>
+        <p class="ai-asset-current-price" id="aiAssetCurrentPrice" hidden></p>
+        <div class="modal-form-section" style="margin-top: 12px; margin-bottom: 0;">
+          <div class="price-alerts-toolbar">
+            <label style="margin: 0; font-size: 11px; font-weight: bold; color: #6b778c;">价位提醒（可选）</label>
+            <button type="button" class="btn-link" onclick="ArticleAiWizard.addPriceAlertRow()">+ 添加一条</button>
+          </div>
+          <div class="modal-form-panel">
+            <div id="aiPriceAlertsContainer"></div>
+            <p class="milestone-range-hint" id="aiPriceAlertsEmptyHint">AI 未识别到价位，可手动添加</p>
+          </div>
+        </div>
+        <p class="ai-source-quote" id="aiAssetRationale" hidden></p>
+        <p class="ai-source-quote" id="aiAssetSourceQuote" hidden></p>
+      </div>
+      <div class="modal-form-actions">
+        <button type="button" class="secondary-btn" onclick="ArticleAiWizard.skip()">跳过</button>
+        <button type="submit" class="primary-btn">确认添加</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -581,13 +731,15 @@
           {% endif %}
         </div>
         <div class="article-item-actions">
+          {% if article.summary %}
+          <button type="button" class="btn-ai-link"
+            title="{% if ai_article_configured %}从摘要提取时间节点与监控标的{% else %}需配置 DEEPSEEK_API_KEY{% endif %}"
+            {% if not ai_article_configured %}disabled{% endif %}
+            onclick="ArticleAiWizard.start({{ article.id }})">AI</button>
+          {% endif %}
           {{ delete_button(url_for('investments.delete_article', theme_id=theme.id, article_id=article.id), '确定删除此文章？') }}
         </div>
-        <div id="article-source-{{ article.id }}" hidden>
-          <span class="article-source-title">{{ article.title }}</span>
-          <span class="article-source-url">{{ article.url or '' }}</span>
-          <span class="article-source-summary">{{ article.summary or '' }}</span>
-        </div>
+        <script type="application/json" id="article-source-{{ article.id }}">{{ {"title": article.title or "", "url": article.url or "", "summary": article.summary or ""} | tojson }}</script>
       </div>
       {% else %}
       <p style="font-size: 13px; color: #8c939f;">暂无关联资料。</p>
@@ -679,6 +831,8 @@
 </div>
 
 <script>
+  var currentArticleId = null;
+
   function updatePriceAlertsEmptyHint() {
     const container = document.getElementById('priceAlertsContainer');
     const hint = document.getElementById('priceAlertsEmptyHint');
@@ -731,13 +885,388 @@
     endInput.min = startInput.value;
   }
 
-  function openArticleDetailModal(articleId) {
-    const source = document.getElementById('article-source-' + articleId);
-    if (!source) return;
+  const articleAiThemeId = {{ theme.id }};
 
-    const title = source.querySelector('.article-source-title')?.textContent || '';
-    const url = source.querySelector('.article-source-url')?.textContent || '';
-    const summary = source.querySelector('.article-source-summary')?.textContent || '';
+  const ArticleAiWizard = {
+    configured: {{ 'true' if ai_article_configured else 'false' }},
+    themeId: articleAiThemeId,
+    existingTickers: new Set({{ assets | map(attribute='ticker') | list | tojson }}),
+    milestones: [],
+    assets: [],
+    phase: 'milestone',
+    index: 0,
+    busy: false,
+    currentArticleId: null,
+
+    urls: {
+      analyze(articleId) {
+        return `/investments/${articleAiThemeId}/articles/${articleId}/ai-analyze`;
+      },
+      confirmMilestone: `/investments/${articleAiThemeId}/ai-confirm/milestone`,
+      confirmAsset: `/investments/${articleAiThemeId}/ai-confirm/asset`,
+    },
+
+    start(articleId) {
+      if (!this.configured || this.busy) return;
+      this.currentArticleId = articleId;
+      this.openModal();
+      this.runAnalysis();
+    },
+
+    startFromDetail() {
+      if (!currentArticleId) return;
+      document.getElementById('articleDetailModal').style.display = 'none';
+      this.start(currentArticleId);
+    },
+
+    openModal() {
+      document.getElementById('aiAnalysisModal').style.display = 'flex';
+      this.resetViews();
+      document.getElementById('aiWizardLoading').hidden = false;
+      document.getElementById('aiWizardStatus').textContent = '';
+      document.getElementById('aiWizardProgress').textContent = '';
+    },
+
+    close() {
+      if (this.busy) return;
+      document.getElementById('aiAnalysisModal').style.display = 'none';
+    },
+
+    resetViews() {
+      ['aiWizardLoading', 'aiWizardDone', 'aiWizardEmpty', 'aiWizardMilestoneForm', 'aiWizardAssetForm'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.hidden = true;
+      });
+    },
+
+    async runAnalysis() {
+      this.busy = true;
+      this.milestones = [];
+      this.assets = [];
+      this.phase = 'milestone';
+      this.index = 0;
+
+      try {
+        const response = await fetch(this.urls.analyze(this.currentArticleId), { method: 'POST' });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || '分析失败');
+
+        this.milestones = payload.milestones || [];
+        this.assets = payload.assets || [];
+        document.getElementById('aiWizardLoading').hidden = true;
+
+        if (!this.milestones.length && !this.assets.length) {
+          document.getElementById('aiWizardEmpty').hidden = false;
+          return;
+        }
+        this.showCurrent();
+      } catch (error) {
+        document.getElementById('aiWizardLoading').hidden = true;
+        document.getElementById('aiWizardStatus').textContent = error.message || '分析失败，请重试';
+        document.getElementById('aiWizardEmpty').hidden = false;
+      } finally {
+        this.busy = false;
+      }
+    },
+
+    totalCount() {
+      return this.milestones.length + this.assets.length;
+    },
+
+    currentNumber() {
+      if (this.phase === 'milestone') return this.index + 1;
+      return this.milestones.length + this.index + 1;
+    },
+
+    updateProgress() {
+      const progress = document.getElementById('aiWizardProgress');
+      const phaseLabel = this.phase === 'milestone' ? '时间节点' : '监控标的';
+      progress.textContent = `${phaseLabel} ${this.index + 1}/${this.phase === 'milestone' ? this.milestones.length : this.assets.length} · 总进度 ${this.currentNumber()}/${this.totalCount()}`;
+    },
+
+    showCurrent() {
+      this.resetViews();
+      if (this.phase === 'milestone') {
+        if (this.index >= this.milestones.length) {
+          this.phase = 'asset';
+          this.index = 0;
+        }
+      }
+      if (this.phase === 'milestone' && this.index < this.milestones.length) {
+        this.showMilestone(this.milestones[this.index]);
+        return;
+      }
+      if (this.phase === 'asset' && this.index < this.assets.length) {
+        this.showAsset(this.assets[this.index]);
+        return;
+      }
+      this.finish();
+    },
+
+    showMilestone(item) {
+      document.getElementById('aiWizardMilestoneForm').hidden = false;
+      this.updateProgress();
+      document.getElementById('aiWizardStatus').textContent = '';
+
+      const eventDateInput = document.getElementById('aiMilestoneEventDate');
+      const endDateInput = document.getElementById('aiMilestoneEndDate');
+      eventDateInput.value = item.event_date || '';
+      endDateInput.value = item.end_date || item.event_date || '';
+      syncMilestoneEndDate(eventDateInput, endDateInput);
+      document.getElementById('aiMilestoneReminderTime').value = (item.reminder_time || '12:00').slice(0, 5);
+      document.getElementById('aiMilestoneDescription').value = item.description || '';
+
+      const quoteEl = document.getElementById('aiMilestoneSourceQuote');
+      if (item.source_quote) {
+        quoteEl.textContent = '依据：' + item.source_quote;
+        quoteEl.hidden = false;
+      } else {
+        quoteEl.hidden = true;
+      }
+      document.getElementById('aiMilestoneDuplicateWarn').hidden = true;
+    },
+
+    showAsset(item) {
+      document.getElementById('aiWizardAssetForm').hidden = false;
+      this.updateProgress();
+      document.getElementById('aiWizardStatus').textContent = '';
+
+      const ticker = (item.ticker || '').toUpperCase();
+      document.getElementById('aiAssetTicker').value = ticker;
+
+      const currentPriceEl = document.getElementById('aiAssetCurrentPrice');
+      if (item.current_price != null) {
+        currentPriceEl.textContent = `EODHD 现价 $${Number(item.current_price).toFixed(2)}`;
+        currentPriceEl.hidden = false;
+      } else {
+        currentPriceEl.hidden = true;
+      }
+
+      const validationWarn = document.getElementById('aiAssetValidationWarn');
+      if (item.validated === false) {
+        validationWarn.textContent = `警告：${ticker} 未能通过 EODHD 行情校验，请确认代码是否正确。`;
+        validationWarn.hidden = false;
+      } else {
+        validationWarn.hidden = true;
+      }
+
+      const duplicateWarn = document.getElementById('aiAssetDuplicateWarn');
+      duplicateWarn.dataset.confirmed = '';
+      if (this.existingTickers.has(ticker)) {
+        duplicateWarn.textContent = `${ticker} 已在当前主题监控池中，仍要添加吗？`;
+        duplicateWarn.hidden = false;
+      } else {
+        duplicateWarn.hidden = true;
+      }
+
+      this.renderPriceAlerts(item.price_alerts || []);
+
+      const rationaleEl = document.getElementById('aiAssetRationale');
+      if (item.rationale) {
+        rationaleEl.textContent = '理由：' + item.rationale;
+        rationaleEl.hidden = false;
+      } else {
+        rationaleEl.hidden = true;
+      }
+
+      const quoteEl = document.getElementById('aiAssetSourceQuote');
+      if (item.source_quote) {
+        quoteEl.textContent = '依据：' + item.source_quote;
+        quoteEl.hidden = false;
+      } else {
+        quoteEl.hidden = true;
+      }
+    },
+
+    updatePriceAlertsEmptyHint() {
+      const container = document.getElementById('aiPriceAlertsContainer');
+      const hint = document.getElementById('aiPriceAlertsEmptyHint');
+      if (!container || !hint) return;
+      hint.hidden = container.children.length > 0;
+    },
+
+    renderPriceAlerts(alerts) {
+      const container = document.getElementById('aiPriceAlertsContainer');
+      if (!container) return;
+      container.innerHTML = '';
+      (alerts || []).forEach((alert) => this.addPriceAlertRow(alert));
+      this.updatePriceAlertsEmptyHint();
+    },
+
+    addPriceAlertRow(alert = {}) {
+      const container = document.getElementById('aiPriceAlertsContainer');
+      if (!container) return;
+      const direction = alert.direction === 'above' ? 'above' : 'below';
+      const row = document.createElement('div');
+      row.className = 'price-alert-form-row';
+      row.innerHTML = `
+        <div class="form-group">
+          <label>方向</label>
+          <select class="ai-alert-direction">
+            <option value="below">跌至/跌破</option>
+            <option value="above">涨至/涨破</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>目标价 ($)</label>
+          <input type="number" step="0.01" class="ai-alert-target-price" placeholder="如 150.00">
+        </div>
+        <div class="form-group">
+          <label>备注</label>
+          <input type="text" class="ai-alert-note" placeholder="可选">
+        </div>
+        <button type="button" class="btn-icon" title="删除"
+          onclick="this.closest('.price-alert-form-row').remove(); ArticleAiWizard.updatePriceAlertsEmptyHint();">×</button>
+      `;
+      row.querySelector('.ai-alert-direction').value = direction;
+      if (alert.target_price != null) {
+        row.querySelector('.ai-alert-target-price').value = alert.target_price;
+      }
+      if (alert.note) {
+        row.querySelector('.ai-alert-note').value = alert.note;
+      }
+      container.appendChild(row);
+      this.updatePriceAlertsEmptyHint();
+    },
+
+    collectPriceAlerts() {
+      const rows = document.querySelectorAll('#aiPriceAlertsContainer .price-alert-form-row');
+      const alerts = [];
+      rows.forEach((row) => {
+        const priceRaw = row.querySelector('.ai-alert-target-price')?.value?.trim();
+        if (!priceRaw) return;
+        const targetPrice = parseFloat(priceRaw);
+        if (Number.isNaN(targetPrice) || targetPrice <= 0) return;
+        alerts.push({
+          target_price: targetPrice,
+          direction: row.querySelector('.ai-alert-direction')?.value === 'above' ? 'above' : 'below',
+          note: row.querySelector('.ai-alert-note')?.value?.trim() || null,
+        });
+      });
+      return alerts;
+    },
+
+    skip() {
+      if (this.busy) return;
+      if (this.phase === 'milestone') {
+        this.index += 1;
+        if (this.index >= this.milestones.length) {
+          this.phase = 'asset';
+          this.index = 0;
+        }
+      } else {
+        this.index += 1;
+      }
+      this.showCurrent();
+    },
+
+    async confirmMilestone(event) {
+      event.preventDefault();
+      if (this.busy) return;
+      this.busy = true;
+      document.getElementById('aiWizardStatus').textContent = '正在添加…';
+
+      const eventDateInput = document.getElementById('aiMilestoneEventDate');
+      const endDateInput = document.getElementById('aiMilestoneEndDate');
+      const body = {
+        event_date: eventDateInput.value,
+        end_date: endDateInput.value || eventDateInput.value,
+        reminder_time: document.getElementById('aiMilestoneReminderTime').value,
+        description: document.getElementById('aiMilestoneDescription').value.trim(),
+      };
+
+      try {
+        const response = await fetch(this.urls.confirmMilestone, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || '添加失败');
+        document.getElementById('aiWizardStatus').textContent = '时间节点已添加';
+        this.index += 1;
+        if (this.index >= this.milestones.length) {
+          this.phase = 'asset';
+          this.index = 0;
+        }
+        setTimeout(() => this.showCurrent(), 300);
+      } catch (error) {
+        document.getElementById('aiWizardStatus').textContent = error.message || '添加失败';
+      } finally {
+        this.busy = false;
+      }
+    },
+
+    async confirmAsset(event) {
+      event.preventDefault();
+      if (this.busy) return;
+
+      const ticker = document.getElementById('aiAssetTicker').value.toUpperCase().trim();
+      if (!ticker) return;
+
+      const duplicateWarn = document.getElementById('aiAssetDuplicateWarn');
+      if (!duplicateWarn.hidden && !duplicateWarn.dataset.confirmed) {
+        duplicateWarn.dataset.confirmed = '1';
+        duplicateWarn.textContent = `${ticker} 已在监控池中，再次点击「确认添加」将仍要添加。`;
+        return;
+      }
+
+      this.busy = true;
+      document.getElementById('aiWizardStatus').textContent = '正在添加…';
+
+      try {
+        const response = await fetch(this.urls.confirmAsset, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ticker,
+            exchange: 'US',
+            price_alerts: this.collectPriceAlerts(),
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || '添加失败');
+        this.existingTickers.add(ticker);
+        document.getElementById('aiWizardStatus').textContent = `监控标的 ${ticker} 已添加`;
+        duplicateWarn.hidden = true;
+        delete duplicateWarn.dataset.confirmed;
+        this.index += 1;
+        setTimeout(() => this.showCurrent(), 300);
+      } catch (error) {
+        document.getElementById('aiWizardStatus').textContent = error.message || '添加失败';
+      } finally {
+        this.busy = false;
+      }
+    },
+
+    finish() {
+      this.resetViews();
+      document.getElementById('aiWizardDone').hidden = false;
+      document.getElementById('aiWizardProgress').textContent = '全部完成';
+      setTimeout(() => window.location.reload(), 1200);
+    },
+  };
+  window.ArticleAiWizard = ArticleAiWizard;
+
+  function getArticleSourceData(articleId) {
+    const jsonEl = document.getElementById('article-source-' + articleId);
+    if (!jsonEl) return null;
+    try {
+      return JSON.parse(jsonEl.textContent);
+    } catch (error) {
+      console.error('Failed to parse article source', error);
+      return null;
+    }
+  }
+
+  function openArticleDetailModal(articleId) {
+    const data = getArticleSourceData(articleId);
+    if (!data) return;
+
+    currentArticleId = articleId;
+    const title = data.title || '';
+    const url = data.url || '';
+    const summary = data.summary || '';
 
     document.getElementById('articleDetailTitle').textContent = title;
 
@@ -753,13 +1282,18 @@
 
     const summaryEl = document.getElementById('articleDetailSummary');
     const emptyEl = document.getElementById('articleDetailEmpty');
+    const actionsEl = document.getElementById('articleDetailActions');
+    const aiBtn = document.getElementById('articleDetailAiBtn');
     if (summary.trim()) {
       summaryEl.textContent = summary;
       summaryEl.hidden = false;
       emptyEl.hidden = true;
+      if (actionsEl) actionsEl.hidden = false;
+      if (aiBtn) aiBtn.disabled = !ArticleAiWizard.configured;
     } else {
       summaryEl.hidden = true;
       emptyEl.hidden = false;
+      if (actionsEl) actionsEl.hidden = true;
     }
 
     document.getElementById('articleDetailModal').style.display = 'flex';
@@ -841,6 +1375,19 @@
       }
     });
   });
+
+  document.getElementById('aiWizardMilestoneForm').addEventListener('submit', (event) => {
+    ArticleAiWizard.confirmMilestone(event);
+  });
+  document.getElementById('aiWizardAssetForm').addEventListener('submit', (event) => {
+    ArticleAiWizard.confirmAsset(event);
+  });
+
+  const aiMilestoneEventDate = document.getElementById('aiMilestoneEventDate');
+  const aiMilestoneEndDate = document.getElementById('aiMilestoneEndDate');
+  if (aiMilestoneEventDate && aiMilestoneEndDate) {
+    aiMilestoneEventDate.addEventListener('change', () => syncMilestoneEndDate(aiMilestoneEventDate, aiMilestoneEndDate));
+  }
 </script>
 
 {% endblock %}

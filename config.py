@@ -34,4 +34,11 @@ class Config:
     # 网页访问密码（必填后才会开放登录）
     WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "")
 
+    # DeepSeek（研报 AI 分析，OpenAI 兼容接口）
+    DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+    DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
+
+    # 财报日历与飞书提醒（设为 true/1/yes 开启）
+    EARNINGS_ENABLED = os.environ.get("EARNINGS_ENABLED", "false").lower() in ("true", "1", "yes")
+
 # 这样你的 app 初始化时，直接 app.config.from_object(Config) 即可，不需要再调 from_env() 了

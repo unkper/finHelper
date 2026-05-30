@@ -22,9 +22,15 @@ from app.services.settings import (
 from app.services.earnings_calendar import build_earnings_payload, is_earnings_api_configured
 from app.services.stock_charts import build_stock_chart_payload
 from app.services.rate_limit import consume_rate_limit, get_client_ip
+from app.services.article_ai import extract_from_article, has_article_ai_configured
+from app.services.features import is_earnings_enabled
 from app.scheduler_setup import configure_monitor_jobs
 
 bp = Blueprint('investments', __name__, url_prefix='/investments')
+
+
+def _earnings_not_found():
+    return jsonify({"error": "财报功能未开启"}), 404
 
 
 @bp.route('/')
@@ -81,6 +87,9 @@ def macd_alerts():
 
 @bp.route('/earnings')
 def earnings():
+    if not is_earnings_enabled():
+        flash("财报功能未开启", "error")
+        return redirect(url_for('investments.index'))
     return render_template(
         "investments/earnings.html",
         earnings_settings=get_earnings_settings(),
@@ -90,6 +99,8 @@ def earnings():
 
 @bp.route('/earnings/api/calendar')
 def earnings_calendar_api():
+    if not is_earnings_enabled():
+        return _earnings_not_found()
     ip = get_client_ip()
     force_refresh = request.args.get("refresh") == "1"
     if force_refresh:
@@ -116,6 +127,8 @@ def earnings_calendar_api():
 
 @bp.route('/earnings/api/settings', methods=['POST'])
 def earnings_settings_api():
+    if not is_earnings_enabled():
+        return _earnings_not_found()
     data = request.get_json(silent=True) or {}
     horizon = data.get("horizon_days")
     remind_before = data.get("remind_days_before")
@@ -211,6 +224,7 @@ def detail(theme_id):
         milestones=milestones,
         milestone_index=milestone_index,
         macd_alerts=get_macd_alert_settings(),
+        ai_article_configured=has_article_ai_configured(),
     )
 
 
@@ -549,3 +563,159 @@ def add_article(theme_id):
         flash("文章已添加", "success")
 
     return redirect(url_for('investments.detail', theme_id=theme_id))
+
+
+def _fetch_theme_article(theme_id: int, article_id: int):
+    """获取主题下的单篇文章，不存在则返回 None。"""
+    db = get_db()
+    return db.execute(
+        "SELECT * FROM theme_articles WHERE id = ? AND theme_id = ?",
+        (article_id, theme_id),
+    ).fetchone()
+
+
+def _parse_price_alerts_from_json(data: dict) -> list:
+    """从 JSON 请求体解析价位提醒列表。"""
+    alerts = []
+    for i, item in enumerate(data.get("price_alerts") or []):
+        if not isinstance(item, dict):
+            raise ValueError(f"第 {i + 1} 条价位提醒格式无效")
+        price_raw = str(item.get("target_price") or "").strip()
+        if not price_raw:
+            continue
+        try:
+            target_price = float(price_raw)
+        except ValueError:
+            raise ValueError(f"第 {i + 1} 条提醒价格格式无效")
+        direction = str(item.get("direction") or "below").strip()
+        if direction not in ("below", "above"):
+            direction = "below"
+        note = str(item.get("note") or "").strip() or None
+        alerts.append({
+            "target_price": target_price,
+            "direction": direction,
+            "note": note,
+        })
+    return alerts
+
+
+def _parse_milestone_ids_from_json(theme_id: int, data: dict) -> list[int]:
+    """从 JSON 请求体解析并校验 milestone_ids。"""
+    raw_ids = data.get("milestone_ids") or []
+    if not isinstance(raw_ids, list):
+        raise ValueError("milestone_ids 格式无效")
+    milestone_ids: list[int] = []
+    for raw in raw_ids:
+        try:
+            milestone_ids.append(int(raw))
+        except (TypeError, ValueError):
+            raise ValueError("时间节点选择无效")
+    if not milestone_ids:
+        return []
+
+    db = get_db()
+    placeholders = ",".join("?" * len(milestone_ids))
+    rows = db.execute(
+        f"""
+        SELECT id FROM theme_milestones
+        WHERE theme_id = ? AND id IN ({placeholders})
+        """,
+        (theme_id, *milestone_ids),
+    ).fetchall()
+    found = {row["id"] for row in rows}
+    missing = set(milestone_ids) - found
+    if missing:
+        raise ValueError("所选时间节点不存在或不属于当前主题")
+    return milestone_ids
+
+
+@bp.route('/<int:theme_id>/articles/<int:article_id>/ai-analyze', methods=['POST'])
+def ai_analyze_article(theme_id, article_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return jsonify({"error": "主题已封存或不存在"}), 403
+
+    if not has_article_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY，请在 .env 中设置"}), 503
+
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"article-ai:{ip}", max_calls=10, window_seconds=3600
+    )
+    if not allowed:
+        return jsonify({
+            "error": "AI 分析请求过于频繁，请稍后再试",
+            "retry_after": retry_after,
+        }), 429
+
+    article = _fetch_theme_article(theme_id, article_id)
+    if not article:
+        return jsonify({"error": "文章不存在"}), 404
+
+    summary = (article["summary"] or "").strip()
+    if not summary:
+        return jsonify({"error": "请先填写文章摘要后再进行 AI 分析"}), 400
+
+    result = extract_from_article(article["title"], summary)
+    if result.get("error"):
+        return jsonify({"error": result["error"]}), 502
+
+    result["article_id"] = article_id
+    return jsonify(result)
+
+
+@bp.route('/<int:theme_id>/ai-confirm/milestone', methods=['POST'])
+def ai_confirm_milestone(theme_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return jsonify({"error": "主题已封存或不存在"}), 403
+
+    data = request.get_json(silent=True) or {}
+    event_date = (data.get("event_date") or "").strip()
+    description = (data.get("description") or "").strip()
+    reminder_time = _normalize_reminder_time(data.get("reminder_time"))
+
+    if not event_date or not description:
+        return jsonify({"error": "日期和描述不能为空"}), 400
+
+    try:
+        profit_loss_raw = data.get("profit_loss")
+        profit_loss = None
+        if profit_loss_raw is not None and str(profit_loss_raw).strip() != "":
+            profit_loss = float(profit_loss_raw)
+        event_date, end_date = _parse_milestone_dates(
+            event_date,
+            data.get("end_date"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    milestone_id = add_theme_milestone(
+        theme_id, event_date, description, reminder_time, profit_loss, end_date
+    )
+    return jsonify({"status": "ok", "milestone_id": milestone_id})
+
+
+@bp.route('/<int:theme_id>/ai-confirm/asset', methods=['POST'])
+def ai_confirm_asset(theme_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return jsonify({"error": "主题已封存或不存在"}), 403
+
+    data = request.get_json(silent=True) or {}
+    ticker = str(data.get("ticker") or "").upper().strip()
+    exchange = str(data.get("exchange") or "US").upper().strip()
+
+    if not ticker:
+        return jsonify({"error": "股票代码不能为空"}), 400
+    if exchange != "US":
+        return jsonify({"error": "当前仅支持美股（US）"}), 400
+
+    try:
+        price_alerts = _parse_price_alerts_from_json(data)
+        milestone_ids = _parse_milestone_ids_from_json(theme_id, data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    asset_id = add_theme_asset(theme_id, ticker, exchange, price_alerts, milestone_ids)
+    return jsonify({"status": "ok", "asset_id": asset_id, "ticker": ticker})

@@ -43,6 +43,9 @@ def _mark_reminded(db, ticker: str, report_date: str, remind_days_before: int, t
 
 
 def check_earnings_reminders() -> None:
+    from app.services.features import is_earnings_enabled
+    if not is_earnings_enabled():
+        return
     if not is_earnings_remind_enabled():
         return
 

@@ -9,9 +9,12 @@ from app.services.settings import (
     get_history_cache_hours,
     get_monitor_interval_minutes,
     get_quote_cache_minutes,
+    get_ai_article_model,
+    set_ai_article_model,
     set_history_cache_hours,
     set_monitor_interval_minutes,
     set_quote_cache_minutes,
+    ALLOWED_AI_ARTICLE_MODELS,
 )
 from app.services.snapshot import (
     build_pie_data,
@@ -74,12 +77,18 @@ def settings():
             flash("配置项必须是整数", "error")
             return redirect(url_for(".settings"))
 
+        ai_model = request.form.get("ai_article_model", get_ai_article_model())
+        if ai_model not in ALLOWED_AI_ARTICLE_MODELS:
+            flash("AI 模型选择无效", "error")
+            return redirect(url_for(".settings"))
+
         interval = set_monitor_interval_minutes(monitor_minutes)
         quote_ttl = set_quote_cache_minutes(quote_cache_minutes)
         history_ttl = set_history_cache_hours(history_cache_hours)
+        saved_model = set_ai_article_model(ai_model)
         configure_monitor_jobs(current_app._get_current_object())
         flash(
-            f"已保存：监控 {interval} 分钟/次，现价缓存 {quote_ttl} 分钟，历史缓存 {history_ttl} 小时",
+            f"已保存：监控 {interval} 分钟/次，现价缓存 {quote_ttl} 分钟，历史缓存 {history_ttl} 小时，AI 模型 {saved_model}",
             "success",
         )
         return redirect(url_for(".settings"))
@@ -89,4 +98,7 @@ def settings():
         monitor_interval_minutes=get_monitor_interval_minutes(),
         quote_cache_minutes=get_quote_cache_minutes(),
         history_cache_hours=get_history_cache_hours(),
+        ai_article_model=get_ai_article_model(),
+        ai_article_models=ALLOWED_AI_ARTICLE_MODELS,
+        deepseek_configured=bool(current_app.config.get("DEEPSEEK_API_KEY", "").strip()),
     )

@@ -38,6 +38,9 @@ def create_app(config: Config = None) -> Flask:
     app.config["ALPHA_VANTAGE_API_KEY"] = getattr(config, "ALPHA_VANTAGE_API_KEY", "")
     app.config["EODHD_API_KEY"] = getattr(config, "EODHD_API_KEY", "")
     app.config["WEB_PASSWORD"] = getattr(config, "WEB_PASSWORD", "")
+    app.config["DEEPSEEK_API_KEY"] = getattr(config, "DEEPSEEK_API_KEY", "")
+    app.config["DEEPSEEK_BASE_URL"] = getattr(config, "DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    app.config["EARNINGS_ENABLED"] = getattr(config, "EARNINGS_ENABLED", False)
     app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 7
 
     # 6. 注册数据库清理机制与 CLI 初始化命令
@@ -59,6 +62,10 @@ def create_app(config: Config = None) -> Flask:
     app.register_blueprint(debug_bp)
 
     from app.services.auth import require_login
+
+    @app.context_processor
+    def inject_feature_flags():
+        return {"earnings_enabled": app.config.get("EARNINGS_ENABLED", False)}
 
     @app.before_request
     def enforce_login():

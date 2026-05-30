@@ -72,6 +72,27 @@
         </p>
       </div>
 
+      <div class="settings-field">
+        <label for="ai_article_model">研报 AI 分析模型</label>
+        <div class="settings-input-row">
+          <select id="ai_article_model" name="ai_article_model">
+            {% for model in ai_article_models %}
+            <option value="{{ model }}" {% if ai_article_model == model %}selected{% endif %}>
+              {{ model }}{% if model == 'deepseek-v4-flash' %}（快速）{% elif model == 'deepseek-v4-pro' %}（更强）{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <p class="hint">
+          用于投资主题下研报摘要的结构化提取（监控标的、关键时间线）。
+          {% if deepseek_configured %}
+          当前使用 DeepSeek API；可在 .env 中配置 <code>DEEPSEEK_API_KEY</code>。
+          {% else %}
+          请先在 .env 中配置 <code>DEEPSEEK_API_KEY</code> 后启用。
+          {% endif %}
+        </p>
+      </div>
+
       <div class="settings-actions">
         <button type="submit" class="primary-btn">保存配置</button>
       </div>
