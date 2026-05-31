@@ -1,9 +1,13 @@
 from datetime import date, datetime, timedelta
 
-from flask import current_app
-
 from app.database import get_db
-from app.services.feishu import push_feishu_message
+from app.services.notification import (
+    PRIORITY_MILESTONE_ADVANCE,
+    PRIORITY_MILESTONE_DAY,
+    PRIORITY_MILESTONE_QUOTES,
+    AlertEvent,
+    CollectResult,
+)
 from app.services.quotes import fetch_us_quotes
 
 
@@ -56,8 +60,8 @@ def _build_theme_stock_lines(assets: list, quotes: dict) -> list[str]:
     return lines
 
 
-def check_upcoming_milestones():
-    """在节点时间范围内按设定时刻推送飞书提醒（每天一次）；开始日前 3 天额外提醒。"""
+def collect_milestone_alerts() -> CollectResult:
+    """收集里程碑提醒（当日/提前/附带行情），推送成功后再写入去重标记。"""
     db = get_db()
     today = date.today()
     today_str = today.isoformat()
@@ -96,19 +100,30 @@ def check_upcoming_milestones():
     ).fetchall()
 
     if not day_rows and not advance_rows:
-        return
+        return CollectResult()
 
-    messages = []
+    events: list[AlertEvent] = []
+    advance_marks: list[int] = []
+    day_marks: list[int] = []
+    quote_milestone_ids: list[tuple[int, int]] = []
 
     for row in advance_rows:
         end = row["end_date"] or row["event_date"]
         range_hint = f"（提醒期 {row['event_date']} ~ {end}）" if end != row["event_date"] else ""
-        messages.append(
+        body = (
             f"📌 主题：{row['theme_title']}\n"
             f"⏱️ 节点：【还有 3 天】{row['event_date']} {row['reminder_time']}{range_hint}\n"
             f"📝 描述：{row['description']}"
         )
-        _mark_reminded(db, row["id"], "reminded_advance_at")
+        events.append(
+            AlertEvent(
+                priority=PRIORITY_MILESTONE_ADVANCE,
+                category="milestone_advance",
+                body=body,
+                sort_key=(row["theme_title"], row["event_date"], row["description"]),
+            )
+        )
+        advance_marks.append(row["id"])
 
     all_tickers: set[str] = set()
     for row in day_rows:
@@ -118,12 +133,20 @@ def check_upcoming_milestones():
 
     for row in day_rows:
         label = _milestone_range_label(row["event_date"], row["end_date"], today_str)
-        messages.append(
+        body = (
             f"📌 主题：{row['theme_title']}\n"
             f"⏱️ 节点：{label}{row['event_date']} {row['reminder_time']}\n"
             f"📝 描述：{row['description']}"
         )
-        _mark_reminded(db, row["id"], "reminded_day_at")
+        events.append(
+            AlertEvent(
+                priority=PRIORITY_MILESTONE_DAY,
+                category="milestone_day",
+                body=body,
+                sort_key=(row["theme_title"], row["event_date"], row["description"]),
+            )
+        )
+        day_marks.append(row["id"])
 
         assets = _fetch_milestone_sync_assets(db, row["theme_id"], row["id"])
         if assets:
@@ -132,12 +155,32 @@ def check_upcoming_milestones():
                 desc_short = row["description"]
                 if len(desc_short) > 24:
                     desc_short = desc_short[:24] + "…"
-                messages.append(
+                quote_body = (
                     f"📌 主题：{row['theme_title']}\n"
                     f"📈 随节点标的行情 · {desc_short}（{today_str} {now_time}）\n"
                     + "\n".join(stock_lines)
                 )
-            now_iso = datetime.now().isoformat(timespec="seconds")
+                events.append(
+                    AlertEvent(
+                        priority=PRIORITY_MILESTONE_QUOTES,
+                        category="milestone_quotes",
+                        body=quote_body,
+                        sort_key=(row["theme_title"], row["event_date"], desc_short),
+                    )
+                )
+                quote_milestone_ids.append((row["id"], row["theme_id"]))
+
+    if not events:
+        return CollectResult()
+
+    now_iso = datetime.now().isoformat(timespec="seconds")
+
+    def apply_marks() -> None:
+        for milestone_id in advance_marks:
+            _mark_reminded(db, milestone_id, "reminded_advance_at")
+        for milestone_id in day_marks:
+            _mark_reminded(db, milestone_id, "reminded_day_at")
+        for milestone_id, theme_id in quote_milestone_ids:
             db.execute(
                 """
                 UPDATE theme_asset_price_alerts
@@ -148,25 +191,13 @@ def check_upcoming_milestones():
                     SELECT id FROM theme_assets WHERE theme_id = ?
                   )
                 """,
-                (now_iso, row["id"], row["theme_id"]),
+                (now_iso, milestone_id, theme_id),
             )
 
-    if not messages:
-        return
+    return CollectResult(events=events, apply_marks=apply_marks)
 
-    db.commit()
 
-    final_content = "⏳ 投资时间线提醒\n\n" + "\n\n---\n\n".join(messages)
-
-    receiver_id = current_app.config.get("FEISHU_ALERT_RECEIVER_ID")
-    receiver_type = current_app.config.get("FEISHU_ALERT_RECEIVER_TYPE")
-
-    if not receiver_id:
-        print("未配置 FEISHU_ALERT_RECEIVER_ID，无法发送飞书消息。内容如下：\n", final_content)
-        return
-
-    try:
-        push_feishu_message(receiver_type, receiver_id, final_content)
-        print(f"已成功发送 {len(messages)} 条里程碑提醒至飞书（{now_time}）")
-    except Exception as e:
-        print(f"调用飞书主动推送失败: {e}")
+def check_upcoming_milestones():
+    """兼容旧调用；实际逻辑已并入统一 digest。"""
+    from app.services.notification import run_monitor_digest
+    run_monitor_digest()

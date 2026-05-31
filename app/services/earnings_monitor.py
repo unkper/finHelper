@@ -1,11 +1,9 @@
 """财报发布提前 X 天飞书提醒。"""
 from datetime import date, timedelta
 
-from flask import current_app
-
 from app.database import get_db
 from app.services.earnings_calendar import build_earnings_payload, fetch_tracked_us_tickers
-from app.services.feishu import push_feishu_message
+from app.services.notification import PRIORITY_EARNINGS, AlertEvent, CollectResult
 from app.services.settings import (
     get_earnings_horizon_days,
     get_earnings_remind_days_before,
@@ -42,12 +40,13 @@ def _mark_reminded(db, ticker: str, report_date: str, remind_days_before: int, t
     )
 
 
-def check_earnings_reminders() -> None:
+def collect_earnings_alerts() -> CollectResult:
+    """收集财报提前提醒，推送成功后再写入去重日志。"""
     from app.services.features import is_earnings_enabled
     if not is_earnings_enabled():
-        return
+        return CollectResult()
     if not is_earnings_remind_enabled():
-        return
+        return CollectResult()
 
     remind_days = get_earnings_remind_days_before()
     horizon = max(remind_days + 14, get_earnings_horizon_days())
@@ -57,21 +56,23 @@ def check_earnings_reminders() -> None:
 
     tracked = set(fetch_tracked_us_tickers())
     if not tracked:
-        return
+        return CollectResult()
 
     payload = build_earnings_payload(horizon_days=horizon, force_refresh=False)
-    events = payload.get("events") or []
+    events_data = payload.get("events") or []
 
     due = [
-        e for e in events
+        e for e in events_data
         if e.get("report_date") == target_report_date
         and e.get("ticker") in tracked
     ]
     if not due:
-        return
+        return CollectResult()
 
     db = get_db()
-    messages = []
+    alert_events: list[AlertEvent] = []
+    pending_marks: list[tuple[str, str, int]] = []
+
     for event in due:
         ticker = event["ticker"]
         report_date = event["report_date"]
@@ -81,28 +82,32 @@ def check_earnings_reminders() -> None:
         time_hint = event.get("report_time") or "时间待定"
         eps_est = event.get("eps_estimate")
         eps_line = f"\nEPS 预估：{eps_est:.2f}" if eps_est is not None else ""
-        messages.append(
+        body = (
             f"📊 财报提醒 · {ticker}\n"
             f"发布日：{report_date}（{time_hint}）\n"
             f"今日为提前 {remind_days} 天提醒{eps_line}"
         )
-        _mark_reminded(db, ticker, report_date, remind_days, today_str)
+        alert_events.append(
+            AlertEvent(
+                priority=PRIORITY_EARNINGS,
+                category="earnings",
+                body=body,
+                sort_key=(ticker, report_date),
+            )
+        )
+        pending_marks.append((ticker, report_date, remind_days))
 
-    if not messages:
-        return
+    if not alert_events:
+        return CollectResult()
 
-    db.commit()
+    def apply_marks() -> None:
+        for ticker, report_date, days_before in pending_marks:
+            _mark_reminded(db, ticker, report_date, days_before, today_str)
 
-    receiver_id = current_app.config.get("FEISHU_ALERT_RECEIVER_ID")
-    receiver_type = current_app.config.get("FEISHU_ALERT_RECEIVER_TYPE")
-    final_content = "📅 财报日历提醒\n\n" + "\n\n---\n\n".join(messages)
+    return CollectResult(events=alert_events, apply_marks=apply_marks)
 
-    if not receiver_id:
-        print("未配置 FEISHU_ALERT_RECEIVER_ID，无法发送财报提醒。内容如下：\n", final_content)
-        return
 
-    try:
-        push_feishu_message(receiver_type, receiver_id, final_content)
-        print(f"已成功发送 {len(messages)} 条财报提醒至飞书")
-    except Exception as exc:
-        print(f"财报飞书推送失败: {exc}")
+def check_earnings_reminders() -> None:
+    """兼容旧调用；实际逻辑已并入统一 digest。"""
+    from app.services.notification import run_monitor_digest
+    run_monitor_digest()
