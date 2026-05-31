@@ -35,11 +35,38 @@ _CHART_LABELS = {
 
 _MAX_PERIODS = 8
 
+_CHART_TYPES_WITH_EVENTS = frozenset({
+    "kpi",
+    "waterfall",
+    "margin_trend",
+    "profit_ocf",
+    "revenue_profit_trend",
+    "ocf_quality",
+})
+
 
 def _trim_periods(periods: List[str]) -> List[str]:
     if len(periods) <= _MAX_PERIODS:
         return periods
     return periods[-_MAX_PERIODS:]
+
+
+def _material_events_all(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    events = payload.get("material_events")
+    return list(events) if isinstance(events, list) else []
+
+
+def _material_events_for_period(events: List[Dict[str, Any]], period: str | None) -> List[Dict[str, Any]]:
+    if not period:
+        return events
+    return [e for e in events if not e.get("period") or e.get("period") == period]
+
+
+def _material_events_for_periods(events: List[Dict[str, Any]], periods: List[str]) -> List[Dict[str, Any]]:
+    if not periods:
+        return events
+    allowed = set(periods)
+    return [e for e in events if not e.get("period") or e.get("period") in allowed]
 
 
 def _linked_hint(payload: Dict[str, Any]) -> str:
@@ -93,6 +120,7 @@ def build_dashboard_context(payload: Dict[str, Any]) -> Dict[str, Any]:
         },
         "asset_mix": derived.get("asset_mix"),
         "red_flags": payload.get("red_flags") or [],
+        "material_events": _material_events_all(payload),
         "ai_summary_from_report": payload.get("ai_summary") or "",
     }
 
@@ -103,27 +131,40 @@ def _slice_context(chart_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     unit = payload.get("unit")
     derived = payload.get("derived") or {}
     periods = payload.get("periods") or []
+    all_events = _material_events_all(payload)
 
     if chart_type == "kpi":
-        return {
+        ctx = {
             "ticker": ticker,
             "period": period,
             "kpis": (payload.get("kpis") or {}).get(period),
             "unit": unit,
         }
+        events = _material_events_for_period(all_events, period)
+        if events:
+            ctx["material_events"] = events
+        return ctx
     if chart_type == "waterfall":
-        return {
+        ctx = {
             "ticker": ticker,
             "period": period,
             "income_statement": (payload.get("income_statement") or {}).get(period),
             "unit": unit,
         }
+        events = _material_events_for_period(all_events, period)
+        if events:
+            ctx["material_events"] = events
+        return ctx
     if chart_type == "margin_trend":
-        return {
+        ctx = {
             "ticker": ticker,
             "periods": periods,
             "trends": payload.get("trends"),
         }
+        events = _material_events_for_periods(all_events, periods)
+        if events:
+            ctx["material_events"] = events
+        return ctx
     if chart_type == "balance":
         return {
             "ticker": ticker,
@@ -152,15 +193,23 @@ def _slice_context(chart_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
                 "net_income": net,
                 "operating_cf": cf.get("operating"),
             })
-        return {"ticker": ticker, "series": series, "unit": unit}
+        ctx = {"ticker": ticker, "series": series, "unit": unit}
+        events = _material_events_for_periods(all_events, periods)
+        if events:
+            ctx["material_events"] = events
+        return ctx
     if chart_type == "revenue_profit_trend":
-        return {
+        ctx = {
             "ticker": ticker,
             "periods": periods,
             "revenue": derived.get("revenue_series"),
             "net_income": derived.get("net_income_series"),
             "unit": unit,
         }
+        events = _material_events_for_periods(all_events, periods)
+        if events:
+            ctx["material_events"] = events
+        return ctx
     if chart_type == "expense_ratio_trend":
         return {
             "ticker": ticker,
@@ -182,11 +231,15 @@ def _slice_context(chart_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             "unit": unit,
         }
     if chart_type == "ocf_quality":
-        return {
+        ctx = {
             "ticker": ticker,
             "periods": periods,
             "ocf_quality_ratio": derived.get("ocf_quality_ratio"),
         }
+        events = _material_events_for_periods(all_events, periods)
+        if events:
+            ctx["material_events"] = events
+        return ctx
     return {"ticker": ticker, "period": period}
 
 
@@ -198,7 +251,12 @@ def explain_chart(chart_type: str, chart_payload: Dict[str, Any]) -> Dict[str, A
     context = _slice_context(chart_type, chart_payload)
     linked_hint = _linked_hint(chart_payload)
 
+    events_hint = ""
+    if chart_type in _CHART_TYPES_WITH_EVENTS and context.get("material_events"):
+        events_hint = "若 material_events 非空，须结合其中较大一次性盈利/亏损因素解读净利与现金流质量，勿编造未列出的事项。"
+
     prompt = f"""你是财务分析助手。根据以下图表数据，用中文写 3-6 句话解读（现象 + 含义 + 1 条注意点），面向个人投资者，不要编造数据中没有的数字。
+{events_hint}
 
 图表：{label}
 {linked_hint}
@@ -223,9 +281,9 @@ def explain_dashboard(payload: Dict[str, Any]) -> Dict[str, Any]:
     model = get_ai_financial_parse_model()
 
     prompt = f"""你是资深财务分析助手。根据以下财报仪表盘数据，写一份中文「全局解读」，共 8-12 句话，分三段（段首用【盈利与增长】【资产负债与现金流】【风险与跟踪】作小标题，不要用 markdown 其它格式）：
-1. 盈利与增长：营收/利润趋势、毛利率/费用率要点
+1. 盈利与增长：营收/利润趋势、毛利率/费用率要点；若 material_events 非空，须说明较大一次性盈利/亏损对净利解读的影响
 2. 资产负债与现金流：资产结构、经营/投资/筹资现金流与盈利质量
-3. 风险与跟踪：结合 red_flags，给出后续应关注的 1-2 点
+3. 风险与跟踪：结合 red_flags 与 material_events（亏损/减值类），给出后续应关注的 1-2 点
 
 {linked_hint}
 禁止编造数据中不存在的指标或数字。若某块数据缺失，可略写。

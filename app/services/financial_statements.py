@@ -177,6 +177,8 @@ def _merge_extracted_list(
     cash_flow: Dict[str, Dict] = {}
     kpis: Dict[str, Dict] = {}
     red_flags: List[Dict[str, str]] = []
+    material_events: List[Dict[str, Any]] = []
+    material_seen: set[tuple[str, str, str]] = set()
     currency = "USD"
     unit = "millions"
     linked_ids: List[int] = []
@@ -209,6 +211,19 @@ def _merge_extracted_list(
         for flag in ext.get("red_flags") or []:
             if isinstance(flag, dict) and flag.get("message"):
                 red_flags.append(flag)
+        for event in ext.get("material_events") or []:
+            if not isinstance(event, dict):
+                continue
+            etype = str(event.get("type") or "").strip().lower()
+            title = str(event.get("title") or "").strip()
+            if etype not in ("profit", "loss") or not title:
+                continue
+            period = str(event.get("period") or "").strip()
+            key = (etype, title, period)
+            if key in material_seen:
+                continue
+            material_seen.add(key)
+            material_events.append(event)
 
     merged = {
         "currency": currency,
@@ -219,6 +234,7 @@ def _merge_extracted_list(
         "balance_sheet": balance,
         "cash_flow": cash_flow,
         "red_flags": red_flags,
+        "material_events": material_events,
     }
     return merged, linked_ids, merged["periods"]
 
@@ -248,7 +264,7 @@ def build_chart_payload(
     if current_extracted and not merged.get("periods"):
         merged = {**merged, **{k: current_extracted.get(k) for k in (
             "currency", "unit", "periods", "kpis", "income_statement",
-            "balance_sheet", "cash_flow", "red_flags",
+            "balance_sheet", "cash_flow", "red_flags", "material_events",
         ) if current_extracted.get(k) is not None}}
 
     periods = _sort_periods(
@@ -285,6 +301,7 @@ def build_chart_payload(
         "balance_sheet": balance,
         "cash_flow": cash_flow,
         "red_flags": merged.get("red_flags") or [],
+        "material_events": merged.get("material_events") or [],
         "ai_summary": ai_summary,
         "trends": _compute_margin_trends(income, periods),
         "derived": _compute_derived(income, balance, cash_flow, kpis, periods, display_period),

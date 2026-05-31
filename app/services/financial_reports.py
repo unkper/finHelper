@@ -8,13 +8,23 @@ from typing import Any, Dict, List, Optional
 from app.database import get_db
 from app.services.financial_period import normalize_fiscal_period
 
-# 列表/详情元数据查询不 SELECT pdf_blob，避免分页时加载大文件
-_REPORT_LIST_COLUMNS = """
+# 详情查询：含正文与大 JSON，不含 pdf_blob
+_REPORT_DETAIL_COLUMNS = """
     id, ticker, fiscal_period, report_date, title, source_text,
     extracted_json, ai_summary, theme_id, source_type, pdf_path,
     parse_status, parse_progress, parse_message, parse_error,
     pending_extracted_json, created_at, updated_at,
     (pdf_blob IS NOT NULL) AS has_pdf_blob
+"""
+
+# 列表分页：不加载 source_text / extracted_json / pending_extracted_json
+_REPORT_LIST_SUMMARY_COLUMNS = """
+    id, ticker, fiscal_period, report_date, title, theme_id, source_type,
+    pdf_path, parse_status, parse_progress, parse_message, parse_error,
+    created_at, updated_at,
+    (pdf_blob IS NOT NULL) AS has_pdf_blob,
+    (extracted_json IS NOT NULL AND extracted_json != '') AS has_analysis_flag,
+    (pending_extracted_json IS NOT NULL AND pending_extracted_json != '') AS has_pending_flag
 """
 
 PARSE_STATUS_IDLE = "idle"
@@ -57,6 +67,26 @@ def _report_row_has_pdf(row) -> bool:
     return bool(_row_get(row, "pdf_path"))
 
 
+def serialize_report_list(row) -> Dict[str, Any]:
+    return {
+        "id": row["id"],
+        "ticker": row["ticker"],
+        "fiscal_period": row["fiscal_period"],
+        "report_date": row["report_date"],
+        "title": row["title"],
+        "source_type": _row_get(row, "source_type", SOURCE_PASTE),
+        "has_pdf": _report_row_has_pdf(row),
+        "parse_status": _row_get(row, "parse_status", PARSE_STATUS_IDLE),
+        "parse_progress": int(_row_get(row, "parse_progress") or 0),
+        "parse_message": _row_get(row, "parse_message") or "",
+        "parse_error": _row_get(row, "parse_error"),
+        "has_pending": bool(_row_get(row, "has_pending_flag")),
+        "has_analysis": bool(_row_get(row, "has_analysis_flag")),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
 def serialize_report(row) -> Dict[str, Any]:
     extracted = _parse_extracted(row["extracted_json"])
     pending = _parse_extracted(_row_get(row, "pending_extracted_json"))
@@ -90,7 +120,7 @@ def fetch_all_reports(ticker: str | None = None) -> List[Dict[str, Any]]:
     if ticker:
         rows = db.execute(
             f"""
-            SELECT {_REPORT_LIST_COLUMNS} FROM financial_reports
+            SELECT {_REPORT_LIST_SUMMARY_COLUMNS} FROM financial_reports
             WHERE ticker = ?
             ORDER BY updated_at DESC, fiscal_period DESC
             """,
@@ -99,11 +129,11 @@ def fetch_all_reports(ticker: str | None = None) -> List[Dict[str, Any]]:
     else:
         rows = db.execute(
             f"""
-            SELECT {_REPORT_LIST_COLUMNS} FROM financial_reports
+            SELECT {_REPORT_LIST_SUMMARY_COLUMNS} FROM financial_reports
             ORDER BY updated_at DESC, fiscal_period DESC
             """
         ).fetchall()
-    return [serialize_report(row) for row in rows]
+    return [serialize_report_list(row) for row in rows]
 
 
 def _reports_where_clause(
@@ -149,7 +179,7 @@ def fetch_reports_page(
     offset = (page - 1) * per_page
     rows = db.execute(
         f"""
-        SELECT {_REPORT_LIST_COLUMNS} FROM financial_reports
+        SELECT {_REPORT_LIST_SUMMARY_COLUMNS} FROM financial_reports
         WHERE {where_sql}
         ORDER BY updated_at DESC, fiscal_period DESC
         LIMIT ? OFFSET ?
@@ -158,7 +188,7 @@ def fetch_reports_page(
     ).fetchall()
 
     return {
-        "reports": [serialize_report(row) for row in rows],
+        "reports": [serialize_report_list(row) for row in rows],
         "total": total,
         "page": page,
         "per_page": per_page,
@@ -169,7 +199,7 @@ def fetch_reports_page(
 def fetch_report_by_id(report_id: int) -> Dict[str, Any] | None:
     db = get_db()
     row = db.execute(
-        f"SELECT {_REPORT_LIST_COLUMNS} FROM financial_reports WHERE id = ?",
+        f"SELECT {_REPORT_DETAIL_COLUMNS} FROM financial_reports WHERE id = ?",
         (report_id,),
     ).fetchone()
     return serialize_report(row) if row else None

@@ -64,6 +64,56 @@
     panel.innerHTML = `<strong>风险提示</strong><ul>${flags.map((f) => `<li>${f.message}</li>`).join("")}</ul>`;
   }
 
+  function escapeHtmlText(text) {
+    const div = document.createElement("div");
+    div.textContent = text == null ? "" : String(text);
+    return div.innerHTML;
+  }
+
+  function renderMaterialEvents(events, unit) {
+    const panel = document.getElementById("materialEventsPanel");
+    if (!panel) return;
+    if (!events || !events.length) {
+      panel.hidden = true;
+      panel.innerHTML = "";
+      return;
+    }
+    const unitLabel = unit === "millions" ? "百万 USD" : unit || "USD";
+    const profitItems = events.filter((e) => e.type === "profit");
+    const lossItems = events.filter((e) => e.type === "loss");
+
+    function renderList(items, listClass) {
+      if (!items.length) return "";
+      return `<ul class="research-material-events-list ${listClass}">${items
+        .map((e) => {
+          const amount =
+            e.amount_millions != null && !Number.isNaN(e.amount_millions)
+              ? `<span class="research-material-events-amount">${e.amount_millions} ${unitLabel}</span>`
+              : "";
+          const period = e.period
+            ? `<span class="research-material-events-period">${escapeHtmlText(e.period)}</span>`
+            : "";
+          return `<li>
+            <div class="research-material-events-head">
+              <strong>${escapeHtmlText(e.title)}</strong>
+              ${amount}
+              ${period}
+            </div>
+            <p>${escapeHtmlText(e.description)}</p>
+          </li>`;
+        })
+        .join("")}</ul>`;
+    }
+
+    panel.hidden = false;
+    panel.innerHTML = `
+      <strong>盈利 / 亏损大事记</strong>
+      <p class="hint">来自 AI 对解读文中较大一次性事项的结构化摘录，供图表与全局解读参考。</p>
+      ${profitItems.length ? `<h4 class="research-material-events-subtitle research-material-events-subtitle--profit">较大盈利事项</h4>${renderList(profitItems, "research-material-events-list--profit")}` : ""}
+      ${lossItems.length ? `<h4 class="research-material-events-subtitle research-material-events-subtitle--loss">较大亏损 / 费用冲击</h4>${renderList(lossItems, "research-material-events-list--loss")}` : ""}
+    `;
+  }
+
   function initChart(id) {
     const el = document.getElementById(id);
     if (!el || !window.echarts) return null;
@@ -450,6 +500,7 @@
     updateMergeHint(data);
     renderKpis(data);
     renderRedFlags(data.red_flags);
+    renderMaterialEvents(data.material_events, data.unit);
     renderRevenueProfitTrend(data);
     renderWaterfall(data);
     renderMarginTrend(data);

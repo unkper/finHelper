@@ -399,6 +399,73 @@
   padding-left: 1.2rem;
 }
 
+.research-material-events {
+  border-left: 4px solid #7c3aed;
+  margin-bottom: 1rem;
+}
+
+.research-material-events-subtitle {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.research-material-events-subtitle--profit {
+  color: #047857;
+}
+
+.research-material-events-subtitle--loss {
+  color: #b45309;
+}
+
+.research-material-events-list {
+  margin: 0.25rem 0 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.research-material-events-list li {
+  margin-bottom: 0.65rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  background: var(--surface-muted, #f9fafb);
+}
+
+.research-material-events-list--profit li {
+  border-left: 3px solid #10b981;
+}
+
+.research-material-events-list--loss li {
+  border-left: 3px solid #f59e0b;
+}
+
+.research-material-events-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.research-material-events-amount {
+  font-size: 0.85rem;
+  color: var(--muted, #6b7280);
+}
+
+.research-material-events-period {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.research-material-events-list li p {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--muted, #4b5563);
+}
+
 .research-ai-summary {
   margin-top: 0.5rem;
   line-height: 1.6;
