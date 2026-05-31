@@ -51,6 +51,7 @@ from app.services.financial_reports import (
     update_parse_state,
 )
 from app.services.financial_ai import (
+    check_extracted_warnings,
     extract_from_financial_text,
     has_financial_ai_configured,
     normalize_extracted_payload,
@@ -192,15 +193,44 @@ def research_reports_create():
     return jsonify({"status": "ok", "report_id": report_id})
 
 
+def _insight_payload_from_extracted(
+    extracted,
+    *,
+    ai_summary=None,
+):
+    if not extracted:
+        return None
+    return {
+        "red_flags": extracted.get("red_flags") or [],
+        "material_events": extracted.get("material_events") or [],
+        "unit": extracted.get("unit") or "millions",
+        "ai_summary": ai_summary or extracted.get("ai_summary") or "",
+    }
+
+
 @bp.route('/research/reports/<int:report_id>')
 def research_report_detail(report_id):
     report = fetch_report_by_id(report_id)
     if not report:
         flash("报告不存在", "error")
         return redirect(url_for('investments.research', tab='analysis'))
+
+    initial_insights = None
+    if report.get("has_analysis"):
+        initial_insights = _insight_payload_from_extracted(
+            fetch_report_extracted(report_id),
+            ai_summary=report.get("ai_summary"),
+        )
+    elif report.get("has_pending"):
+        initial_insights = _insight_payload_from_extracted(
+            get_pending_extracted(report_id),
+            ai_summary=report.get("ai_summary"),
+        )
+
     return render_template(
         "investments/financial_report_detail.html",
         report=report,
+        initial_insights=initial_insights,
         tracked_tickers=fetch_tracked_us_tickers(),
         ai_configured=has_financial_ai_configured(),
         parse_status_url=url_for("investments.research_report_parse_status", report_id=report_id),
@@ -359,11 +389,16 @@ def research_report_pending_extracted(report_id):
     pending = get_pending_extracted(report_id)
     if not pending:
         return jsonify({"error": "暂无待确认结果"}), 404
-    return jsonify({
+    ai_summary = report.get("ai_summary") or pending.get("ai_summary") or ""
+    payload: dict = {
         "status": "ok",
         "extracted": pending,
-        "ai_summary": report.get("ai_summary") or pending.get("ai_summary") or "",
-    })
+        "ai_summary": ai_summary,
+    }
+    warnings = check_extracted_warnings(pending)
+    if warnings:
+        payload["warnings"] = warnings
+    return jsonify(payload)
 
 
 @bp.route('/research/reports/<int:report_id>/chart-insight', methods=['POST'])
@@ -445,13 +480,17 @@ def research_report_confirm(report_id):
 
     normalized = normalize_extracted_payload(extracted)
     ai_summary = str(data.get("ai_summary") or normalized.get("ai_summary") or "").strip()
+    warnings = check_extracted_warnings(normalized)
     try:
         save_financial_report_analysis(report_id, normalized, ai_summary)
         clear_pending_extracted(report_id)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    return jsonify({"status": "ok", "report_id": report_id})
+    payload: dict = {"status": "ok", "report_id": report_id}
+    if warnings:
+        payload["warnings"] = warnings
+    return jsonify(payload)
 
 
 @bp.route('/research/reports/<int:report_id>/edit', methods=['POST'])

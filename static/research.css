@@ -466,6 +466,17 @@
   color: var(--muted, #4b5563);
 }
 
+.research-confirm-warnings {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 6px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .research-ai-summary {
   margin-top: 0.5rem;
   line-height: 1.6;

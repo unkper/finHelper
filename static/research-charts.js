@@ -495,12 +495,20 @@
     el.textContent = `本图已合并 ${data.ticker} 下 ${count} 份报告（${periods}）`;
   }
 
-  function renderAll(data) {
+  function renderInsights(data) {
+    if (!data) return;
+    renderRedFlags(data.red_flags);
+    renderMaterialEvents(data.material_events, data.unit);
+    if (data.ai_summary) {
+      const el = document.querySelector(".research-ai-summary");
+      if (el) el.textContent = data.ai_summary;
+    }
+  }
+
+  function renderChartPanels(data) {
     lastChartPayload = data;
     updateMergeHint(data);
     renderKpis(data);
-    renderRedFlags(data.red_flags);
-    renderMaterialEvents(data.material_events, data.unit);
     renderRevenueProfitTrend(data);
     renderWaterfall(data);
     renderMarginTrend(data);
@@ -523,12 +531,54 @@
     resizeVisibleCharts();
   }
 
+  function renderAll(data) {
+    renderInsights(data);
+    renderChartPanels(data);
+  }
+
+  function showConfirmWarnings(warnings) {
+    const el = document.getElementById("confirmExtractWarnings");
+    if (!el) return;
+    if (!warnings || !warnings.length) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    el.hidden = false;
+    el.textContent = warnings.join(" ");
+  }
+
+  function checkExtractedWarningsClient(extracted) {
+    const warnings = [];
+    const summary = (extracted?.ai_summary || "").trim();
+    const hasRevenueInSummary = /营收|收入|营业收入|总收入|revenue/i.test(summary);
+    let hasStructuredRevenue = false;
+    const kpis = extracted?.kpis || {};
+    const income = extracted?.income_statement || {};
+    [...Object.values(kpis), ...Object.values(income)].forEach((block) => {
+      if (!block || typeof block !== "object") return;
+      const rev = block.revenue;
+      if (rev != null && (typeof rev !== "object" || rev.value != null)) {
+        hasStructuredRevenue = true;
+      }
+    });
+    if (hasRevenueInSummary && !hasStructuredRevenue) {
+      warnings.push(
+        "摘要中提及营收/收入，但 kpis 或 income_statement 未填入营收；确认后图表将无法显示营收，请补全 JSON。"
+      );
+    }
+    return warnings;
+  }
+
   async function loadCharts() {
     const res = await fetch(cfg.chartDataUrl);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "加载图表失败");
-    if (!data.periods?.length) return;
-    renderAll(data);
+    renderInsights(data);
+    if (!data.periods?.length) {
+      return;
+    }
+    renderChartPanels(data);
   }
 
   function insightCacheKey(chartType) {
@@ -637,11 +687,20 @@
   function openConfirmModal(result) {
     confirmJson.value = JSON.stringify(result.extracted, null, 2);
     confirmSummary.value = result.ai_summary || result.extracted?.ai_summary || "";
+    const warnings = result.warnings || checkExtractedWarningsClient(result.extracted);
+    showConfirmWarnings(warnings);
+    renderInsights({
+      red_flags: result.extracted?.red_flags,
+      material_events: result.extracted?.material_events,
+      unit: result.extracted?.unit,
+      ai_summary: confirmSummary.value,
+    });
     confirmModal.hidden = false;
   }
 
   function closeConfirmModal() {
     confirmModal.hidden = true;
+    showConfirmWarnings([]);
   }
 
   document.getElementById("analyzeReportBtn")?.addEventListener("click", async () => {
@@ -686,6 +745,13 @@
       extracted = JSON.parse(confirmJson.value);
     } catch (e) {
       alert("JSON 格式无效");
+      return;
+    }
+    const clientWarnings = checkExtractedWarningsClient({
+      ...extracted,
+      ai_summary: confirmSummary.value,
+    });
+    if (clientWarnings.length && !window.confirm(`${clientWarnings.join("\n")}\n\n仍要确认入库吗？`)) {
       return;
     }
     try {
@@ -762,7 +828,11 @@
       const res = await fetch(cfg.pendingUrl);
       const data = await res.json();
       if (!res.ok) return;
-      openConfirmModal({ extracted: data.extracted, ai_summary: data.ai_summary });
+      openConfirmModal({
+        extracted: data.extracted,
+        ai_summary: data.ai_summary,
+        warnings: data.warnings,
+      });
     } catch (err) {
       console.warn(err);
     }
@@ -812,8 +882,15 @@
 
   window.addEventListener("resize", () => resizeVisibleCharts());
 
+  if (cfg.initialInsights) {
+    renderInsights(cfg.initialInsights);
+  }
+
   if (cfg.hasAnalysis) {
-    loadCharts().catch((err) => console.warn(err));
+    loadCharts().catch((err) => {
+      console.warn(err);
+      if (cfg.initialInsights) renderInsights(cfg.initialInsights);
+    });
   }
 
   const activeParse =
