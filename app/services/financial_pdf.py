@@ -1,7 +1,6 @@
-"""PDF 上传、本地抽文本与后台解析任务。"""
+"""PDF 上传、内存抽文本与后台解析任务。"""
 import threading
-from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
 from flask import current_app
 
@@ -11,26 +10,17 @@ from app.services.financial_reports import (
     PARSE_STATUS_EXTRACTING,
     PARSE_STATUS_DONE,
     PARSE_STATUS_FAILED,
-    SOURCE_PDF,
     fetch_report_by_id,
+    get_report_pdf_blob,
     save_pending_analysis,
+    save_report_pdf_blob,
     update_parse_state,
 )
 
 MIN_EXTRACTED_CHARS = 200
 
 
-def _pdf_dir() -> Path:
-    path = Path(current_app.config.get("FINANCIAL_PDF_DIR", ""))
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def pdf_path_for_report(report_id: int) -> Path:
-    return _pdf_dir() / f"{report_id}.pdf"
-
-
-def save_uploaded_pdf(report_id: int, file_storage) -> str:
+def save_uploaded_pdf(report_id: int, file_storage) -> None:
     max_bytes = int(current_app.config.get("FINANCIAL_PDF_MAX_BYTES", 50 * 1024 * 1024))
     data = file_storage.read()
     if len(data) > max_bytes:
@@ -38,20 +28,20 @@ def save_uploaded_pdf(report_id: int, file_storage) -> str:
     if not data[:4] == b"%PDF":
         raise ValueError("文件不是有效的 PDF")
 
-    dest = pdf_path_for_report(report_id)
-    dest.write_bytes(data)
-    rel = str(dest)
-    update_parse_state(report_id, pdf_path=rel, status="idle", progress=0, message="PDF 已上传")
-    return rel
+    save_report_pdf_blob(report_id, data)
+    update_parse_state(report_id, status="idle", progress=0, message="PDF 已上传")
 
 
-def extract_text_from_pdf(path: str) -> Dict[str, Any]:
+def extract_text_from_pdf(source: Union[bytes, str]) -> Dict[str, Any]:
     try:
         import fitz
     except ImportError as exc:
         raise RuntimeError("未安装 pymupdf，请执行 pip install pymupdf") from exc
 
-    doc = fitz.open(path)
+    if isinstance(source, bytes):
+        doc = fitz.open(stream=source, filetype="pdf")
+    else:
+        doc = fitz.open(source)
     parts = []
     for page in doc:
         parts.append(page.get_text())
@@ -80,8 +70,18 @@ def _parse_report(report_id: int) -> None:
     if not report:
         return
 
-    pdf_path = report.get("pdf_path")
-    if not pdf_path or not Path(pdf_path).is_file():
+    if not report.get("has_pdf"):
+        update_parse_state(
+            report_id,
+            status=PARSE_STATUS_FAILED,
+            progress=0,
+            error="PDF 不存在",
+            message="解析失败",
+        )
+        return
+
+    pdf_bytes = get_report_pdf_blob(report_id)
+    if not pdf_bytes:
         update_parse_state(
             report_id,
             status=PARSE_STATUS_FAILED,
@@ -99,7 +99,7 @@ def _parse_report(report_id: int) -> None:
             message="正在从 PDF 提取文本…",
             error=None,
         )
-        extracted_meta = extract_text_from_pdf(pdf_path)
+        extracted_meta = extract_text_from_pdf(pdf_bytes)
         text = extracted_meta["text"]
         if len(text) < MIN_EXTRACTED_CHARS:
             update_parse_state(

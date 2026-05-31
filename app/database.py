@@ -408,6 +408,7 @@ def _migrate_financial_reports(conn: sqlite3.Connection) -> None:
         ("parse_message", "TEXT"),
         ("parse_error", "TEXT"),
         ("pending_extracted_json", "TEXT"),
+        ("pdf_blob", "BLOB"),
     )
     for name, typedef in alters:
         if name not in columns:

@@ -1,8 +1,15 @@
 (function () {
   const cfg = window.RESEARCH_PAGE || {};
+  const pageSize = cfg.pageSize || 5;
   const listEl = document.getElementById("reportsList");
   const emptyEl = document.getElementById("reportsEmpty");
   const loadingEl = document.getElementById("reportsLoading");
+  const pagerEl = document.getElementById("reportsPager");
+  const pagerMetaEl = document.getElementById("reportsPagerMeta");
+  const prevPageBtn = document.getElementById("reportsPrevPage");
+  const nextPageBtn = document.getElementById("reportsNextPage");
+  const pageLabelEl = document.getElementById("reportsPageLabel");
+  const searchEl = document.getElementById("reportsSearch");
   const modal = document.getElementById("newReportModal");
   const form = document.getElementById("newReportForm");
   const sourceTextEl = document.getElementById("reportSourceText");
@@ -11,6 +18,10 @@
   const pdfFields = document.getElementById("pdfFields");
   const pdfFileEl = document.getElementById("reportPdfFile");
   let createMode = "paste";
+  let currentPage = 1;
+  let searchQuery = "";
+  let listMeta = { total: 0, page: 1, total_pages: 0 };
+  let searchDebounceTimer = null;
 
   const SAMPLE_REPORT_TEXT = `【NVDA · 2026财年第一财季（2026-Q1）财报解读】
 发布日：2026-05-28（盘后）
@@ -142,13 +153,48 @@
     }
   }
 
+  function updatePagerUi() {
+    const { total, page, total_pages } = listMeta;
+    const hasSearch = Boolean(searchQuery.trim());
+
+    if (pagerMetaEl) {
+      if (total > 0) {
+        pagerMetaEl.hidden = false;
+        pagerMetaEl.textContent = `共 ${total} 条，第 ${page} / ${total_pages} 页`;
+      } else {
+        pagerMetaEl.hidden = true;
+      }
+    }
+
+    if (pagerEl) {
+      pagerEl.hidden = total_pages <= 1;
+    }
+
+    if (pageLabelEl) {
+      pageLabelEl.textContent = total_pages
+        ? `第 ${page} / ${total_pages} 页`
+        : "第 0 / 0 页";
+    }
+
+    if (prevPageBtn) prevPageBtn.disabled = page <= 1;
+    if (nextPageBtn) nextPageBtn.disabled = page >= total_pages || total_pages === 0;
+  }
+
   function renderReports(reports) {
     if (!listEl) return;
-    if (!reports.length) {
+    const total = listMeta.total;
+    const hasFilter = Boolean(searchQuery.trim()) || Boolean(cfg.tickerFilter);
+
+    if (!total && !reports.length) {
       listEl.innerHTML = "";
       emptyEl.hidden = false;
+      emptyEl.textContent = hasFilter
+        ? "无匹配报告，请调整搜索条件。"
+        : "暂无报告，点击「新建报告」开始。";
+      updatePagerUi();
       return;
     }
+
     emptyEl.hidden = true;
     listEl.innerHTML = reports
       .map((r) => {
@@ -186,6 +232,16 @@
           </article>`;
       })
       .join("");
+    updatePagerUi();
+  }
+
+  function buildReportsUrl() {
+    const params = new URLSearchParams();
+    params.set("page", String(currentPage));
+    params.set("per_page", String(pageSize));
+    if (searchQuery.trim()) params.set("search", searchQuery.trim());
+    if (cfg.tickerFilter) params.set("ticker", cfg.tickerFilter);
+    return `${cfg.reportsUrl}?${params.toString()}`;
   }
 
   async function loadReports() {
@@ -193,19 +249,60 @@
     loadingEl.hidden = false;
     emptyEl.hidden = true;
     try {
-      const url = cfg.tickerFilter
-        ? `${cfg.reportsUrl}?ticker=${encodeURIComponent(cfg.tickerFilter)}`
-        : cfg.reportsUrl;
-      const res = await fetch(url);
+      const res = await fetch(buildReportsUrl());
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "加载失败");
+      listMeta = {
+        total: data.total ?? 0,
+        page: data.page ?? currentPage,
+        total_pages: data.total_pages ?? 0,
+      };
+      currentPage = listMeta.page;
       renderReports(data.reports || []);
     } catch (err) {
+      listEl.innerHTML = "";
       emptyEl.hidden = false;
-      emptyEl.textContent = "加载失败，请刷新页面";
+      emptyEl.textContent = err.message || "加载失败，请刷新页面";
+      if (pagerEl) pagerEl.hidden = true;
+      if (pagerMetaEl) pagerMetaEl.hidden = true;
     } finally {
       loadingEl.hidden = true;
     }
   }
+
+  function scheduleSearch() {
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      searchQuery = searchEl ? searchEl.value.trim() : "";
+      currentPage = 1;
+      loadReports();
+    }, 300);
+  }
+
+  searchEl?.addEventListener("input", scheduleSearch);
+  searchEl?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+      searchQuery = searchEl.value.trim();
+      currentPage = 1;
+      loadReports();
+    }
+  });
+
+  prevPageBtn?.addEventListener("click", () => {
+    if (currentPage > 1) {
+      currentPage -= 1;
+      loadReports();
+    }
+  });
+
+  nextPageBtn?.addEventListener("click", () => {
+    if (currentPage < listMeta.total_pages) {
+      currentPage += 1;
+      loadReports();
+    }
+  });
 
   document.getElementById("newReportBtn")?.addEventListener("click", openModal);
   document.getElementById("closeNewReportModal")?.addEventListener("click", closeModal);
@@ -273,6 +370,10 @@
       const res = await fetch(url, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "删除失败");
+      const remainingOnPage = listEl.querySelectorAll(".research-report-card").length - 1;
+      if (remainingOnPage <= 0 && currentPage > 1) {
+        currentPage -= 1;
+      }
       await loadReports();
     } catch (err) {
       alert(err.message || "删除失败");

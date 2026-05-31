@@ -89,6 +89,18 @@
     </section>
 
     <section class="panel">
+      <div class="research-list-toolbar">
+        <label class="research-search-field">
+          <span class="sr-only">搜索报告</span>
+          <input type="search" id="reportsSearch" placeholder="搜索 Ticker、标题、财季…" autocomplete="off">
+        </label>
+        <p id="reportsPagerMeta" class="research-pager-meta hint" hidden></p>
+        <nav id="reportsPager" class="research-pager" aria-label="报告分页" hidden>
+          <button type="button" class="secondary-btn" id="reportsPrevPage" disabled>上一页</button>
+          <span id="reportsPageLabel" class="research-page-label">第 1 / 1 页</span>
+          <button type="button" class="secondary-btn" id="reportsNextPage" disabled>下一页</button>
+        </nav>
+      </div>
       <div id="reportsLoading" class="research-loading" hidden>加载中…</div>
       <div id="reportsEmpty" class="research-empty" hidden>暂无报告，点击「新建报告」开始。</div>
       <div id="reportsList" class="research-reports-list"></div>
@@ -180,6 +192,7 @@
     deleteUrlTemplate: {{ url_for('investments.research_report_delete', report_id=0)|tojson }}.replace('/0', '/__ID__'),
     aiConfigured: {{ ai_configured|tojson }},
     tickerFilter: {{ ticker_filter|tojson }},
+    pageSize: 5,
   };
 </script>
 <script src="{{ url_for('static', filename='research-hub.js') }}"></script>

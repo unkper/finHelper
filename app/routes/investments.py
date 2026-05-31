@@ -1,4 +1,5 @@
 # app/routes/investments.py
+import io
 from pathlib import Path
 
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, current_app, send_file
@@ -36,8 +37,9 @@ from app.services.financial_reports import (
     clear_pending_extracted,
     create_financial_report,
     delete_financial_report,
-    fetch_all_reports,
+    fetch_reports_page,
     fetch_report_by_id,
+    get_report_pdf_blob,
     get_pending_extracted,
     save_financial_report_analysis,
     update_financial_report_meta,
@@ -137,8 +139,27 @@ def research():
 
 @bp.route('/research/reports')
 def research_reports_list():
+    from app.services.financial_reports import REPORTS_PAGE_SIZE
+
     ticker = (request.args.get('ticker') or '').strip().upper() or None
-    return jsonify({"reports": fetch_all_reports(ticker=ticker)})
+    search = (request.args.get('search') or request.args.get('q') or '').strip() or None
+    try:
+        page = int(request.args.get('page', 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        per_page = int(request.args.get('per_page', REPORTS_PAGE_SIZE))
+    except (TypeError, ValueError):
+        per_page = REPORTS_PAGE_SIZE
+
+    return jsonify(
+        fetch_reports_page(
+            ticker=ticker,
+            search=search,
+            page=page,
+            per_page=min(per_page, REPORTS_PAGE_SIZE),
+        )
+    )
 
 
 @bp.route('/research/reports', methods=['POST'])
@@ -286,12 +307,17 @@ def research_report_parse_status(report_id):
 @bp.route('/research/reports/<int:report_id>/pdf')
 def research_report_pdf(report_id):
     report = fetch_report_by_id(report_id)
-    if not report or not report.get("pdf_path"):
+    if not report or not report.get("has_pdf"):
         return jsonify({"error": "PDF 不存在"}), 404
-    path = Path(report["pdf_path"])
-    if not path.is_file():
+    data = get_report_pdf_blob(report_id)
+    if not data:
         return jsonify({"error": "PDF 文件已丢失"}), 404
-    return send_file(path, mimetype="application/pdf", as_attachment=True, download_name=f"report-{report_id}.pdf")
+    return send_file(
+        io.BytesIO(data),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"report-{report_id}.pdf",
+    )
 
 
 @bp.route('/research/reports/<int:report_id>/parse-pdf', methods=['POST'])

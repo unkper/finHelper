@@ -1,10 +1,21 @@
 """投研财报分析报告 CRUD。"""
 import json
+import math
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.database import get_db
 from app.services.financial_period import normalize_fiscal_period
+
+# 列表/详情元数据查询不 SELECT pdf_blob，避免分页时加载大文件
+_REPORT_LIST_COLUMNS = """
+    id, ticker, fiscal_period, report_date, title, source_text,
+    extracted_json, ai_summary, theme_id, source_type, pdf_path,
+    parse_status, parse_progress, parse_message, parse_error,
+    pending_extracted_json, created_at, updated_at,
+    (pdf_blob IS NOT NULL) AS has_pdf_blob
+"""
 
 PARSE_STATUS_IDLE = "idle"
 PARSE_STATUS_EXTRACTING = "extracting_text"
@@ -14,6 +25,7 @@ PARSE_STATUS_FAILED = "failed"
 
 SOURCE_PASTE = "paste"
 SOURCE_PDF = "pdf"
+REPORTS_PAGE_SIZE = 5
 
 
 def _now_iso() -> str:
@@ -37,6 +49,14 @@ def _row_get(row, key: str, default=None):
         return default
 
 
+def _report_row_has_pdf(row) -> bool:
+    if _row_get(row, "pdf_blob") is not None:
+        return True
+    if _row_get(row, "has_pdf_blob"):
+        return True
+    return bool(_row_get(row, "pdf_path"))
+
+
 def serialize_report(row) -> Dict[str, Any]:
     extracted = _parse_extracted(row["extracted_json"])
     pending = _parse_extracted(_row_get(row, "pending_extracted_json"))
@@ -49,7 +69,7 @@ def serialize_report(row) -> Dict[str, Any]:
         "source_text": row["source_text"] or "",
         "source_type": _row_get(row, "source_type", SOURCE_PASTE),
         "pdf_path": _row_get(row, "pdf_path"),
-        "has_pdf": bool(_row_get(row, "pdf_path")),
+        "has_pdf": _report_row_has_pdf(row),
         "parse_status": _row_get(row, "parse_status", PARSE_STATUS_IDLE),
         "parse_progress": int(_row_get(row, "parse_progress") or 0),
         "parse_message": _row_get(row, "parse_message") or "",
@@ -68,8 +88,8 @@ def fetch_all_reports(ticker: str | None = None) -> List[Dict[str, Any]]:
     db = get_db()
     if ticker:
         rows = db.execute(
-            """
-            SELECT * FROM financial_reports
+            f"""
+            SELECT {_REPORT_LIST_COLUMNS} FROM financial_reports
             WHERE ticker = ?
             ORDER BY updated_at DESC, fiscal_period DESC
             """,
@@ -77,21 +97,119 @@ def fetch_all_reports(ticker: str | None = None) -> List[Dict[str, Any]]:
         ).fetchall()
     else:
         rows = db.execute(
-            """
-            SELECT * FROM financial_reports
+            f"""
+            SELECT {_REPORT_LIST_COLUMNS} FROM financial_reports
             ORDER BY updated_at DESC, fiscal_period DESC
             """
         ).fetchall()
     return [serialize_report(row) for row in rows]
 
 
+def _reports_where_clause(
+    ticker: str | None,
+    search: str | None,
+) -> tuple[str, list[Any]]:
+    conditions = ["1=1"]
+    params: list[Any] = []
+    if ticker:
+        conditions.append("ticker = ?")
+        params.append(ticker.strip().upper())
+    term = (search or "").strip()
+    if term:
+        like = f"%{term.upper()}%"
+        conditions.append(
+            "(UPPER(ticker) LIKE ? OR UPPER(title) LIKE ? OR UPPER(fiscal_period) LIKE ?)"
+        )
+        params.extend([like, like, like])
+    return " AND ".join(conditions), params
+
+
+def fetch_reports_page(
+    *,
+    ticker: str | None = None,
+    search: str | None = None,
+    page: int = 1,
+    per_page: int = REPORTS_PAGE_SIZE,
+) -> Dict[str, Any]:
+    per_page = max(1, min(int(per_page), REPORTS_PAGE_SIZE))
+    page = max(1, int(page))
+    where_sql, params = _reports_where_clause(ticker, search)
+    db = get_db()
+
+    total_row = db.execute(
+        f"SELECT COUNT(*) AS cnt FROM financial_reports WHERE {where_sql}",
+        tuple(params),
+    ).fetchone()
+    total = int(total_row["cnt"]) if total_row else 0
+    total_pages = math.ceil(total / per_page) if total else 0
+    if total_pages and page > total_pages:
+        page = total_pages
+
+    offset = (page - 1) * per_page
+    rows = db.execute(
+        f"""
+        SELECT {_REPORT_LIST_COLUMNS} FROM financial_reports
+        WHERE {where_sql}
+        ORDER BY updated_at DESC, fiscal_period DESC
+        LIMIT ? OFFSET ?
+        """,
+        tuple(params) + (per_page, offset),
+    ).fetchall()
+
+    return {
+        "reports": [serialize_report(row) for row in rows],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+    }
+
+
 def fetch_report_by_id(report_id: int) -> Dict[str, Any] | None:
     db = get_db()
     row = db.execute(
-        "SELECT * FROM financial_reports WHERE id = ?",
+        f"SELECT {_REPORT_LIST_COLUMNS} FROM financial_reports WHERE id = ?",
         (report_id,),
     ).fetchone()
     return serialize_report(row) if row else None
+
+
+def save_report_pdf_blob(report_id: int, data: bytes) -> None:
+    db = get_db()
+    row = db.execute(
+        "SELECT id FROM financial_reports WHERE id = ?",
+        (report_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("报告不存在")
+    db.execute(
+        """
+        UPDATE financial_reports
+        SET pdf_blob = ?, pdf_path = NULL, updated_at = ?
+        WHERE id = ?
+        """,
+        (data, _now_iso(), report_id),
+    )
+    db.commit()
+
+
+def get_report_pdf_blob(report_id: int) -> bytes | None:
+    db = get_db()
+    row = db.execute(
+        "SELECT pdf_blob, pdf_path FROM financial_reports WHERE id = ?",
+        (report_id,),
+    ).fetchone()
+    if not row:
+        return None
+    blob = _row_get(row, "pdf_blob")
+    if blob is not None:
+        return bytes(blob)
+    pdf_path = _row_get(row, "pdf_path")
+    if pdf_path:
+        path = Path(pdf_path)
+        if path.is_file():
+            return path.read_bytes()
+    return None
 
 
 def fetch_ticker_extracted_for_charts(ticker: str) -> List[Dict[str, Any]]:
@@ -366,8 +484,6 @@ def delete_financial_report(report_id: int) -> None:
     db.commit()
     if row and row["pdf_path"]:
         try:
-            from pathlib import Path
-
             path = Path(row["pdf_path"])
             if path.is_file():
                 path.unlink()
