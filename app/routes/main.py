@@ -6,15 +6,17 @@ from app.database import SUPPORTED_CURRENCIES
 from app.database import get_db
 from app.scheduler_setup import configure_monitor_jobs
 from app.services.settings import (
+    ALLOWED_AI_ARTICLE_MODELS,
+    get_ai_article_model,
+    get_ai_financial_parse_model,
     get_history_cache_hours,
     get_monitor_interval_minutes,
     get_quote_cache_minutes,
-    get_ai_article_model,
     set_ai_article_model,
+    set_ai_financial_parse_model,
     set_history_cache_hours,
     set_monitor_interval_minutes,
     set_quote_cache_minutes,
-    ALLOWED_AI_ARTICLE_MODELS,
 )
 from app.services.snapshot import (
     build_pie_data,
@@ -78,17 +80,26 @@ def settings():
             return redirect(url_for(".settings"))
 
         ai_model = request.form.get("ai_article_model", get_ai_article_model())
+        financial_model = request.form.get(
+            "ai_financial_parse_model", get_ai_financial_parse_model()
+        )
         if ai_model not in ALLOWED_AI_ARTICLE_MODELS:
             flash("AI 模型选择无效", "error")
+            return redirect(url_for(".settings"))
+        if financial_model not in ALLOWED_AI_ARTICLE_MODELS:
+            flash("投研财报解析模型选择无效", "error")
             return redirect(url_for(".settings"))
 
         interval = set_monitor_interval_minutes(monitor_minutes)
         quote_ttl = set_quote_cache_minutes(quote_cache_minutes)
         history_ttl = set_history_cache_hours(history_cache_hours)
         saved_model = set_ai_article_model(ai_model)
+        saved_financial = set_ai_financial_parse_model(financial_model)
         configure_monitor_jobs(current_app._get_current_object())
         flash(
-            f"已保存：监控 {interval} 分钟/次，现价缓存 {quote_ttl} 分钟，历史缓存 {history_ttl} 小时，AI 模型 {saved_model}",
+            f"已保存：监控 {interval} 分钟/次，现价缓存 {quote_ttl} 分钟，"
+            f"历史缓存 {history_ttl} 小时，研报模型 {saved_model}，"
+            f"投研解析 {saved_financial}",
             "success",
         )
         return redirect(url_for(".settings"))
@@ -100,5 +111,6 @@ def settings():
         history_cache_hours=get_history_cache_hours(),
         ai_article_model=get_ai_article_model(),
         ai_article_models=ALLOWED_AI_ARTICLE_MODELS,
+        ai_financial_parse_model=get_ai_financial_parse_model(),
         deepseek_configured=bool(current_app.config.get("DEEPSEEK_API_KEY", "").strip()),
     )

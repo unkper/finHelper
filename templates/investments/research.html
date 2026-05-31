@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}投研 · FinHelper{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='earnings-calendar.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='research.css') }}">
+
+<main class="layout research-page">
+  <section class="panel research-hero">
+    <div class="research-hero-inner">
+      <div>
+        <p class="eyebrow">Investment Research</p>
+        <h2>投研中心</h2>
+        <p class="hint">财报日历与 AI 财报分析可视化：粘贴外部解读 → 结构化抽取 → 图表体检。</p>
+      </div>
+      <div class="research-hero-actions">
+        <a href="{{ url_for('investments.index') }}" class="secondary-btn">← 主题列表</a>
+      </div>
+    </div>
+  </section>
+
+  <nav class="research-tabs" aria-label="投研分栏">
+    <a href="{{ url_for('investments.research', tab='calendar') }}"
+       class="research-tab{% if active_tab == 'calendar' %} is-active{% endif %}">财报日历</a>
+    <a href="{{ url_for('investments.research', tab='analysis') }}"
+       class="research-tab{% if active_tab == 'analysis' %} is-active{% endif %}">财报分析</a>
+  </nav>
+
+  {% if active_tab == 'calendar' %}
+  <div id="researchCalendarPanel">
+    {% if not earnings_enabled %}
+    <section class="panel research-notice">
+      <p>财报日历 API 与飞书提醒需在环境变量中开启 <code>EARNINGS_ENABLED=true</code> 并配置 EODHD/FMP Key。</p>
+      <p class="hint">财报分析 Tab 不依赖该开关，可直接粘贴文字使用。</p>
+    </section>
+    {% else %}
+    <section class="panel earnings-settings">
+      <h3 class="earnings-settings-title">提醒设置</h3>
+      <form id="earningsSettingsForm" class="earnings-settings-form">
+        <label>
+          <span>展望天数</span>
+          <input type="number" name="horizon_days" id="horizonDays"
+            min="7" max="60" value="{{ earnings_settings.horizon_days }}" required>
+        </label>
+        <label>
+          <span>提前提醒（天）</span>
+          <input type="number" name="remind_days_before" id="remindDaysBefore"
+            min="1" max="30" value="{{ earnings_settings.remind_days_before }}" required>
+        </label>
+        <label class="earnings-toggle">
+          <input type="checkbox" name="remind_enabled" id="remindEnabled"
+            {% if earnings_settings.remind_enabled %}checked{% endif %}>
+          <span>启用飞书财报提醒</span>
+        </label>
+        <button type="submit" class="primary-btn">保存设置</button>
+      </form>
+      <p class="earnings-settings-status" id="settingsStatus"></p>
+    </section>
+
+    <section class="panel earnings-timeline-panel">
+      <div class="earnings-timeline-head">
+        <h3>财报时间线</h3>
+        <span class="earnings-count" id="earningsCount"></span>
+        <button type="button" class="secondary-btn" id="refreshEarningsBtn">刷新</button>
+      </div>
+      <p class="hint earnings-meta" id="earningsMeta"></p>
+      <div id="earningsLoading" class="earnings-loading">
+        <div class="loading-spinner"></div>
+        <p>正在拉取财报日历…</p>
+      </div>
+      <div id="earningsEmpty" class="earnings-empty" hidden>
+        <p id="earningsEmptyText">暂无数据</p>
+      </div>
+      <div id="earningsTimeline" class="earnings-timeline" hidden></div>
+    </section>
+    {% endif %}
+  </div>
+  {% else %}
+  <div id="researchAnalysisPanel">
+    <section class="panel research-analysis-toolbar">
+      <div>
+        <h3>财报分析报告{% if ticker_filter %} · {{ ticker_filter }}{% endif %}</h3>
+        <p class="hint">粘贴解读文字或上传 PDF；同 ticker 多份报告的趋势图会自动合并。</p>
+        {% if ticker_filter %}
+        <p class="hint"><a href="{{ url_for('investments.research', tab='analysis') }}">查看全部标的</a></p>
+        {% endif %}
+      </div>
+      <button type="button" class="primary-btn" id="newReportBtn">+ 新建报告</button>
+    </section>
+
+    <section class="panel">
+      <div id="reportsLoading" class="research-loading" hidden>加载中…</div>
+      <div id="reportsEmpty" class="research-empty" hidden>暂无报告，点击「新建报告」开始。</div>
+      <div id="reportsList" class="research-reports-list"></div>
+    </section>
+  </div>
+  {% endif %}
+</main>
+
+{% if active_tab == 'calendar' and earnings_enabled %}
+<script>
+  window.EARNINGS_PAGE = {
+    calendarUrl: {{ url_for('investments.earnings_calendar_api')|tojson }},
+    settingsUrl: {{ url_for('investments.earnings_settings_api')|tojson }},
+    apiConfigured: {{ api_configured|tojson }},
+    initialSettings: {{ earnings_settings|tojson }},
+  };
+</script>
+<script src="{{ url_for('static', filename='earnings-calendar.js') }}"></script>
+{% endif %}
+
+{% if active_tab == 'analysis' %}
+<div class="modal-overlay" id="newReportModal" hidden>
+  <div class="modal research-modal">
+    <div class="modal-header">
+      <h3>新建财报分析报告</h3>
+      <button type="button" class="modal-close" id="closeNewReportModal" aria-label="关闭">×</button>
+    </div>
+    <nav class="research-create-tabs" aria-label="创建方式">
+      <button type="button" class="research-create-tab is-active" data-mode="paste">粘贴文字</button>
+      <button type="button" class="research-create-tab" data-mode="pdf">上传 PDF</button>
+    </nav>
+    <form id="newReportForm" class="research-form">
+      <label>
+        <span>标的 Ticker</span>
+        <input type="text" name="ticker" id="reportTicker" list="trackedTickers" required placeholder="NVDA">
+        <datalist id="trackedTickers">
+          {% for t in tracked_tickers %}
+          <option value="{{ t }}"></option>
+          {% endfor %}
+        </datalist>
+      </label>
+      <label>
+        <span>财季</span>
+        <input type="text" name="fiscal_period" required placeholder="2026-Q1 或 FY2025">
+      </label>
+      <label>
+        <span>标题</span>
+        <input type="text" name="title" placeholder="可选，默认自动生成">
+      </label>
+      <label>
+        <span>发布日（可选）</span>
+        <input type="date" name="report_date">
+      </label>
+      <div id="pasteFields">
+        <label class="research-textarea-label">
+          <div class="research-textarea-head">
+            <span>粘贴财报解读文字</span>
+            <div class="research-template-actions">
+              <button type="button" class="secondary-btn research-template-btn" id="insertSampleBtn">插入范例</button>
+              <button type="button" class="secondary-btn research-template-btn" id="copySampleBtn">复制范例</button>
+            </div>
+          </div>
+          <textarea name="source_text" id="reportSourceText" rows="12" placeholder="粘贴外部 AI 对财报的分析全文…"></textarea>
+          <p class="hint research-template-hint" id="sampleActionHint" hidden></p>
+        </label>
+      </div>
+      <div id="pdfFields" hidden>
+        <label>
+          <span>财报 PDF（最大 20MB）</span>
+          <input type="file" name="file" id="reportPdfFile" accept="application/pdf,.pdf">
+        </label>
+        <p class="hint">本地提取文字后由 DeepSeek Pro 结构化；扫描版 PDF 可能无法识别。</p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="cancelNewReport">取消</button>
+        <button type="submit" class="primary-btn" id="newReportSubmitBtn">创建并打开</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  window.RESEARCH_PAGE = {
+    reportsUrl: {{ url_for('investments.research_reports_list')|tojson }},
+    createUrl: {{ url_for('investments.research_reports_create')|tojson }},
+    uploadUrl: {{ url_for('investments.research_reports_upload')|tojson }},
+    detailUrlTemplate: {{ url_for('investments.research_report_detail', report_id=0)|tojson }}.replace('/0', '/__ID__'),
+    aiConfigured: {{ ai_configured|tojson }},
+    tickerFilter: {{ ticker_filter|tojson }},
+  };
+</script>
+<script src="{{ url_for('static', filename='research-hub.js') }}"></script>
+{% endif %}
+{% endblock %}

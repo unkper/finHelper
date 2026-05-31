@@ -177,6 +177,34 @@ def init_db() -> None:
         reminded_on TEXT NOT NULL,
         PRIMARY KEY (ticker, report_date, remind_days_before)
     );
+
+    -- 11. 投研财报分析报告
+    CREATE TABLE IF NOT EXISTS financial_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT NOT NULL,
+        fiscal_period TEXT NOT NULL,
+        report_date TEXT,
+        title TEXT NOT NULL,
+        source_text TEXT NOT NULL,
+        extracted_json TEXT,
+        ai_summary TEXT,
+        theme_id INTEGER,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(theme_id) REFERENCES themes(id) ON DELETE SET NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_financial_reports_ticker_period
+        ON financial_reports(ticker, fiscal_period);
+
+    -- 12. 三大表 API 缓存（FMP 历史补全）
+    CREATE TABLE IF NOT EXISTS financial_statements_cache (
+        ticker TEXT NOT NULL,
+        statement_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        PRIMARY KEY (ticker, statement_type)
+    );
     """
     # 修改点 2：使用 current_app.config 替代 g.flask_app.config
     with closing(sqlite3.connect(current_app.config["DATABASE_PATH"])) as conn:
@@ -336,12 +364,63 @@ def _migrate_earnings_tables(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_financial_reports(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS financial_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            fiscal_period TEXT NOT NULL,
+            report_date TEXT,
+            title TEXT NOT NULL,
+            source_text TEXT NOT NULL DEFAULT '',
+            extracted_json TEXT,
+            ai_summary TEXT,
+            theme_id INTEGER,
+            source_type TEXT NOT NULL DEFAULT 'paste',
+            pdf_path TEXT,
+            parse_status TEXT NOT NULL DEFAULT 'idle',
+            parse_progress INTEGER NOT NULL DEFAULT 0,
+            parse_message TEXT,
+            parse_error TEXT,
+            pending_extracted_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(theme_id) REFERENCES themes(id) ON DELETE SET NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_financial_reports_ticker_period
+            ON financial_reports(ticker, fiscal_period);
+        CREATE TABLE IF NOT EXISTS financial_statements_cache (
+            ticker TEXT NOT NULL,
+            statement_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY (ticker, statement_type)
+        );
+        """
+    )
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(financial_reports)")}
+    alters = (
+        ("source_type", "TEXT NOT NULL DEFAULT 'paste'"),
+        ("pdf_path", "TEXT"),
+        ("parse_status", "TEXT NOT NULL DEFAULT 'idle'"),
+        ("parse_progress", "INTEGER NOT NULL DEFAULT 0"),
+        ("parse_message", "TEXT"),
+        ("parse_error", "TEXT"),
+        ("pending_extracted_json", "TEXT"),
+    )
+    for name, typedef in alters:
+        if name not in columns:
+            conn.execute(f"ALTER TABLE financial_reports ADD COLUMN {name} {typedef}")
+
+
 def migrate_db(conn: sqlite3.Connection) -> None:
     _migrate_investment_assistants(conn)
     _migrate_stock_daily_cache(conn)
     _migrate_app_settings(conn)
     _migrate_asset_price_alerts(conn)
     _migrate_earnings_tables(conn)
+    _migrate_financial_reports(conn)
 
     milestone_columns = {row["name"] for row in conn.execute("PRAGMA table_info(theme_milestones)")}
     if milestone_columns:

@@ -41,4 +41,8 @@ class Config:
     # 财报日历与飞书提醒（设为 true/1/yes 开启）
     EARNINGS_ENABLED = os.environ.get("EARNINGS_ENABLED", "false").lower() in ("true", "1", "yes")
 
+    # 投研 PDF 上传目录
+    FINANCIAL_PDF_DIR = BASE_DIR / "uploads" / "financial_reports"
+    FINANCIAL_PDF_MAX_BYTES = 20 * 1024 * 1024
+
 # 这样你的 app 初始化时，直接 app.config.from_object(Config) 即可，不需要再调 from_env() 了

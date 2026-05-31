@@ -41,6 +41,8 @@ def create_app(config: Config = None) -> Flask:
     app.config["DEEPSEEK_API_KEY"] = getattr(config, "DEEPSEEK_API_KEY", "")
     app.config["DEEPSEEK_BASE_URL"] = getattr(config, "DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     app.config["EARNINGS_ENABLED"] = getattr(config, "EARNINGS_ENABLED", False)
+    app.config["FINANCIAL_PDF_DIR"] = str(getattr(config, "FINANCIAL_PDF_DIR", ""))
+    app.config["FINANCIAL_PDF_MAX_BYTES"] = getattr(config, "FINANCIAL_PDF_MAX_BYTES", 20 * 1024 * 1024)
     app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 7
 
     # 6. 注册数据库清理机制与 CLI 初始化命令

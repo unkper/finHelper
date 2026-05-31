@@ -138,9 +138,7 @@
 
   {{ nav_icon(url_for('investments.stocks'), '行情', 'stocks', ['investments.stocks']) }}
 
-  {% if earnings_enabled %}
-  {{ nav_icon(url_for('investments.earnings'), '财报', 'earnings', ['investments.earnings']) }}
-  {% endif %}
+  {{ nav_icon(url_for('investments.research'), '投研', 'earnings', ['investments.research', 'investments.research_report_detail', 'investments.earnings']) }}
 
   {{ nav_icon(url_for('main.settings'), '设置', 'settings', ['main.settings']) }}
 

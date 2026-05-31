@@ -1,5 +1,7 @@
 # app/routes/investments.py
-from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, current_app
+from pathlib import Path
+
+from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, current_app, send_file
 from app.database import get_db
 from app.services.investment import (
     fetch_assistants_with_themes, fetch_all_assistants, fetch_theme_by_id,
@@ -20,11 +22,35 @@ from app.services.settings import (
     set_earnings_remind_days_before,
     set_earnings_remind_enabled,
 )
-from app.services.earnings_calendar import build_earnings_payload, is_earnings_api_configured
+from app.services.earnings_calendar import (
+    build_earnings_payload,
+    fetch_tracked_us_tickers,
+    is_earnings_api_configured,
+)
 from app.services.stock_charts import build_stock_chart_payload
 from app.services.rate_limit import consume_rate_limit, get_client_ip
 from app.services.article_ai import extract_from_article, has_article_ai_configured
 from app.services.features import is_earnings_enabled
+from app.services.financial_reports import (
+    SOURCE_PDF,
+    clear_pending_extracted,
+    create_financial_report,
+    delete_financial_report,
+    fetch_all_reports,
+    fetch_report_by_id,
+    get_pending_extracted,
+    save_financial_report_analysis,
+    update_financial_report_meta,
+)
+from app.services.financial_ai import (
+    extract_from_financial_text,
+    has_financial_ai_configured,
+    normalize_extracted_payload,
+)
+from app.services.financial_statements import build_chart_payload
+from app.services.financial_pdf import run_parse_job, save_uploaded_pdf
+from app.services.financial_chart_insight import explain_chart
+from app.services.settings import get_ai_financial_parse_model
 from app.scheduler_setup import configure_monitor_jobs
 
 bp = Blueprint('investments', __name__, url_prefix='/investments')
@@ -88,6 +114,298 @@ def macd_alerts():
 
 @bp.route('/earnings')
 def earnings():
+    return redirect(url_for('investments.research', tab='calendar'))
+
+
+@bp.route('/research')
+def research():
+    tab = request.args.get('tab', 'analysis')
+    if tab not in ('calendar', 'analysis'):
+        tab = 'analysis'
+    ticker_filter = (request.args.get('ticker') or '').strip().upper() or None
+    return render_template(
+        "investments/research.html",
+        active_tab=tab,
+        ticker_filter=ticker_filter,
+        earnings_enabled=is_earnings_enabled(),
+        earnings_settings=get_earnings_settings(),
+        api_configured=is_earnings_api_configured(),
+        ai_configured=has_financial_ai_configured(),
+        tracked_tickers=fetch_tracked_us_tickers(),
+    )
+
+
+@bp.route('/research/reports')
+def research_reports_list():
+    ticker = (request.args.get('ticker') or '').strip().upper() or None
+    return jsonify({"reports": fetch_all_reports(ticker=ticker)})
+
+
+@bp.route('/research/reports', methods=['POST'])
+def research_reports_create():
+    data = request.get_json(silent=True) or {}
+    ticker = str(data.get('ticker') or '').upper().strip()
+    fiscal_period = str(data.get('fiscal_period') or '').strip()
+    title = str(data.get('title') or '').strip()
+    source_text = str(data.get('source_text') or '').strip()
+    report_date = str(data.get('report_date') or '').strip() or None
+    theme_id = data.get('theme_id')
+    try:
+        theme_id = int(theme_id) if theme_id is not None else None
+    except (TypeError, ValueError):
+        theme_id = None
+
+    try:
+        report_id = create_financial_report(
+            ticker, fiscal_period, title, source_text, report_date, theme_id
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({"status": "ok", "report_id": report_id})
+
+
+@bp.route('/research/reports/<int:report_id>')
+def research_report_detail(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        flash("报告不存在", "error")
+        return redirect(url_for('investments.research', tab='analysis'))
+    return render_template(
+        "investments/financial_report_detail.html",
+        report=report,
+        ai_configured=has_financial_ai_configured(),
+        parse_status_url=url_for("investments.research_report_parse_status", report_id=report_id),
+        chart_insight_url=url_for("investments.research_report_chart_insight", report_id=report_id),
+        pending_url=url_for("investments.research_report_pending_extracted", report_id=report_id),
+        pdf_url=url_for("investments.research_report_pdf", report_id=report_id) if report.get("has_pdf") else None,
+        parse_pdf_url=url_for("investments.research_report_parse_pdf", report_id=report_id),
+    )
+
+
+@bp.route('/research/reports/<int:report_id>/chart-data')
+def research_report_chart_data(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+
+    payload = build_chart_payload(
+        report["ticker"],
+        report.get("fiscal_period"),
+        current_report_id=report_id,
+        current_extracted=report.get("extracted"),
+    )
+    payload["report_id"] = report_id
+    payload["title"] = report["title"]
+    return jsonify(payload)
+
+
+@bp.route('/research/reports/<int:report_id>/analyze', methods=['POST'])
+def research_report_analyze(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"financial-ai:{ip}", max_calls=10, window_seconds=3600
+    )
+    if not allowed:
+        return jsonify({"error": "AI 分析请求过于频繁", "retry_after": retry_after}), 429
+
+    result = extract_from_financial_text(
+        report["ticker"],
+        report["fiscal_period"],
+        report["title"],
+        report["source_text"],
+        model=get_ai_financial_parse_model(),
+    )
+    if result.get("error"):
+        return jsonify({"error": result["error"]}), 502
+
+    return jsonify(result)
+
+
+@bp.route('/research/reports/upload', methods=['POST'])
+def research_reports_upload():
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    ticker = (request.form.get("ticker") or "").upper().strip()
+    fiscal_period = (request.form.get("fiscal_period") or "").strip()
+    title = (request.form.get("title") or "").strip()
+    report_date = (request.form.get("report_date") or "").strip() or None
+    upload = request.files.get("file")
+
+    if not ticker or not fiscal_period:
+        return jsonify({"error": "ticker 与财季不能为空"}), 400
+    if not upload or not upload.filename:
+        return jsonify({"error": "请选择 PDF 文件"}), 400
+    if not upload.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "仅支持 PDF 文件"}), 400
+
+    try:
+        report_id = create_financial_report(
+            ticker, fiscal_period, title, "",
+            report_date, source_type=SOURCE_PDF,
+        )
+        save_uploaded_pdf(report_id, upload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    app = current_app._get_current_object()
+    run_parse_job(app, report_id)
+    return jsonify({"status": "ok", "report_id": report_id})
+
+
+@bp.route('/research/reports/<int:report_id>/parse-status')
+def research_report_parse_status(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+
+    preview = (report.get("source_text") or "")[:500]
+    pending = report.get("pending_extracted")
+    return jsonify({
+        "status": report.get("parse_status"),
+        "progress": report.get("parse_progress"),
+        "message": report.get("parse_message"),
+        "error": report.get("parse_error"),
+        "has_pending": pending is not None,
+        "source_text_preview": preview,
+    })
+
+
+@bp.route('/research/reports/<int:report_id>/pdf')
+def research_report_pdf(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report or not report.get("pdf_path"):
+        return jsonify({"error": "PDF 不存在"}), 404
+    path = Path(report["pdf_path"])
+    if not path.is_file():
+        return jsonify({"error": "PDF 文件已丢失"}), 404
+    return send_file(path, mimetype="application/pdf", as_attachment=True, download_name=f"report-{report_id}.pdf")
+
+
+@bp.route('/research/reports/<int:report_id>/parse-pdf', methods=['POST'])
+def research_report_parse_pdf(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+    if not report.get("has_pdf"):
+        return jsonify({"error": "该报告无 PDF 文件"}), 400
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    app = current_app._get_current_object()
+    run_parse_job(app, report_id)
+    return jsonify({"status": "ok", "report_id": report_id})
+
+
+@bp.route('/research/reports/<int:report_id>/pending-extracted')
+def research_report_pending_extracted(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+    pending = get_pending_extracted(report_id) or report.get("pending_extracted")
+    if not pending:
+        return jsonify({"error": "暂无待确认结果"}), 404
+    return jsonify({
+        "status": "ok",
+        "extracted": pending,
+        "ai_summary": report.get("ai_summary") or pending.get("ai_summary") or "",
+    })
+
+
+@bp.route('/research/reports/<int:report_id>/chart-insight', methods=['POST'])
+def research_report_chart_insight(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    data = request.get_json(silent=True) or {}
+    chart_type = str(data.get("chart_type") or "").strip()
+    if not chart_type:
+        return jsonify({"error": "缺少 chart_type"}), 400
+
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"chart-insight:{ip}", max_calls=20, window_seconds=3600
+    )
+    if not allowed:
+        return jsonify({"error": "图表解读请求过于频繁", "retry_after": retry_after}), 429
+
+    chart_payload = build_chart_payload(
+        report["ticker"],
+        report.get("fiscal_period"),
+        current_report_id=report_id,
+        current_extracted=report.get("extracted"),
+    )
+    result = explain_chart(chart_type, chart_payload)
+    if result.get("error"):
+        return jsonify({"error": result["error"]}), 502
+    return jsonify(result)
+
+
+@bp.route('/research/reports/<int:report_id>/confirm', methods=['POST'])
+def research_report_confirm(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+
+    data = request.get_json(silent=True) or {}
+    extracted = data.get("extracted")
+    if not isinstance(extracted, dict):
+        return jsonify({"error": "缺少 extracted 数据"}), 400
+
+    normalized = normalize_extracted_payload(extracted)
+    ai_summary = str(data.get("ai_summary") or normalized.get("ai_summary") or "").strip()
+    try:
+        save_financial_report_analysis(report_id, normalized, ai_summary)
+        clear_pending_extracted(report_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({"status": "ok", "report_id": report_id})
+
+
+@bp.route('/research/reports/<int:report_id>/edit', methods=['POST'])
+def research_report_edit(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+
+    data = request.get_json(silent=True) or {}
+    try:
+        update_financial_report_meta(
+            report_id,
+            title=data.get("title"),
+            source_text=data.get("source_text"),
+            fiscal_period=data.get("fiscal_period"),
+            report_date=data.get("report_date"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({"status": "ok"})
+
+
+@bp.route('/research/reports/<int:report_id>/delete', methods=['POST'])
+def research_report_delete(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+    delete_financial_report(report_id)
+    return jsonify({"status": "ok"})
+
+
+@bp.route('/earnings-legacy')
+def earnings_legacy():
     if not is_earnings_enabled():
         flash("财报功能未开启", "error")
         return redirect(url_for('investments.index'))

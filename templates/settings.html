@@ -73,6 +73,22 @@
       </div>
 
       <div class="settings-field">
+        <label for="ai_financial_parse_model">投研财报解析模型</label>
+        <div class="settings-input-row">
+          <select id="ai_financial_parse_model" name="ai_financial_parse_model">
+            {% for model in ai_article_models %}
+            <option value="{{ model }}" {% if ai_financial_parse_model == model %}selected{% endif %}>
+              {{ model }}{% if model == 'deepseek-v4-flash' %}（快速）{% elif model == 'deepseek-v4-pro' %}（更强，推荐 PDF）{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <p class="hint">
+          用于投研财报粘贴文字或 PDF 抽取后的结构化分析。图表旁「AI 解读」固定使用 Flash，不在此设置。
+        </p>
+      </div>
+
+      <div class="settings-field">
         <label for="ai_article_model">研报 AI 分析模型</label>
         <div class="settings-input-row">
           <select id="ai_article_model" name="ai_article_model">
