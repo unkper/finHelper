@@ -229,7 +229,7 @@
       </label>
       <label>
         <span>财季</span>
-        <input type="text" name="fiscal_period" required value="{{ report.fiscal_period }}">
+        <input type="text" name="fiscal_period" required value="{{ report.fiscal_period }}" placeholder="2026-Q1" pattern="\d{4}-[Qq][1-4]" title="格式：YYYY-Q1～Q4，例如 2026-Q1">
       </label>
       <label>
         <span>标题</span>

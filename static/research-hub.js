@@ -107,6 +107,11 @@
     sampleHintEl.classList.toggle("is-ok", !!ok);
   }
 
+  function normalizeFiscalPeriodInput(el) {
+    if (!el || !el.value) return;
+    el.value = el.value.trim().toUpperCase();
+  }
+
   function insertSampleTemplate() {
     if (!sourceTextEl) return;
     const current = (sourceTextEl.value || "").trim();
@@ -211,9 +216,15 @@
     btn.addEventListener("click", () => setCreateMode(btn.dataset.mode));
   });
 
+  form?.querySelector('[name="fiscal_period"]')?.addEventListener("blur", (e) => {
+    normalizeFiscalPeriodInput(e.target);
+  });
+
   form?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
+    const periodEl = form.querySelector('[name="fiscal_period"]');
+    normalizeFiscalPeriodInput(periodEl);
     try {
       if (createMode === "pdf") {
         if (!cfg.uploadUrl) throw new Error("上传接口未配置");

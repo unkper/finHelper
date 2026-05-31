@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from app.database import get_db
+from app.services.financial_period import normalize_fiscal_period
 
 PARSE_STATUS_IDLE = "idle"
 PARSE_STATUS_EXTRACTING = "extracting_text"
@@ -129,7 +130,7 @@ def create_financial_report(
 ) -> int:
     db = get_db()
     ticker = ticker.strip().upper()
-    fiscal_period = fiscal_period.strip()
+    fiscal_period = normalize_fiscal_period(fiscal_period)
     title = title.strip() or f"{ticker} {fiscal_period} 财报分析"
     source_text = (source_text or "").strip()
     if not ticker or not fiscal_period:
@@ -195,9 +196,7 @@ def update_financial_report_meta(
         if not new_ticker:
             raise ValueError("ticker 不能为空")
     if fiscal_period is not None:
-        new_period = fiscal_period.strip()
-        if not new_period:
-            raise ValueError("财季不能为空")
+        new_period = normalize_fiscal_period(fiscal_period)
 
     _ensure_unique_ticker_period(db, new_ticker, new_period, report_id)
 

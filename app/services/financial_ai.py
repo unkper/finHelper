@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional
 import requests
 from flask import current_app
 
+from app.services.financial_period import normalize_fiscal_period
+from app.services.financial_statements import _sort_periods
 from app.services.settings import get_ai_article_model, get_ai_financial_parse_model  # noqa: F401
 
 CHART_INSIGHT_MODEL = "deepseek-v4-flash"
@@ -16,7 +18,7 @@ _EXTRACTION_PROMPT = """你是一名资深财务分析助手。请从以下财�
 1. 只抽取文中明确出现的数字，禁止编造；缺失字段用 null
 2. 金额单位统一为百万美元（millions），在 JSON 顶层标明 unit: "millions"、currency: "USD"
 3. 区分净利润 net_profit 与扣非净利润 net_profit_adjusted；文中无扣非则 net_profit_adjusted 为 null
-4. periods 数组列出文中涉及的所有财季（如 2025-Q4、2026-Q1、FY2025）
+4. periods 及所有表对象的键必须使用标准财季格式 YYYY-Q1～Q4（如 2025-Q4、2026-Q1），禁止 FY2025、纯年份等其它写法
 5. 每个 period 在 kpis、income_statement、balance_sheet、cash_flow 下各有对应对象
 6. income_statement 字段：revenue, cogs, gross_profit, rd, sga, operating_income, tax, net_income（均为百万美元，缺失 null）
 7. balance_sheet 字段：cash, receivables, inventory, ppe, total_assets, current_liabilities, long_term_debt, equity
@@ -89,14 +91,21 @@ def _normalize_kpi_metric(raw: Any) -> Optional[Dict[str, Any]]:
     }
 
 
+def _try_canonical_period(raw: Any) -> str | None:
+    try:
+        return normalize_fiscal_period(str(raw))
+    except ValueError:
+        return None
+
+
 def _normalize_period_map(raw: Any, fields: List[str]) -> Dict[str, Dict[str, Any]]:
     if not isinstance(raw, dict):
         return {}
-    result = {}
+    result: Dict[str, Dict[str, Any]] = {}
     for period, block in raw.items():
         if not isinstance(block, dict):
             continue
-        period_key = str(period).strip()
+        period_key = _try_canonical_period(period)
         if not period_key:
             continue
         normalized = {}
@@ -105,7 +114,10 @@ def _normalize_period_map(raw: Any, fields: List[str]) -> Dict[str, Dict[str, An
             if val is not None:
                 normalized[field] = round(val, 2)
         if normalized:
-            result[period_key] = normalized
+            if period_key in result:
+                result[period_key].update(normalized)
+            else:
+                result[period_key] = normalized
     return result
 
 
@@ -114,8 +126,8 @@ def normalize_extracted_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     periods: List[str] = []
     if isinstance(periods_raw, list):
         for p in periods_raw:
-            key = str(p).strip()
-            if key:
+            key = _try_canonical_period(p)
+            if key and key not in periods:
                 periods.append(key)
 
     kpis_raw = payload.get("kpis") if isinstance(payload.get("kpis"), dict) else {}
@@ -123,7 +135,9 @@ def normalize_extracted_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     for period, block in kpis_raw.items():
         if not isinstance(block, dict):
             continue
-        period_key = str(period).strip()
+        period_key = _try_canonical_period(period)
+        if not period_key:
+            continue
         entry: Dict[str, Any] = {}
         for metric in ("revenue", "net_profit", "net_profit_adjusted"):
             normalized = _normalize_kpi_metric(block.get(metric))
@@ -173,7 +187,7 @@ def normalize_extracted_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "currency": str(payload.get("currency") or "USD").upper(),
         "unit": str(payload.get("unit") or "millions"),
-        "periods": periods,
+        "periods": _sort_periods(periods),
         "kpis": kpis,
         "income_statement": income,
         "balance_sheet": balance,

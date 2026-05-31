@@ -17,16 +17,18 @@ def _merge_period_maps(base: Dict[str, Dict], extra: Dict[str, Dict]) -> Dict[st
 
 
 def _sort_periods(periods: List[str]) -> List[str]:
-    def sort_key(p: str):
-        parts = p.replace("FY", "").split("-")
-        if len(parts) == 2:
-            try:
-                return (int(parts[0]), parts[1])
-            except ValueError:
-                pass
-        return (p, "")
+    def sort_key(raw) -> tuple[int, int]:
+        p = str(raw).strip().upper()
+        try:
+            year_s, q_s = p.split("-", 1)
+            if q_s.startswith("Q") and len(q_s) == 2 and q_s[1].isdigit():
+                return (int(year_s), int(q_s[1]))
+        except (ValueError, AttributeError):
+            pass
+        return (999999, 99)
 
-    return sorted(set(periods), key=sort_key)
+    cleaned = {str(x).strip() for x in periods if x is not None and str(x).strip()}
+    return sorted(cleaned, key=sort_key)
 
 
 def _compute_margin_trends(

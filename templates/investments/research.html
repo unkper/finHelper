@@ -132,7 +132,8 @@
       </label>
       <label>
         <span>财季</span>
-        <input type="text" name="fiscal_period" required placeholder="2026-Q1 或 FY2025">
+        <input type="text" name="fiscal_period" required placeholder="2026-Q1" pattern="\d{4}-[Qq][1-4]" title="格式：YYYY-Q1～Q4，例如 2026-Q1">
+        <p class="hint">财季须为 2026-Q1 形式（Q1～Q4）。</p>
       </label>
       <label>
         <span>标题</span>

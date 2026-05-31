@@ -16,9 +16,15 @@
   document.getElementById("closeEditReportModal")?.addEventListener("click", closeEditModal);
   document.getElementById("cancelEditReport")?.addEventListener("click", closeEditModal);
 
+  editForm?.querySelector('[name="fiscal_period"]')?.addEventListener("blur", (e) => {
+    if (e.target?.value) e.target.value = e.target.value.trim().toUpperCase();
+  });
+
   editForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!cfg.editUrl) return;
+    const periodEl = editForm.querySelector('[name="fiscal_period"]');
+    if (periodEl?.value) periodEl.value = periodEl.value.trim().toUpperCase();
     const fd = new FormData(editForm);
     const payload = {
       ticker: fd.get("ticker"),
