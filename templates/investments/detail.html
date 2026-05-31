@@ -440,6 +440,31 @@
   </div>
 </div>
 
+<div id="editArticleModal" class="modal-overlay">
+  <div class="modal-content">
+    <button class="modal-close" onclick="document.getElementById('editArticleModal').style.display='none'">✕</button>
+    <h3 style="margin-top: 0; margin-bottom: 20px;">编辑研报 / 资讯</h3>
+    <form id="editArticleForm" method="POST">
+      <div class="form-group">
+        <label>标题 (Title)</label>
+        <input type="text" name="title" id="editArticleTitle" required>
+      </div>
+      <div class="form-group">
+        <label>链接 (URL)</label>
+        <input type="url" name="url" id="editArticleUrl" placeholder="https://...">
+      </div>
+      <div class="form-group">
+        <label>摘要 (Summary)</label>
+        <textarea name="summary" id="editArticleSummary" rows="5" placeholder="核心观点、关键数据或阅读笔记"></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+        <button type="button" class="secondary-btn" onclick="document.getElementById('editArticleModal').style.display='none'">取消</button>
+        <button type="submit" class="primary-btn">保存修改</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="articleDetailModal" class="modal-overlay">
   <div class="modal-content modal-article">
     <button class="modal-close" onclick="document.getElementById('articleDetailModal').style.display='none'">✕</button>
@@ -450,6 +475,7 @@
     <p class="article-detail-body" id="articleDetailSummary"></p>
     <p class="article-detail-empty" id="articleDetailEmpty" hidden>暂无摘要内容</p>
     <div class="article-detail-actions" id="articleDetailActions" hidden>
+      <button type="button" class="secondary-btn" onclick="openEditArticleModal(currentArticleId)">编辑</button>
       <button type="button" class="secondary-btn" id="articleDetailAiBtn" onclick="ArticleAiWizard.startFromDetail()">🤖 AI 分析</button>
     </div>
   </div>
@@ -595,6 +621,64 @@
   </div>
 </div>
 
+<div id="editAssetModal" class="modal-overlay">
+  <div class="modal-content modal-wide">
+    <button class="modal-close" onclick="document.getElementById('editAssetModal').style.display='none'">✕</button>
+    <h3 class="modal-form-title">编辑监控提醒</h3>
+    <p class="modal-form-subtitle" id="editAssetModalSubtitle">修改价位提醒与随节点提醒设置。</p>
+    <form id="editAssetForm" method="POST">
+      <div class="modal-form-section">
+        <div class="modal-form-section-title">标的信息</div>
+        <div class="modal-form-grid-2">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>股票代码</label>
+            <input type="text" id="editAssetTickerDisplay" disabled style="background: #f4f5f7;">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>市场</label>
+            <input type="text" id="editAssetExchangeDisplay" disabled style="background: #f4f5f7;">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-form-section">
+        <div class="price-alerts-toolbar">
+          <label>价位提醒（可选）</label>
+          <button type="button" class="btn-link" onclick="addEditPriceAlertRow()">+ 添加一条</button>
+        </div>
+        <div class="modal-form-panel">
+          <div id="editPriceAlertsContainer"></div>
+          <p class="milestone-range-hint" id="editPriceAlertsEmptyHint">暂未添加价位提醒，可点击右上角添加</p>
+        </div>
+      </div>
+
+      <div class="modal-form-section">
+        <div class="modal-form-section-title">随节点提醒（可选）</div>
+        <p class="milestone-range-hint" style="margin: 0 0 10px;">勾选编号，对应左侧时间线；节点飞书提醒时一并推送现价</p>
+        <div class="modal-form-panel">
+          {% if milestones %}
+          <div class="milestone-no-grid" id="editAssetMilestoneGrid">
+            {% for milestone in milestones %}
+            <label class="milestone-no-chip" title="{{ milestone.description|e }}">
+              <input type="checkbox" name="milestone_ids" value="{{ milestone.id }}" class="edit-asset-milestone-cb">
+              <span class="milestone-no-label">#{{ loop.index }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="milestone-pick-empty">暂无时间节点，请先在左侧时间线添加节点。</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="modal-form-actions">
+        <button type="button" class="secondary-btn" onclick="document.getElementById('editAssetModal').style.display='none'">取消</button>
+        <button type="submit" class="primary-btn">保存修改</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="editThemeModal" class="modal-overlay">
   <div class="modal-content">
     <button class="modal-close" onclick="document.getElementById('editThemeModal').style.display='none'">✕</button>
@@ -731,6 +815,7 @@
           {% endif %}
         </div>
         <div class="article-item-actions">
+          <button type="button" class="btn-link" onclick="openEditArticleModal({{ article.id }})">编辑</button>
           {% if article.summary %}
           <button type="button" class="btn-ai-link"
             title="{% if ai_article_configured %}从摘要提取时间节点与监控标的{% else %}需配置 DEEPSEEK_API_KEY{% endif %}"
@@ -776,6 +861,7 @@
           <span>{{ asset.ticker }}</span>
           <div style="display: flex; align-items: center; gap: 8px;">
             <span style="font-size: 12px; color: #6b778c; font-weight: normal;">{{ asset.exchange }}</span>
+            <button type="button" class="btn-link" onclick="openEditAssetModal({{ asset.id }})">编辑</button>
             {{ delete_button(url_for('investments.delete_asset', theme_id=theme.id, asset_id=asset.id), '确定删除 ' ~ asset.ticker ~ ' 及其所有价格提醒？') }}
           </div>
         </div>
@@ -822,6 +908,7 @@
         {% else %}
         <p style="font-size: 11px; color: #8c939f; margin: 8px 0 0;">暂无提醒</p>
         {% endif %}
+        <script type="application/json" id="asset-source-{{ asset.id }}">{{ asset.edit_payload | tojson }}</script>
       </div>
       {% else %}
       <p style="font-size: 13px; color: #8c939f;">暂无关注标的。</p>
@@ -833,15 +920,17 @@
 <script>
   var currentArticleId = null;
 
-  function updatePriceAlertsEmptyHint() {
-    const container = document.getElementById('priceAlertsContainer');
-    const hint = document.getElementById('priceAlertsEmptyHint');
+  function updatePriceAlertsEmptyHint(containerId, hintId) {
+    const container = document.getElementById(containerId || 'priceAlertsContainer');
+    const hint = document.getElementById(hintId || 'priceAlertsEmptyHint');
     if (!container || !hint) return;
     hint.hidden = container.children.length > 0;
   }
 
-  function addPriceAlertRow() {
-    const container = document.getElementById('priceAlertsContainer');
+  function addPriceAlertRowTo(containerId, hintId, alert) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const direction = alert && alert.direction === 'above' ? 'above' : 'below';
     const row = document.createElement('div');
     row.className = 'price-alert-form-row';
     row.innerHTML = `
@@ -860,10 +949,82 @@
         <label>备注</label>
         <input type="text" name="alert_note" placeholder="可选">
       </div>
-      <button type="button" class="btn-icon" title="删除" onclick="this.closest('.price-alert-form-row').remove(); updatePriceAlertsEmptyHint();">×</button>
+      <button type="button" class="btn-icon" title="删除" onclick="this.closest('.price-alert-form-row').remove(); updatePriceAlertsEmptyHint('${containerId}', '${hintId}');">×</button>
     `;
+    row.querySelector('select[name="alert_direction"]').value = direction;
+    if (alert && alert.target_price != null) {
+      row.querySelector('input[name="alert_target_price"]').value = alert.target_price;
+    }
+    if (alert && alert.note) {
+      row.querySelector('input[name="alert_note"]').value = alert.note;
+    }
     container.appendChild(row);
-    updatePriceAlertsEmptyHint();
+    updatePriceAlertsEmptyHint(containerId, hintId);
+  }
+
+  function addPriceAlertRow() {
+    addPriceAlertRowTo('priceAlertsContainer', 'priceAlertsEmptyHint');
+  }
+
+  function addEditPriceAlertRow(alert) {
+    addPriceAlertRowTo('editPriceAlertsContainer', 'editPriceAlertsEmptyHint', alert);
+  }
+
+  function fillPriceAlerts(containerId, hintId, alerts) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+    (alerts || []).forEach((alert) => addPriceAlertRowTo(containerId, hintId, alert));
+    updatePriceAlertsEmptyHint(containerId, hintId);
+  }
+
+  function getArticleSourceData(articleId) {
+    const jsonEl = document.getElementById('article-source-' + articleId);
+    if (!jsonEl) return null;
+    try {
+      return JSON.parse(jsonEl.textContent);
+    } catch (error) {
+      console.error('Failed to parse article source', error);
+      return null;
+    }
+  }
+
+  function getAssetSourceData(assetId) {
+    const jsonEl = document.getElementById('asset-source-' + assetId);
+    if (!jsonEl) return null;
+    try {
+      return JSON.parse(jsonEl.textContent);
+    } catch (error) {
+      console.error('Failed to parse asset source', error);
+      return null;
+    }
+  }
+
+  function openEditArticleModal(articleId) {
+    const data = getArticleSourceData(articleId);
+    if (!data) return;
+    const form = document.getElementById('editArticleForm');
+    form.action = '/investments/{{ theme.id }}/articles/' + articleId + '/edit';
+    document.getElementById('editArticleTitle').value = data.title || '';
+    document.getElementById('editArticleUrl').value = data.url || '';
+    document.getElementById('editArticleSummary').value = data.summary || '';
+    document.getElementById('articleDetailModal').style.display = 'none';
+    document.getElementById('editArticleModal').style.display = 'flex';
+  }
+
+  function openEditAssetModal(assetId) {
+    const data = getAssetSourceData(assetId);
+    if (!data) return;
+    const form = document.getElementById('editAssetForm');
+    form.action = '/investments/{{ theme.id }}/assets/' + assetId + '/edit';
+    document.getElementById('editAssetTickerDisplay').value = data.ticker || '';
+    document.getElementById('editAssetExchangeDisplay').value = data.exchange || 'US';
+    fillPriceAlerts('editPriceAlertsContainer', 'editPriceAlertsEmptyHint', data.price_alerts || []);
+    const selected = new Set((data.milestone_ids || []).map(String));
+    form.querySelectorAll('.edit-asset-milestone-cb').forEach((cb) => {
+      cb.checked = selected.has(cb.value);
+    });
+    document.getElementById('editAssetModal').style.display = 'flex';
   }
 
   function openAddAssetModal() {
@@ -873,7 +1034,7 @@
     if (form) {
       form.querySelectorAll('input[name="milestone_ids"]').forEach((cb) => { cb.checked = false; });
     }
-    updatePriceAlertsEmptyHint();
+    updatePriceAlertsEmptyHint('priceAlertsContainer', 'priceAlertsEmptyHint');
     document.getElementById('addAssetModal').style.display = 'flex';
   }
 
@@ -1248,17 +1409,6 @@
   };
   window.ArticleAiWizard = ArticleAiWizard;
 
-  function getArticleSourceData(articleId) {
-    const jsonEl = document.getElementById('article-source-' + articleId);
-    if (!jsonEl) return null;
-    try {
-      return JSON.parse(jsonEl.textContent);
-    } catch (error) {
-      console.error('Failed to parse article source', error);
-      return null;
-    }
-  }
-
   function openArticleDetailModal(articleId) {
     const data = getArticleSourceData(articleId);
     if (!data) return;
@@ -1288,12 +1438,18 @@
       summaryEl.textContent = summary;
       summaryEl.hidden = false;
       emptyEl.hidden = true;
-      if (actionsEl) actionsEl.hidden = false;
-      if (aiBtn) aiBtn.disabled = !ArticleAiWizard.configured;
     } else {
       summaryEl.hidden = true;
       emptyEl.hidden = false;
-      if (actionsEl) actionsEl.hidden = true;
+    }
+    if (actionsEl) actionsEl.hidden = false;
+    if (aiBtn) {
+      if (summary.trim()) {
+        aiBtn.hidden = false;
+        aiBtn.disabled = !ArticleAiWizard.configured;
+      } else {
+        aiBtn.hidden = true;
+      }
     }
 
     document.getElementById('articleDetailModal').style.display = 'flex';

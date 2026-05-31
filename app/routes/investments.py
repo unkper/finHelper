@@ -7,8 +7,9 @@ from app.services.investment import (
     move_theme_to_assistant, archive_theme, update_theme,
     fetch_archived_themes, fetch_archived_theme_by_id, count_archived_themes,
     add_theme_asset, add_theme_milestone, update_theme_milestone, add_theme_article,
+    update_theme_article, update_theme_asset_monitoring,
     delete_theme_milestone, delete_theme_asset, delete_theme_article,
-    build_milestone_index,
+    build_milestone_index, serialize_asset_for_edit,
 )
 from app.services.settings import (
     get_macd_alert_settings,
@@ -214,13 +215,16 @@ def detail(theme_id):
     theme_score = fetch_theme_score(theme_id)
     milestones = details["milestones"]
     milestone_index = build_milestone_index(milestones)
+    assets = details["assets"]
+    for asset in assets:
+        asset["edit_payload"] = serialize_asset_for_edit(asset)
     return render_template(
         "investments/detail.html",
         theme=theme,
         theme_score=theme_score,
         assistants=fetch_all_assistants(),
         articles=details['articles'],
-        assets=details['assets'],
+        assets=assets,
         milestones=milestones,
         milestone_index=milestone_index,
         macd_alerts=get_macd_alert_settings(),
@@ -562,6 +566,47 @@ def add_article(theme_id):
         add_theme_article(theme_id, title, url, summary)
         flash("文章已添加", "success")
 
+    return redirect(url_for('investments.detail', theme_id=theme_id))
+
+
+@bp.route('/<int:theme_id>/articles/<int:article_id>/edit', methods=['POST'])
+def edit_article(theme_id, article_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
+
+    title = request.form.get('title', '').strip()
+    url = request.form.get('url', '').strip()
+    summary = request.form.get('summary', '').strip()
+
+    if not title:
+        flash("文章标题不能为空", "error")
+        return redirect(url_for('investments.detail', theme_id=theme_id))
+
+    if update_theme_article(theme_id, article_id, title, url, summary):
+        flash("文章已更新", "success")
+    else:
+        flash("文章不存在或已删除", "error")
+    return redirect(url_for('investments.detail', theme_id=theme_id))
+
+
+@bp.route('/<int:theme_id>/assets/<int:asset_id>/edit', methods=['POST'])
+def edit_asset(theme_id, asset_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
+
+    try:
+        price_alerts = _parse_price_alerts_from_form()
+        milestone_ids = _parse_milestone_ids_from_form(theme_id)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for('investments.detail', theme_id=theme_id))
+
+    if update_theme_asset_monitoring(theme_id, asset_id, price_alerts, milestone_ids):
+        flash("监控提醒已更新", "success")
+    else:
+        flash("标的不存在或已删除", "error")
     return redirect(url_for('investments.detail', theme_id=theme_id))
 
 

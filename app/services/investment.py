@@ -574,6 +574,98 @@ def add_theme_article(theme_id, title, url=None, summary=None):
     db.commit()
 
 
+def update_theme_article(theme_id, article_id, title, url=None, summary=None):
+    """更新主题下的研报/资讯文章。"""
+    db = get_db()
+    row = db.execute(
+        "SELECT id FROM theme_articles WHERE id = ? AND theme_id = ?",
+        (article_id, theme_id),
+    ).fetchone()
+    if not row:
+        return False
+    db.execute(
+        """
+        UPDATE theme_articles SET title = ?, url = ?, summary = ?
+        WHERE id = ? AND theme_id = ?
+        """,
+        (title, url or None, summary or None, article_id, theme_id),
+    )
+    db.execute(
+        "UPDATE themes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (theme_id,),
+    )
+    db.commit()
+    return True
+
+
+def serialize_asset_for_edit(asset: dict) -> dict:
+    """序列化标的监控配置，供编辑表单预填。"""
+    price_alerts = []
+    milestone_ids = []
+    for alert in asset.get("price_alerts") or []:
+        alert_type = alert.get("alert_type") or "price"
+        if alert_type == "milestone":
+            milestone_id = alert.get("milestone_id")
+            if milestone_id is not None:
+                milestone_ids.append(milestone_id)
+        else:
+            price_alerts.append({
+                "target_price": alert.get("target_price"),
+                "direction": alert.get("direction") or "below",
+                "note": alert.get("note"),
+            })
+    return {
+        "ticker": asset.get("ticker"),
+        "exchange": asset.get("exchange") or "US",
+        "price_alerts": price_alerts,
+        "milestone_ids": milestone_ids,
+    }
+
+
+def update_theme_asset_monitoring(theme_id, asset_id, price_alerts=None, milestone_ids=None):
+    """全量更新标的的价位提醒与随节点提醒。"""
+    db = get_db()
+    row = db.execute(
+        "SELECT id FROM theme_assets WHERE id = ? AND theme_id = ?",
+        (asset_id, theme_id),
+    ).fetchone()
+    if not row:
+        return False
+
+    db.execute("DELETE FROM theme_asset_price_alerts WHERE asset_id = ?", (asset_id,))
+
+    for alert in price_alerts or []:
+        add_asset_price_alert(
+            asset_id,
+            alert["target_price"],
+            alert["direction"],
+            alert.get("note"),
+            alert_type="price",
+            commit=False,
+        )
+
+    milestones = _fetch_milestones_by_ids(db, theme_id, milestone_ids or [])
+    index_map = _fetch_theme_milestone_index(db, theme_id)
+    for milestone in milestones:
+        seq = index_map.get(milestone["id"])
+        add_asset_price_alert(
+            asset_id,
+            0,
+            "below",
+            _milestone_alert_note(milestone, seq),
+            alert_type="milestone",
+            milestone_id=milestone["id"],
+            commit=False,
+        )
+
+    db.execute(
+        "UPDATE themes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (theme_id,),
+    )
+    db.commit()
+    return True
+
+
 def fetch_tracked_assets_overview():
     """汇总所有主题下的监控标的（按 ticker 去重）。"""
     db = get_db()
