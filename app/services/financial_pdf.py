@@ -12,6 +12,7 @@ from app.services.financial_reports import (
     PARSE_STATUS_FAILED,
     fetch_report_by_id,
     get_report_pdf_blob,
+    get_report_source_text,
     save_pending_analysis,
     save_report_pdf_blob,
     update_parse_state,
@@ -81,7 +82,7 @@ def _analyze_report_text(report_id: int) -> None:
     if not report:
         return
 
-    source_text = (report.get("source_text") or "").strip()
+    source_text = get_report_source_text(report_id)
     if not source_text:
         update_parse_state(
             report_id,

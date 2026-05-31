@@ -41,7 +41,9 @@ from app.services.financial_reports import (
     delete_financial_report,
     fetch_reports_page,
     fetch_report_by_id,
+    fetch_report_extracted,
     get_report_pdf_blob,
+    get_report_source_text,
     get_pending_extracted,
     recover_stale_parse_jobs,
     save_financial_report_analysis,
@@ -218,11 +220,12 @@ def research_report_chart_data(report_id):
     if not report:
         return jsonify({"error": "报告不存在"}), 404
 
+    current_extracted = fetch_report_extracted(report_id) if report.get("has_analysis") else None
     payload = build_chart_payload(
         report["ticker"],
         report.get("fiscal_period"),
         current_report_id=report_id,
-        current_extracted=report.get("extracted"),
+        current_extracted=current_extracted,
     )
     payload["report_id"] = report_id
     payload["title"] = report["title"]
@@ -243,7 +246,7 @@ def research_report_analyze(report_id):
     if report.get("parse_status") in (PARSE_STATUS_EXTRACTING, PARSE_STATUS_AI):
         return jsonify({"error": "解析正在进行中，请稍后再试"}), 409
 
-    if not (report.get("source_text") or "").strip():
+    if not get_report_source_text(report_id):
         return jsonify({"error": "请先填写或保存财报解读原文"}), 400
 
     ip = get_client_ip()
@@ -303,15 +306,12 @@ def research_report_parse_status(report_id):
     if not report:
         return jsonify({"error": "报告不存在"}), 404
 
-    preview = (report.get("source_text") or "")[:500]
-    pending = report.get("pending_extracted")
     return jsonify({
         "status": report.get("parse_status"),
         "progress": report.get("parse_progress"),
         "message": report.get("parse_message"),
         "error": report.get("parse_error"),
-        "has_pending": pending is not None,
-        "source_text_preview": preview,
+        "has_pending": report.get("has_pending"),
     })
 
 
@@ -356,7 +356,7 @@ def research_report_pending_extracted(report_id):
     report = fetch_report_by_id(report_id)
     if not report:
         return jsonify({"error": "报告不存在"}), 404
-    pending = get_pending_extracted(report_id) or report.get("pending_extracted")
+    pending = get_pending_extracted(report_id)
     if not pending:
         return jsonify({"error": "暂无待确认结果"}), 404
     return jsonify({
@@ -386,11 +386,12 @@ def research_report_chart_insight(report_id):
     if not allowed:
         return jsonify({"error": "图表解读请求过于频繁", "retry_after": retry_after}), 429
 
+    current_extracted = fetch_report_extracted(report_id) if report.get("has_analysis") else None
     chart_payload = build_chart_payload(
         report["ticker"],
         report.get("fiscal_period"),
         current_report_id=report_id,
-        current_extracted=report.get("extracted"),
+        current_extracted=current_extracted,
     )
     result = explain_chart(chart_type, chart_payload)
     if result.get("error"):
@@ -403,7 +404,7 @@ def research_report_dashboard_insight(report_id):
     report = fetch_report_by_id(report_id)
     if not report:
         return jsonify({"error": "报告不存在"}), 404
-    if not report.get("has_analysis") and not report.get("extracted"):
+    if not report.get("has_analysis"):
         return jsonify({"error": "请先完成财报结构化分析并确认入库"}), 400
     if not has_financial_ai_configured():
         return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
@@ -415,11 +416,12 @@ def research_report_dashboard_insight(report_id):
     if not allowed:
         return jsonify({"error": "全局解读请求过于频繁", "retry_after": retry_after}), 429
 
+    current_extracted = fetch_report_extracted(report_id)
     chart_payload = build_chart_payload(
         report["ticker"],
         report.get("fiscal_period"),
         current_report_id=report_id,
-        current_extracted=report.get("extracted"),
+        current_extracted=current_extracted,
     )
     if not chart_payload.get("periods"):
         return jsonify({"error": "暂无可用图表数据"}), 400

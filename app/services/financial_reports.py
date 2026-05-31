@@ -8,13 +8,15 @@ from typing import Any, Dict, List, Optional
 from app.database import get_db
 from app.services.financial_period import normalize_fiscal_period
 
-# 详情查询：含正文与大 JSON，不含 pdf_blob
+# 详情页元数据：不加载 source_text / extracted_json / pending_extracted_json / pdf_blob
 _REPORT_DETAIL_COLUMNS = """
-    id, ticker, fiscal_period, report_date, title, source_text,
-    extracted_json, ai_summary, theme_id, source_type, pdf_path,
-    parse_status, parse_progress, parse_message, parse_error,
-    pending_extracted_json, created_at, updated_at,
-    (pdf_blob IS NOT NULL) AS has_pdf_blob
+    id, ticker, fiscal_period, report_date, title, ai_summary, theme_id, source_type,
+    pdf_path, parse_status, parse_progress, parse_message, parse_error,
+    created_at, updated_at,
+    (pdf_blob IS NOT NULL) AS has_pdf_blob,
+    (extracted_json IS NOT NULL AND extracted_json != '') AS has_analysis_flag,
+    (pending_extracted_json IS NOT NULL AND pending_extracted_json != '') AS has_pending_flag,
+    (source_text IS NOT NULL AND source_text != '') AS has_source_text_flag
 """
 
 # 列表分页：不加载 source_text / extracted_json / pending_extracted_json
@@ -88,31 +90,65 @@ def serialize_report_list(row) -> Dict[str, Any]:
 
 
 def serialize_report(row) -> Dict[str, Any]:
-    extracted = _parse_extracted(row["extracted_json"])
-    pending = _parse_extracted(_row_get(row, "pending_extracted_json"))
-    return {
+    raw_extracted = _row_get(row, "extracted_json")
+    raw_pending = _row_get(row, "pending_extracted_json")
+    if raw_extracted is not None or raw_pending is not None:
+        extracted = _parse_extracted(raw_extracted)
+        pending = _parse_extracted(raw_pending)
+        has_analysis = extracted is not None
+        has_pending = pending is not None
+    else:
+        extracted = None
+        pending = None
+        has_analysis = bool(_row_get(row, "has_analysis_flag"))
+        has_pending = bool(_row_get(row, "has_pending_flag"))
+
+    data: Dict[str, Any] = {
         "id": row["id"],
         "ticker": row["ticker"],
         "fiscal_period": row["fiscal_period"],
         "report_date": row["report_date"],
         "title": row["title"],
-        "source_text": row["source_text"] or "",
         "source_type": _row_get(row, "source_type", SOURCE_PASTE),
         "pdf_path": _row_get(row, "pdf_path"),
         "has_pdf": _report_row_has_pdf(row),
+        "has_source_text": bool(_row_get(row, "has_source_text_flag")),
         "parse_status": _row_get(row, "parse_status", PARSE_STATUS_IDLE),
         "parse_progress": int(_row_get(row, "parse_progress") or 0),
         "parse_message": _row_get(row, "parse_message") or "",
         "parse_error": _row_get(row, "parse_error"),
-        "extracted": extracted,
-        "pending_extracted": pending,
-        "has_pending": pending is not None,
-        "has_analysis": extracted is not None,
+        "has_pending": has_pending,
+        "has_analysis": has_analysis,
         "ai_summary": row["ai_summary"],
         "theme_id": row["theme_id"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+    if extracted is not None:
+        data["extracted"] = extracted
+    if pending is not None:
+        data["pending_extracted"] = pending
+    return data
+
+
+def get_report_source_text(report_id: int) -> str:
+    row = get_db().execute(
+        "SELECT source_text FROM financial_reports WHERE id = ?",
+        (report_id,),
+    ).fetchone()
+    if not row:
+        return ""
+    return (row["source_text"] or "").strip()
+
+
+def fetch_report_extracted(report_id: int) -> Dict[str, Any] | None:
+    row = get_db().execute(
+        "SELECT extracted_json FROM financial_reports WHERE id = ?",
+        (report_id,),
+    ).fetchone()
+    if not row:
+        return None
+    return _parse_extracted(row["extracted_json"])
 
 
 def fetch_all_reports(ticker: str | None = None) -> List[Dict[str, Any]]:

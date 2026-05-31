@@ -39,7 +39,7 @@
     </div>
   </section>
 
-  <section id="parseProgressPanel" class="panel research-parse-panel" {% if report.parse_status not in ['extracting_text', 'ai_analyzing', 'failed'] and not report.pending_extracted %}hidden{% endif %}>
+  <section id="parseProgressPanel" class="panel research-parse-panel" {% if report.parse_status not in ['extracting_text', 'ai_analyzing', 'failed'] and not report.has_pending %}hidden{% endif %}>
     <p id="parseProgressLabel" class="research-parse-label">{{ report.parse_message or '准备解析…' }}</p>
     <progress id="parseProgressBar" class="research-parse-bar" max="100" value="{{ report.parse_progress or 0 }}"></progress>
     <p id="parseErrorText" class="research-parse-error" {% if not report.parse_error %}hidden{% endif %}>{{ report.parse_error or '' }}</p>
@@ -206,12 +206,6 @@
     </div>
   </section>
 
-  <section class="panel">
-    <details>
-      <summary>原始文字{% if report.source_type == 'pdf' %}（PDF 提取）{% endif %}</summary>
-      <pre class="research-source-text">{{ report.source_text or '（暂无，解析完成后显示）' }}</pre>
-    </details>
-  </section>
 </main>
 
 <div class="modal-overlay" id="editReportModal" hidden>
