@@ -51,6 +51,113 @@ def _compute_margin_trends(
     return {"gross_margin_pct": gross, "net_margin_pct": net}
 
 
+def _pct_of(part: Any, whole: Any) -> Optional[float]:
+    if part is None or whole is None or whole == 0:
+        return None
+    try:
+        return round(float(part) / float(whole) * 100, 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _ratio(a: Any, b: Any) -> Optional[float]:
+    if a is None or b is None or b == 0:
+        return None
+    try:
+        return round(float(a) / float(b), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _revenue_for_period(
+    period: str,
+    income: Dict[str, Dict[str, Any]],
+    kpis: Dict[str, Dict[str, Any]],
+) -> Optional[float]:
+    inc = income.get(period) or {}
+    rev = inc.get("revenue")
+    if rev is not None:
+        return rev
+    k = (kpis.get(period) or {}).get("revenue")
+    if isinstance(k, dict):
+        return k.get("value")
+    return None
+
+
+def _net_income_for_period(
+    period: str,
+    income: Dict[str, Dict[str, Any]],
+    kpis: Dict[str, Dict[str, Any]],
+) -> Optional[float]:
+    inc = income.get(period) or {}
+    net = inc.get("net_income")
+    if net is not None:
+        return net
+    k = (kpis.get(period) or {}).get("net_profit")
+    if isinstance(k, dict):
+        return k.get("value")
+    return None
+
+
+def _compute_derived(
+    income: Dict[str, Dict[str, Any]],
+    balance: Dict[str, Dict[str, Any]],
+    cash_flow: Dict[str, Dict[str, Any]],
+    kpis: Dict[str, Dict[str, Any]],
+    periods: List[str],
+    focus_period: str | None,
+) -> Dict[str, Any]:
+    revenue_series: List[Optional[float]] = []
+    net_income_series: List[Optional[float]] = []
+    rd_pct: List[Optional[float]] = []
+    sga_pct: List[Optional[float]] = []
+    operating: List[Optional[float]] = []
+    investing: List[Optional[float]] = []
+    financing: List[Optional[float]] = []
+    ocf_quality_ratio: List[Optional[float]] = []
+
+    for period in periods:
+        inc = income.get(period) or {}
+        cf = cash_flow.get(period) or {}
+        rev = _revenue_for_period(period, income, kpis)
+        net = _net_income_for_period(period, income, kpis)
+        revenue_series.append(rev)
+        net_income_series.append(net)
+        rd_pct.append(_pct_of(inc.get("rd"), rev))
+        sga_pct.append(_pct_of(inc.get("sga"), rev))
+        ocf = cf.get("operating")
+        operating.append(ocf)
+        investing.append(cf.get("investing"))
+        financing.append(cf.get("financing"))
+        ocf_quality_ratio.append(_ratio(ocf, net))
+
+    asset_mix: List[Dict[str, Any]] = []
+    if focus_period:
+        b = balance.get(focus_period) or {}
+        for name, key in (
+            ("现金", "cash"),
+            ("应收账款", "receivables"),
+            ("存货", "inventory"),
+            ("固定资产", "ppe"),
+        ):
+            val = b.get(key)
+            if val is not None:
+                asset_mix.append({"name": name, "value": val})
+
+    return {
+        "revenue_series": revenue_series,
+        "net_income_series": net_income_series,
+        "expense_ratio_trend": {"rd_pct": rd_pct, "sga_pct": sga_pct},
+        "cashflow_series": {
+            "operating": operating,
+            "investing": investing,
+            "financing": financing,
+        },
+        "ocf_quality_ratio": ocf_quality_ratio,
+        "asset_mix": asset_mix,
+    }
+
+
 def _merge_extracted_list(
     reports: List[Dict[str, Any]],
     current_report_id: int | None,
@@ -160,19 +267,25 @@ def build_chart_payload(
     if not ai_summary and current_extracted:
         ai_summary = current_extracted.get("ai_summary") or ""
 
+    income = merged.get("income_statement") or {}
+    balance = merged.get("balance_sheet") or {}
+    cash_flow = merged.get("cash_flow") or {}
+    kpis = merged.get("kpis") or {}
+
     return {
         "ticker": ticker,
         "currency": merged.get("currency") or "USD",
         "unit": merged.get("unit") or "millions",
         "periods": periods,
         "focus_period": display_period,
-        "kpis": merged.get("kpis") or {},
-        "income_statement": merged.get("income_statement") or {},
-        "balance_sheet": merged.get("balance_sheet") or {},
-        "cash_flow": merged.get("cash_flow") or {},
+        "kpis": kpis,
+        "income_statement": income,
+        "balance_sheet": balance,
+        "cash_flow": cash_flow,
         "red_flags": merged.get("red_flags") or [],
         "ai_summary": ai_summary,
-        "trends": _compute_margin_trends(merged.get("income_statement") or {}, periods),
+        "trends": _compute_margin_trends(income, periods),
+        "derived": _compute_derived(income, balance, cash_flow, kpis, periods, display_period),
         "linked_report_ids": linked_ids,
         "linked_periods": linked_periods,
         "report_count": len(linked_ids),

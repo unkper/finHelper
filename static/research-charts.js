@@ -3,6 +3,7 @@
   const charts = {};
   let lastChartPayload = null;
   let parsePollTimer = null;
+  let activeSection = "profitability";
 
   function fmtNum(v, unit) {
     if (v == null || Number.isNaN(v)) return "—";
@@ -71,6 +72,56 @@
     return charts[id];
   }
 
+  function hasAnyValue(arr) {
+    return Array.isArray(arr) && arr.some((v) => v != null && !Number.isNaN(v));
+  }
+
+  function setPanelEmpty(chartType, isEmpty) {
+    const panel = document.getElementById(`panel-${chartType}`);
+    if (!panel) return;
+    if (isEmpty) {
+      panel.dataset.empty = "1";
+      panel.hidden = true;
+    } else {
+      delete panel.dataset.empty;
+      if (panel.dataset.section === activeSection) {
+        panel.hidden = false;
+      }
+    }
+  }
+
+  function applySectionTab(section) {
+    activeSection = section;
+    document.querySelectorAll(".research-section-tab").forEach((tab) => {
+      tab.classList.toggle("is-active", tab.dataset.section === section);
+    });
+    document.querySelectorAll(".research-charts-grid .research-chart-panel").forEach((panel) => {
+      const match = panel.dataset.section === section;
+      const empty = panel.dataset.empty === "1";
+      panel.hidden = !match || empty;
+    });
+    resizeVisibleCharts();
+  }
+
+  function resizeVisibleCharts() {
+    Object.entries(charts).forEach(([id, chart]) => {
+      const el = document.getElementById(id);
+      if (chart && el && el.offsetParent !== null) {
+        chart.resize();
+      }
+    });
+  }
+
+  function showChartInsight(chartType, text) {
+    const wrap = document.querySelector(`[data-insight-wrap="${chartType}"]`);
+    const panel = document.querySelector(`[data-insight-for="${chartType}"]`);
+    if (panel) panel.textContent = text;
+    if (wrap) {
+      wrap.hidden = false;
+      wrap.open = true;
+    }
+  }
+
   function renderWaterfall(data) {
     const chart = initChart("waterfallChart");
     if (!chart) return;
@@ -88,8 +139,10 @@
 
     if (!steps.length) {
       chart.clear();
+      setPanelEmpty("waterfall", true);
       return;
     }
+    setPanelEmpty("waterfall", false);
 
     let running = 0;
     const placeholders = [];
@@ -123,6 +176,13 @@
     if (!chart) return;
     const periods = data.periods || [];
     const trends = data.trends || {};
+    const hasData = hasAnyValue(trends.gross_margin_pct) || hasAnyValue(trends.net_margin_pct);
+    if (!hasData) {
+      chart.clear();
+      setPanelEmpty("margin_trend", true);
+      return;
+    }
+    setPanelEmpty("margin_trend", false);
     chart.setOption({
       tooltip: { trigger: "axis" },
       legend: { data: ["毛利率", "净利率"] },
@@ -155,8 +215,10 @@
 
     if (!assetParts.length && !liabParts.length) {
       chart.clear();
+      setPanelEmpty("balance", true);
       return;
     }
+    setPanelEmpty("balance", false);
 
     chart.setOption({
       tooltip: { trigger: "axis" },
@@ -193,6 +255,12 @@
       { name: "投资", val: c.investing },
       { name: "筹资", val: c.financing },
     ].filter((i) => i.val != null);
+    if (!items.length) {
+      chart.clear();
+      setPanelEmpty("cashflow", true);
+      return;
+    }
+    setPanelEmpty("cashflow", false);
     chart.setOption({
       tooltip: { trigger: "axis" },
       grid: { left: 48, right: 24, bottom: 48, top: 24 },
@@ -205,6 +273,129 @@
           itemStyle: { color: i.val >= 0 ? "#059669" : "#dc2626" },
         })),
       }],
+    });
+  }
+
+  function renderRevenueProfitTrend(data) {
+    const chart = initChart("revenueProfitTrendChart");
+    if (!chart) return;
+    const periods = data.periods || [];
+    const derived = data.derived || {};
+    const revenue = derived.revenue_series || [];
+    const netIncome = derived.net_income_series || [];
+    if (!hasAnyValue(revenue) && !hasAnyValue(netIncome)) {
+      chart.clear();
+      setPanelEmpty("revenue_profit_trend", true);
+      return;
+    }
+    setPanelEmpty("revenue_profit_trend", false);
+    chart.setOption({
+      tooltip: { trigger: "axis" },
+      legend: { data: ["营收", "净利润"] },
+      grid: { left: 52, right: 24, bottom: 48, top: 40 },
+      xAxis: { type: "category", data: periods },
+      yAxis: { type: "value", name: "百万 USD" },
+      series: [
+        { name: "营收", type: "bar", data: revenue },
+        { name: "净利润", type: "line", data: netIncome, smooth: true },
+      ],
+    });
+  }
+
+  function renderExpenseRatioTrend(data) {
+    const chart = initChart("expenseRatioTrendChart");
+    if (!chart) return;
+    const periods = data.periods || [];
+    const expense = (data.derived || {}).expense_ratio_trend || {};
+    const rd = expense.rd_pct || [];
+    const sga = expense.sga_pct || [];
+    if (!hasAnyValue(rd) && !hasAnyValue(sga)) {
+      chart.clear();
+      setPanelEmpty("expense_ratio_trend", true);
+      return;
+    }
+    setPanelEmpty("expense_ratio_trend", false);
+    chart.setOption({
+      tooltip: { trigger: "axis" },
+      legend: { data: ["研发费用率", "销管费用率"] },
+      grid: { left: 48, right: 24, bottom: 48, top: 40 },
+      xAxis: { type: "category", data: periods },
+      yAxis: { type: "value", name: "%", scale: true },
+      series: [
+        { name: "研发费用率", type: "line", data: rd, smooth: true },
+        { name: "销管费用率", type: "line", data: sga, smooth: true },
+      ],
+    });
+  }
+
+  function renderCashflowTrend(data) {
+    const chart = initChart("cashflowTrendChart");
+    if (!chart) return;
+    const periods = data.periods || [];
+    const cf = (data.derived || {}).cashflow_series || {};
+    const op = cf.operating || [];
+    const inv = cf.investing || [];
+    const fin = cf.financing || [];
+    if (!hasAnyValue(op) && !hasAnyValue(inv) && !hasAnyValue(fin)) {
+      chart.clear();
+      setPanelEmpty("cashflow_trend", true);
+      return;
+    }
+    setPanelEmpty("cashflow_trend", false);
+    chart.setOption({
+      tooltip: { trigger: "axis" },
+      legend: { data: ["经营", "投资", "筹资"] },
+      grid: { left: 52, right: 24, bottom: 48, top: 40 },
+      xAxis: { type: "category", data: periods },
+      yAxis: { type: "value", name: "百万 USD" },
+      series: [
+        { name: "经营", type: "bar", data: op },
+        { name: "投资", type: "bar", data: inv },
+        { name: "筹资", type: "bar", data: fin },
+      ],
+    });
+  }
+
+  function renderAssetMix(data) {
+    const chart = initChart("assetMixChart");
+    if (!chart) return;
+    const mix = (data.derived || {}).asset_mix || [];
+    if (!mix.length) {
+      chart.clear();
+      setPanelEmpty("asset_mix", true);
+      return;
+    }
+    setPanelEmpty("asset_mix", false);
+    chart.setOption({
+      tooltip: { trigger: "item" },
+      legend: { orient: "vertical", left: "left", top: "middle" },
+      series: [{
+        type: "pie",
+        radius: ["40%", "68%"],
+        center: ["58%", "50%"],
+        data: mix,
+        emphasis: { itemStyle: { shadowBlur: 8, shadowOffsetX: 0 } },
+      }],
+    });
+  }
+
+  function renderOcfQuality(data) {
+    const chart = initChart("ocfQualityChart");
+    if (!chart) return;
+    const periods = data.periods || [];
+    const ratios = (data.derived || {}).ocf_quality_ratio || [];
+    if (!hasAnyValue(ratios)) {
+      chart.clear();
+      setPanelEmpty("ocf_quality", true);
+      return;
+    }
+    setPanelEmpty("ocf_quality", false);
+    chart.setOption({
+      tooltip: { trigger: "axis", valueFormatter: (v) => (v == null ? "—" : v.toFixed(2)) },
+      grid: { left: 48, right: 24, bottom: 48, top: 32 },
+      xAxis: { type: "category", data: periods },
+      yAxis: { type: "value", name: "OCF/净利", scale: true },
+      series: [{ name: "盈利质量", type: "line", data: ratios, smooth: true, markLine: { data: [{ yAxis: 1, name: "1x" }] } }],
     });
   }
 
@@ -222,6 +413,12 @@
       const c = data.cash_flow && data.cash_flow[p];
       return c ? c.operating : null;
     });
+    if (!hasAnyValue(netProfits) && !hasAnyValue(ocf)) {
+      chart.clear();
+      setPanelEmpty("profit_ocf", true);
+      return;
+    }
+    setPanelEmpty("profit_ocf", false);
     chart.setOption({
       tooltip: { trigger: "axis" },
       legend: { data: ["净利润", "经营现金流"] },
@@ -253,15 +450,26 @@
     updateMergeHint(data);
     renderKpis(data);
     renderRedFlags(data.red_flags);
+    renderRevenueProfitTrend(data);
     renderWaterfall(data);
     renderMarginTrend(data);
-    renderBalance(data);
-    renderCashflow(data);
+    renderExpenseRatioTrend(data);
     renderProfitOcf(data);
+    renderOcfQuality(data);
+    renderBalance(data);
+    renderAssetMix(data);
+    renderCashflow(data);
+    renderCashflowTrend(data);
+    applySectionTab(activeSection);
+    const dash = document.getElementById("researchDashboard");
+    const insightPanel = document.getElementById("dashboardInsightPanel");
+    if (dash) dash.hidden = false;
+    if (insightPanel) insightPanel.hidden = false;
     if (data.ai_summary) {
       const el = document.querySelector(".research-ai-summary");
       if (el) el.textContent = data.ai_summary;
     }
+    resizeVisibleCharts();
   }
 
   async function loadCharts() {
@@ -281,11 +489,9 @@
       alert("未配置 AI");
       return;
     }
-    const panel = document.querySelector(`[data-insight-for="${chartType}"]`);
     const cached = sessionStorage.getItem(insightCacheKey(chartType));
-    if (cached && panel) {
-      panel.hidden = false;
-      panel.textContent = cached;
+    if (cached) {
+      showChartInsight(chartType, cached);
       return;
     }
     if (btn) {
@@ -301,10 +507,7 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "解读失败");
       const text = data.insight || data.text || "";
-      if (panel) {
-        panel.hidden = false;
-        panel.textContent = text;
-      }
+      showChartInsight(chartType, text);
       sessionStorage.setItem(insightCacheKey(chartType), text);
     } catch (err) {
       alert(err.message || "AI 解读失败");
@@ -321,6 +524,60 @@
       requestChartInsight(btn.dataset.chartType, btn);
     });
   });
+
+  document.querySelectorAll(".research-section-tab").forEach((tab) => {
+    tab.addEventListener("click", () => applySectionTab(tab.dataset.section));
+  });
+
+  function dashboardCacheKey() {
+    return `finHelper:dashboardInsight:${cfg.reportId}`;
+  }
+
+  async function requestDashboardInsight() {
+    if (!cfg.dashboardInsightUrl || !cfg.aiConfigured) {
+      alert("未配置 AI");
+      return;
+    }
+    const btn = document.getElementById("dashboardInsightBtn");
+    const details = document.getElementById("dashboardInsightDetails");
+    const body = document.getElementById("dashboardInsightBody");
+    const cached = sessionStorage.getItem(dashboardCacheKey());
+    if (cached && body) {
+      body.textContent = cached;
+      if (details) details.hidden = false;
+      return;
+    }
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "解读中…";
+    }
+    try {
+      const res = await fetch(cfg.dashboardInsightUrl, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "全局解读失败");
+      const text = data.insight || "";
+      if (body) body.textContent = text;
+      if (details) details.hidden = false;
+      sessionStorage.setItem(dashboardCacheKey(), text);
+    } catch (err) {
+      alert(err.message || "全局解读失败");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "生成全局解读";
+      }
+    }
+  }
+
+  document.getElementById("dashboardInsightBtn")?.addEventListener("click", requestDashboardInsight);
+
+  const cachedDashboard = sessionStorage.getItem(dashboardCacheKey());
+  if (cachedDashboard) {
+    const body = document.getElementById("dashboardInsightBody");
+    const details = document.getElementById("dashboardInsightDetails");
+    if (body) body.textContent = cachedDashboard;
+    if (details) details.hidden = false;
+  }
 
   const confirmModal = document.getElementById("confirmAnalysisModal");
   const confirmJson = document.getElementById("confirmExtractedJson");
@@ -474,9 +731,7 @@
     parsePollTimer = setInterval(pollParseStatus, 1000);
   }
 
-  window.addEventListener("resize", () => {
-    Object.values(charts).forEach((c) => c && c.resize());
-  });
+  window.addEventListener("resize", () => resizeVisibleCharts());
 
   if (cfg.hasAnalysis) {
     loadCharts().catch((err) => console.warn(err));

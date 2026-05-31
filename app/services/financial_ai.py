@@ -250,7 +250,7 @@ def extract_from_financial_text(
         source_text=source_text,
     )
 
-    use_model = model or get_financial_parse_model()
+    use_model = model or get_ai_financial_parse_model()
     result = _call_deepseek_chat(prompt, model=use_model)
     if result.get("error"):
         return {"error": result["error"]}

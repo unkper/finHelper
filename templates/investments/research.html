@@ -157,7 +157,7 @@
       </div>
       <div id="pdfFields" hidden>
         <label>
-          <span>财报 PDF（最大 20MB）</span>
+          <span>财报 PDF（最大 50MB）</span>
           <input type="file" name="file" id="reportPdfFile" accept="application/pdf,.pdf">
         </label>
         <p class="hint">本地提取文字后由 DeepSeek Pro 结构化；扫描版 PDF 可能无法识别。</p>
@@ -176,6 +176,7 @@
     createUrl: {{ url_for('investments.research_reports_create')|tojson }},
     uploadUrl: {{ url_for('investments.research_reports_upload')|tojson }},
     detailUrlTemplate: {{ url_for('investments.research_report_detail', report_id=0)|tojson }}.replace('/0', '/__ID__'),
+    deleteUrlTemplate: {{ url_for('investments.research_report_delete', report_id=0)|tojson }}.replace('/0', '/__ID__'),
     aiConfigured: {{ ai_configured|tojson }},
     tickerFilter: {{ ticker_filter|tojson }},
   };

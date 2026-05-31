@@ -154,9 +154,27 @@ def create_financial_report(
     return int(cursor.lastrowid)
 
 
+def _ensure_unique_ticker_period(
+    db,
+    ticker: str,
+    fiscal_period: str,
+    exclude_report_id: int,
+) -> None:
+    dup = db.execute(
+        """
+        SELECT id FROM financial_reports
+        WHERE ticker = ? AND fiscal_period = ? AND id != ?
+        """,
+        (ticker, fiscal_period, exclude_report_id),
+    ).fetchone()
+    if dup:
+        raise ValueError(f"已存在 {ticker} · {fiscal_period} 的报告，请修改财季或标的")
+
+
 def update_financial_report_meta(
     report_id: int,
     *,
+    ticker: str | None = None,
     title: str | None = None,
     source_text: str | None = None,
     fiscal_period: str | None = None,
@@ -164,26 +182,46 @@ def update_financial_report_meta(
 ) -> None:
     db = get_db()
     row = db.execute(
-        "SELECT id FROM financial_reports WHERE id = ?",
+        "SELECT ticker, fiscal_period FROM financial_reports WHERE id = ?",
         (report_id,),
     ).fetchone()
     if not row:
         raise ValueError("报告不存在")
 
+    new_ticker = row["ticker"]
+    new_period = row["fiscal_period"]
+    if ticker is not None:
+        new_ticker = ticker.strip().upper()
+        if not new_ticker:
+            raise ValueError("ticker 不能为空")
+    if fiscal_period is not None:
+        new_period = fiscal_period.strip()
+        if not new_period:
+            raise ValueError("财季不能为空")
+
+    _ensure_unique_ticker_period(db, new_ticker, new_period, report_id)
+
     fields = []
     values = []
+    if ticker is not None:
+        fields.append("ticker = ?")
+        values.append(new_ticker)
+    if fiscal_period is not None:
+        fields.append("fiscal_period = ?")
+        values.append(new_period)
     if title is not None:
+        title_val = title.strip() or f"{new_ticker} {new_period} 财报分析"
         fields.append("title = ?")
-        values.append(title.strip())
+        values.append(title_val)
     if source_text is not None:
         fields.append("source_text = ?")
         values.append(source_text.strip())
-    if fiscal_period is not None:
-        fields.append("fiscal_period = ?")
-        values.append(fiscal_period.strip())
     if report_date is not None:
         fields.append("report_date = ?")
-        values.append(report_date.strip() or None)
+        if isinstance(report_date, str):
+            values.append(report_date.strip() or None)
+        else:
+            values.append(report_date)
     if not fields:
         return
 

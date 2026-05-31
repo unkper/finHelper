@@ -31,7 +31,7 @@ def pdf_path_for_report(report_id: int) -> Path:
 
 
 def save_uploaded_pdf(report_id: int, file_storage) -> str:
-    max_bytes = int(current_app.config.get("FINANCIAL_PDF_MAX_BYTES", 20 * 1024 * 1024))
+    max_bytes = int(current_app.config.get("FINANCIAL_PDF_MAX_BYTES", 50 * 1024 * 1024))
     data = file_storage.read()
     if len(data) > max_bytes:
         raise ValueError(f"PDF 文件超过 {max_bytes // (1024 * 1024)}MB 限制")

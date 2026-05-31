@@ -49,7 +49,7 @@ from app.services.financial_ai import (
 )
 from app.services.financial_statements import build_chart_payload
 from app.services.financial_pdf import run_parse_job, save_uploaded_pdf
-from app.services.financial_chart_insight import explain_chart
+from app.services.financial_chart_insight import explain_chart, explain_dashboard
 from app.services.settings import get_ai_financial_parse_model
 from app.scheduler_setup import configure_monitor_jobs
 
@@ -174,9 +174,13 @@ def research_report_detail(report_id):
     return render_template(
         "investments/financial_report_detail.html",
         report=report,
+        tracked_tickers=fetch_tracked_us_tickers(),
         ai_configured=has_financial_ai_configured(),
         parse_status_url=url_for("investments.research_report_parse_status", report_id=report_id),
         chart_insight_url=url_for("investments.research_report_chart_insight", report_id=report_id),
+        dashboard_insight_url=url_for(
+            "investments.research_report_dashboard_insight", report_id=report_id
+        ),
         pending_url=url_for("investments.research_report_pending_extracted", report_id=report_id),
         pdf_url=url_for("investments.research_report_pdf", report_id=report_id) if report.get("has_pdf") else None,
         parse_pdf_url=url_for("investments.research_report_parse_pdf", report_id=report_id),
@@ -352,6 +356,38 @@ def research_report_chart_insight(report_id):
     return jsonify(result)
 
 
+@bp.route('/research/reports/<int:report_id>/dashboard-insight', methods=['POST'])
+def research_report_dashboard_insight(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+    if not report.get("has_analysis") and not report.get("extracted"):
+        return jsonify({"error": "请先完成财报结构化分析并确认入库"}), 400
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"dashboard-insight:{ip}", max_calls=5, window_seconds=3600
+    )
+    if not allowed:
+        return jsonify({"error": "全局解读请求过于频繁", "retry_after": retry_after}), 429
+
+    chart_payload = build_chart_payload(
+        report["ticker"],
+        report.get("fiscal_period"),
+        current_report_id=report_id,
+        current_extracted=report.get("extracted"),
+    )
+    if not chart_payload.get("periods"):
+        return jsonify({"error": "暂无可用图表数据"}), 400
+
+    result = explain_dashboard(chart_payload)
+    if result.get("error"):
+        return jsonify({"error": result["error"]}), 502
+    return jsonify(result)
+
+
 @bp.route('/research/reports/<int:report_id>/confirm', methods=['POST'])
 def research_report_confirm(report_id):
     report = fetch_report_by_id(report_id)
@@ -381,18 +417,28 @@ def research_report_edit(report_id):
         return jsonify({"error": "报告不存在"}), 404
 
     data = request.get_json(silent=True) or {}
+    ticker = str(data.get("ticker") or "").upper().strip()
+    fiscal_period = str(data.get("fiscal_period") or "").strip()
+    if not ticker or not fiscal_period:
+        return jsonify({"error": "ticker 与财季不能为空"}), 400
+
+    report_date = data.get("report_date")
+    if report_date is not None:
+        report_date = str(report_date).strip() or None
+
     try:
         update_financial_report_meta(
             report_id,
-            title=data.get("title"),
-            source_text=data.get("source_text"),
-            fiscal_period=data.get("fiscal_period"),
-            report_date=data.get("report_date"),
+            ticker=ticker,
+            fiscal_period=fiscal_period,
+            title=str(data.get("title") or ""),
+            report_date=report_date,
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    return jsonify({"status": "ok"})
+    updated = fetch_report_by_id(report_id)
+    return jsonify({"status": "ok", "report": updated})
 
 
 @bp.route('/research/reports/<int:report_id>/delete', methods=['POST'])

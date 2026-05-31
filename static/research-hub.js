@@ -157,6 +157,12 @@
           badge = '<span class="research-badge pending">解析失败</span>';
         }
         const tickerLink = `${window.location.pathname}?tab=analysis&ticker=${encodeURIComponent(r.ticker)}`;
+        const deleteUrl = cfg.deleteUrlTemplate
+          ? cfg.deleteUrlTemplate.replace("__ID__", r.id)
+          : "";
+        const deleteBtn = deleteUrl
+          ? `<button type="button" class="secondary-btn research-report-delete-btn" data-delete-url="${escapeHtml(deleteUrl)}" data-report-title="${escapeHtml(r.title)}">删除</button>`
+          : "";
         return `
           <article class="research-report-card">
             <div>
@@ -168,7 +174,10 @@
                 ${r.source_type === "pdf" ? " · PDF" : ""}
               </p>
             </div>
-            ${badge}
+            <div class="research-report-card-actions">
+              ${badge}
+              ${deleteBtn}
+            </div>
           </article>`;
       })
       .join("");
@@ -239,6 +248,23 @@
       window.location.href = cfg.detailUrlTemplate.replace("__ID__", data.report_id);
     } catch (err) {
       alert(err.message || "创建失败");
+    }
+  });
+
+  listEl?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-delete-url]");
+    if (!btn) return;
+    e.preventDefault();
+    const url = btn.getAttribute("data-delete-url");
+    const title = btn.getAttribute("data-report-title") || "该报告";
+    if (!window.confirm(`确定删除「${title}」？此操作不可恢复。`)) return;
+    try {
+      const res = await fetch(url, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "删除失败");
+      await loadReports();
+    } catch (err) {
+      alert(err.message || "删除失败");
     }
   });
 

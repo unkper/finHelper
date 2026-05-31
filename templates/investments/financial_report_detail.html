@@ -31,7 +31,9 @@
           {{ '重新 AI 分析' if report.has_analysis else 'AI 分析' }}
         </button>
         {% endif %}
-        <button type="button" class="secondary-btn" id="refreshChartsBtn" {% if report.parse_status in ['extracting_text', 'ai_analyzing'] %}disabled{% endif %}>刷新图表</button>
+        <button type="button" class="secondary-btn" id="refreshChartsBtn" {% if report.parse_status in ['extracting_text', 'ai_analyzing'] %}disabled{% endif %}>刷新合并数据</button>
+        <button type="button" class="secondary-btn" id="editReportMetaBtn">编辑信息</button>
+        <button type="button" class="secondary-btn research-btn-danger" id="deleteReportBtn">删除报告</button>
       </div>
     </div>
   </section>
@@ -45,58 +47,160 @@
 
   <div id="redFlagsPanel" class="panel research-red-flags" hidden></div>
 
-  <section class="panel research-kpi-section" data-chart-type="kpi">
+  <section class="panel research-dashboard-insight-panel" id="dashboardInsightPanel" {% if not report.has_analysis %}hidden{% endif %}>
     <div class="research-chart-head">
-      <h3>核心 KPI（{{ report.fiscal_period }}）</h3>
-      <button type="button" class="secondary-btn research-insight-btn" data-chart-type="kpi">AI 解读</button>
+      <h3>AI 全局解读</h3>
+      {% if ai_configured %}
+      <button type="button" class="primary-btn" id="dashboardInsightBtn" {% if not report.has_analysis %}disabled{% endif %}>生成全局解读</button>
+      {% endif %}
     </div>
-    <div class="research-chart-insight" data-insight-for="kpi" hidden></div>
-    <div class="research-kpi-grid" id="kpiGrid"></div>
+    <p class="hint">基于已确认图表数据综合体检（DeepSeek Pro）；与上方文字摘要互补。</p>
+    <details class="research-insight-details" id="dashboardInsightDetails" hidden>
+      <summary>展开全局解读</summary>
+      <div class="research-dashboard-insight" id="dashboardInsightBody"></div>
+    </details>
   </section>
 
-  <section class="panel research-chart-panel" data-chart-type="waterfall">
-    <div class="research-chart-head">
-      <h3>利润结构（瀑布）</h3>
-      <button type="button" class="secondary-btn research-insight-btn" data-chart-type="waterfall">AI 解读</button>
-    </div>
-    <div class="research-chart-insight" data-insight-for="waterfall" hidden></div>
-    <div id="waterfallChart" class="research-chart"></div>
-  </section>
+  <section class="research-dashboard" id="researchDashboard" {% if not report.has_analysis %}hidden{% endif %}>
+    <nav class="research-section-tabs" aria-label="图表分栏">
+      <button type="button" class="research-section-tab is-active" data-section="profitability">盈利</button>
+      <button type="button" class="research-section-tab" data-section="balance">资产负债与结构</button>
+      <button type="button" class="research-section-tab" data-section="cashflow">现金流</button>
+    </nav>
 
-  <section class="panel research-chart-panel" data-chart-type="margin_trend">
-    <div class="research-chart-head">
-      <h3>盈利能力趋势</h3>
-      <button type="button" class="secondary-btn research-insight-btn" data-chart-type="margin_trend">AI 解读</button>
-    </div>
-    <div class="research-chart-insight" data-insight-for="margin_trend" hidden></div>
-    <div id="marginTrendChart" class="research-chart"></div>
-  </section>
+    <div class="research-charts-grid" id="chartsGrid">
+      <section class="panel research-chart-panel research-chart-panel--wide research-kpi-section" data-section="profitability" data-chart-type="kpi" id="panel-kpi">
+        <div class="research-chart-head">
+          <h3>核心 KPI（{{ report.fiscal_period }}）</h3>
+          <button type="button" class="secondary-btn research-insight-btn" data-chart-type="kpi">AI 解读</button>
+        </div>
+        <details class="research-insight-details" data-insight-wrap="kpi" hidden>
+          <summary>单图解读</summary>
+          <div class="research-chart-insight" data-insight-for="kpi"></div>
+        </details>
+        <div class="research-kpi-grid" id="kpiGrid"></div>
+      </section>
 
-  <section class="panel research-chart-panel" data-chart-type="balance">
-    <div class="research-chart-head">
-      <h3>资产负债结构</h3>
-      <button type="button" class="secondary-btn research-insight-btn" data-chart-type="balance">AI 解读</button>
-    </div>
-    <div class="research-chart-insight" data-insight-for="balance" hidden></div>
-    <div id="balanceChart" class="research-chart"></div>
-  </section>
+      <section class="panel research-chart-panel research-chart-panel--wide" data-section="profitability" data-chart-type="revenue_profit_trend" id="panel-revenue_profit_trend" hidden>
+        <div class="research-chart-head">
+          <h3>营收与利润趋势</h3>
+          <button type="button" class="secondary-btn research-insight-btn" data-chart-type="revenue_profit_trend">AI 解读</button>
+        </div>
+        <details class="research-insight-details" data-insight-wrap="revenue_profit_trend" hidden>
+          <summary>单图解读</summary>
+          <div class="research-chart-insight" data-insight-for="revenue_profit_trend"></div>
+        </details>
+        <div id="revenueProfitTrendChart" class="research-chart research-chart--wide"></div>
+      </section>
 
-  <section class="panel research-chart-panel" data-chart-type="cashflow">
-    <div class="research-chart-head">
-      <h3>现金流量对比</h3>
-      <button type="button" class="secondary-btn research-insight-btn" data-chart-type="cashflow">AI 解读</button>
-    </div>
-    <div class="research-chart-insight" data-insight-for="cashflow" hidden></div>
-    <div id="cashflowChart" class="research-chart"></div>
-  </section>
+      <section class="panel research-chart-panel" data-section="profitability" data-chart-type="waterfall" id="panel-waterfall">
+        <div class="research-chart-head">
+          <h3>利润结构（瀑布）</h3>
+          <button type="button" class="secondary-btn research-insight-btn" data-chart-type="waterfall">AI 解读</button>
+        </div>
+        <details class="research-insight-details" data-insight-wrap="waterfall" hidden>
+          <summary>单图解读</summary>
+          <div class="research-chart-insight" data-insight-for="waterfall"></div>
+        </details>
+        <div id="waterfallChart" class="research-chart research-chart--compact"></div>
+      </section>
 
-  <section class="panel research-chart-panel" data-chart-type="profit_ocf">
-    <div class="research-chart-head">
-      <h3>净利润 vs 经营现金流</h3>
-      <button type="button" class="secondary-btn research-insight-btn" data-chart-type="profit_ocf">AI 解读</button>
+      <section class="panel research-chart-panel" data-section="profitability" data-chart-type="margin_trend" id="panel-margin_trend">
+        <div class="research-chart-head">
+          <h3>盈利能力趋势</h3>
+          <button type="button" class="secondary-btn research-insight-btn" data-chart-type="margin_trend">AI 解读</button>
+        </div>
+        <details class="research-insight-details" data-insight-wrap="margin_trend" hidden>
+          <summary>单图解读</summary>
+          <div class="research-chart-insight" data-insight-for="margin_trend"></div>
+        </details>
+        <div id="marginTrendChart" class="research-chart research-chart--compact"></div>
+      </section>
+
+      <section class="panel research-chart-panel" data-section="profitability" data-chart-type="expense_ratio_trend" id="panel-expense_ratio_trend" hidden>
+        <div class="research-chart-head">
+          <h3>费用率趋势</h3>
+          <button type="button" class="secondary-btn research-insight-btn" data-chart-type="expense_ratio_trend">AI 解读</button>
+        </div>
+        <details class="research-insight-details" data-insight-wrap="expense_ratio_trend" hidden>
+          <summary>单图解读</summary>
+          <div class="research-chart-insight" data-insight-for="expense_ratio_trend"></div>
+        </details>
+        <div id="expenseRatioTrendChart" class="research-chart research-chart--compact"></div>
+      </section>
+
+      <section class="panel research-chart-panel" data-section="profitability" data-chart-type="profit_ocf" id="panel-profit_ocf">
+        <div class="research-chart-head">
+          <h3>净利润 vs 经营现金流</h3>
+          <button type="button" class="secondary-btn research-insight-btn" data-chart-type="profit_ocf">AI 解读</button>
+        </div>
+        <details class="research-insight-details" data-insight-wrap="profit_ocf" hidden>
+          <summary>单图解读</summary>
+          <div class="research-chart-insight" data-insight-for="profit_ocf"></div>
+        </details>
+        <div id="profitOcfChart" class="research-chart research-chart--compact"></div>
+      </section>
+
+      <section class="panel research-chart-panel" data-section="profitability" data-chart-type="ocf_quality" id="panel-ocf_quality" hidden>
+        <div class="research-chart-head">
+          <h3>盈利质量（OCF/净利）</h3>
+          <button type="button" class="secondary-btn research-insight-btn" data-chart-type="ocf_quality">AI 解读</button>
+        </div>
+        <details class="research-insight-details" data-insight-wrap="ocf_quality" hidden>
+          <summary>单图解读</summary>
+          <div class="research-chart-insight" data-insight-for="ocf_quality"></div>
+        </details>
+        <div id="ocfQualityChart" class="research-chart research-chart--compact"></div>
+      </section>
+
+      <section class="panel research-chart-panel" data-section="balance" data-chart-type="balance" id="panel-balance" hidden>
+        <div class="research-chart-head">
+          <h3>资产负债结构</h3>
+          <button type="button" class="secondary-btn research-insight-btn" data-chart-type="balance">AI 解读</button>
+        </div>
+        <details class="research-insight-details" data-insight-wrap="balance" hidden>
+          <summary>单图解读</summary>
+          <div class="research-chart-insight" data-insight-for="balance"></div>
+        </details>
+        <div id="balanceChart" class="research-chart research-chart--compact"></div>
+      </section>
+
+      <section class="panel research-chart-panel" data-section="balance" data-chart-type="asset_mix" id="panel-asset_mix" hidden>
+        <div class="research-chart-head">
+          <h3>资产结构</h3>
+          <button type="button" class="secondary-btn research-insight-btn" data-chart-type="asset_mix">AI 解读</button>
+        </div>
+        <details class="research-insight-details" data-insight-wrap="asset_mix" hidden>
+          <summary>单图解读</summary>
+          <div class="research-chart-insight" data-insight-for="asset_mix"></div>
+        </details>
+        <div id="assetMixChart" class="research-chart research-chart--compact"></div>
+      </section>
+
+      <section class="panel research-chart-panel" data-section="cashflow" data-chart-type="cashflow" id="panel-cashflow" hidden>
+        <div class="research-chart-head">
+          <h3>现金流量对比（{{ report.fiscal_period }}）</h3>
+          <button type="button" class="secondary-btn research-insight-btn" data-chart-type="cashflow">AI 解读</button>
+        </div>
+        <details class="research-insight-details" data-insight-wrap="cashflow" hidden>
+          <summary>单图解读</summary>
+          <div class="research-chart-insight" data-insight-for="cashflow"></div>
+        </details>
+        <div id="cashflowChart" class="research-chart research-chart--compact"></div>
+      </section>
+
+      <section class="panel research-chart-panel research-chart-panel--wide" data-section="cashflow" data-chart-type="cashflow_trend" id="panel-cashflow_trend" hidden>
+        <div class="research-chart-head">
+          <h3>现金流三期趋势</h3>
+          <button type="button" class="secondary-btn research-insight-btn" data-chart-type="cashflow_trend">AI 解读</button>
+        </div>
+        <details class="research-insight-details" data-insight-wrap="cashflow_trend" hidden>
+          <summary>单图解读</summary>
+          <div class="research-chart-insight" data-insight-for="cashflow_trend"></div>
+        </details>
+        <div id="cashflowTrendChart" class="research-chart research-chart--wide"></div>
+      </section>
     </div>
-    <div class="research-chart-insight" data-insight-for="profit_ocf" hidden></div>
-    <div id="profitOcfChart" class="research-chart"></div>
   </section>
 
   <section class="panel">
@@ -106,6 +210,43 @@
     </details>
   </section>
 </main>
+
+<div class="modal-overlay" id="editReportModal" hidden>
+  <div class="modal research-modal">
+    <div class="modal-header">
+      <h3>编辑报告信息</h3>
+      <button type="button" class="modal-close" id="closeEditReportModal" aria-label="关闭">×</button>
+    </div>
+    <form id="editReportForm" class="research-form">
+      <label>
+        <span>标的 Ticker</span>
+        <input type="text" name="ticker" id="editReportTicker" list="editTrackedTickers" required value="{{ report.ticker }}">
+        <datalist id="editTrackedTickers">
+          {% for t in tracked_tickers %}
+          <option value="{{ t }}"></option>
+          {% endfor %}
+        </datalist>
+      </label>
+      <label>
+        <span>财季</span>
+        <input type="text" name="fiscal_period" required value="{{ report.fiscal_period }}">
+      </label>
+      <label>
+        <span>标题</span>
+        <input type="text" name="title" value="{{ report.title }}">
+      </label>
+      <label>
+        <span>发布日（可选）</span>
+        <input type="date" name="report_date" value="{{ report.report_date or '' }}">
+      </label>
+      <p class="hint">修改标的或财季后，图表将按新维度合并同 ticker 数据。</p>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="cancelEditReport">取消</button>
+        <button type="submit" class="primary-btn">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <div class="modal-overlay" id="confirmAnalysisModal" hidden>
   <div class="modal research-modal research-modal-wide">
@@ -139,11 +280,16 @@
     confirmUrl: {{ url_for('investments.research_report_confirm', report_id=report.id)|tojson }},
     chartDataUrl: {{ url_for('investments.research_report_chart_data', report_id=report.id)|tojson }},
     chartInsightUrl: {{ chart_insight_url|tojson }},
+    dashboardInsightUrl: {{ dashboard_insight_url|tojson }},
     parseStatusUrl: {{ parse_status_url|tojson }},
     pendingUrl: {{ pending_url|tojson }},
     parsePdfUrl: {{ parse_pdf_url|tojson }},
+    editUrl: {{ url_for('investments.research_report_edit', report_id=report.id)|tojson }},
+    deleteUrl: {{ url_for('investments.research_report_delete', report_id=report.id)|tojson }},
+    listUrl: {{ url_for('investments.research', tab='analysis')|tojson }},
     aiConfigured: {{ ai_configured|tojson }},
   };
 </script>
+<script src="{{ url_for('static', filename='research-detail.js') }}"></script>
 <script src="{{ url_for('static', filename='research-charts.js') }}"></script>
 {% endblock %}
