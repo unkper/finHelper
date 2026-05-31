@@ -133,6 +133,11 @@
   color: #b45309;
 }
 
+.research-badge.research-badge--confirm {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
 .research-textarea-head {
   display: flex;
   justify-content: space-between;

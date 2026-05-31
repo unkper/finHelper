@@ -79,6 +79,8 @@ def create_app(config: Config = None) -> Flask:
     with app.app_context():
         from app.database import init_db
         init_db()
+        from app.services.financial_reports import recover_stale_parse_jobs
+        recover_stale_parse_jobs()
         from app.scheduler_setup import configure_monitor_jobs
         configure_monitor_jobs(app)
 

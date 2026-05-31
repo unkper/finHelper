@@ -206,6 +206,8 @@
           badge = '<span class="research-badge pending">解析中</span>';
         } else if (r.parse_status === "failed") {
           badge = '<span class="research-badge pending">解析失败</span>';
+        } else if (r.has_pending) {
+          badge = '<span class="research-badge research-badge--confirm">待确认</span>';
         }
         const tickerLink = `${window.location.pathname}?tab=analysis&ticker=${encodeURIComponent(r.ticker)}`;
         const deleteUrl = cfg.deleteUrlTemplate

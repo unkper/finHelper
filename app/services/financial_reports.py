@@ -76,6 +76,7 @@ def serialize_report(row) -> Dict[str, Any]:
         "parse_error": _row_get(row, "parse_error"),
         "extracted": extracted,
         "pending_extracted": pending,
+        "has_pending": pending is not None,
         "has_analysis": extracted is not None,
         "ai_summary": row["ai_summary"],
         "theme_id": row["theme_id"],
@@ -472,6 +473,41 @@ def save_financial_report_analysis(
         ),
     )
     db.commit()
+
+
+STALE_PARSE_IDLE_MINUTES = 30
+
+
+def recover_stale_parse_jobs(max_idle_minutes: int = STALE_PARSE_IDLE_MINUTES) -> int:
+    """将长时间无更新的进行中解析标为失败（服务重启或线程中断）。"""
+    rows = get_db().execute(
+        """
+        SELECT id, updated_at FROM financial_reports
+        WHERE parse_status IN (?, ?)
+        """,
+        (PARSE_STATUS_EXTRACTING, PARSE_STATUS_AI),
+    ).fetchall()
+    cutoff = datetime.now().timestamp() - max_idle_minutes * 60
+    recovered = 0
+    for row in rows:
+        raw = row["updated_at"]
+        if not raw:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(raw)).timestamp()
+        except (TypeError, ValueError):
+            continue
+        if ts >= cutoff:
+            continue
+        update_parse_state(
+            int(row["id"]),
+            status=PARSE_STATUS_FAILED,
+            progress=0,
+            error="上次解析中断（超时或服务重启），请重新分析或重新解析 PDF",
+            message="解析失败",
+        )
+        recovered += 1
+    return recovered
 
 
 def delete_financial_report(report_id: int) -> None:

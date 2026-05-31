@@ -33,6 +33,8 @@ from app.services.rate_limit import consume_rate_limit, get_client_ip
 from app.services.article_ai import extract_from_article, has_article_ai_configured
 from app.services.features import is_earnings_enabled
 from app.services.financial_reports import (
+    PARSE_STATUS_AI,
+    PARSE_STATUS_EXTRACTING,
     SOURCE_PDF,
     clear_pending_extracted,
     create_financial_report,
@@ -41,8 +43,10 @@ from app.services.financial_reports import (
     fetch_report_by_id,
     get_report_pdf_blob,
     get_pending_extracted,
+    recover_stale_parse_jobs,
     save_financial_report_analysis,
     update_financial_report_meta,
+    update_parse_state,
 )
 from app.services.financial_ai import (
     extract_from_financial_text,
@@ -50,7 +54,7 @@ from app.services.financial_ai import (
     normalize_extracted_payload,
 )
 from app.services.financial_statements import build_chart_payload
-from app.services.financial_pdf import run_parse_job, save_uploaded_pdf
+from app.services.financial_pdf import run_parse_job, run_text_analyze_job, save_uploaded_pdf
 from app.services.financial_chart_insight import explain_chart, explain_dashboard
 from app.services.settings import get_ai_financial_parse_model
 from app.scheduler_setup import configure_monitor_jobs
@@ -227,12 +231,20 @@ def research_report_chart_data(report_id):
 
 @bp.route('/research/reports/<int:report_id>/analyze', methods=['POST'])
 def research_report_analyze(report_id):
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    recover_stale_parse_jobs()
+
     report = fetch_report_by_id(report_id)
     if not report:
         return jsonify({"error": "报告不存在"}), 404
 
-    if not has_financial_ai_configured():
-        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+    if report.get("parse_status") in (PARSE_STATUS_EXTRACTING, PARSE_STATUS_AI):
+        return jsonify({"error": "解析正在进行中，请稍后再试"}), 409
+
+    if not (report.get("source_text") or "").strip():
+        return jsonify({"error": "请先填写或保存财报解读原文"}), 400
 
     ip = get_client_ip()
     allowed, retry_after = consume_rate_limit(
@@ -241,17 +253,16 @@ def research_report_analyze(report_id):
     if not allowed:
         return jsonify({"error": "AI 分析请求过于频繁", "retry_after": retry_after}), 429
 
-    result = extract_from_financial_text(
-        report["ticker"],
-        report["fiscal_period"],
-        report["title"],
-        report["source_text"],
-        model=get_ai_financial_parse_model(),
+    update_parse_state(
+        report_id,
+        status=PARSE_STATUS_AI,
+        progress=5,
+        message="已排队，正在 AI 分析…",
+        error=None,
     )
-    if result.get("error"):
-        return jsonify({"error": result["error"]}), 502
-
-    return jsonify(result)
+    app = current_app._get_current_object()
+    run_text_analyze_job(app, report_id)
+    return jsonify({"status": "ok", "report_id": report_id}), 202
 
 
 @bp.route('/research/reports/upload', methods=['POST'])
@@ -322,13 +333,18 @@ def research_report_pdf(report_id):
 
 @bp.route('/research/reports/<int:report_id>/parse-pdf', methods=['POST'])
 def research_report_parse_pdf(report_id):
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    recover_stale_parse_jobs()
+
     report = fetch_report_by_id(report_id)
     if not report:
         return jsonify({"error": "报告不存在"}), 404
     if not report.get("has_pdf"):
         return jsonify({"error": "该报告无 PDF 文件"}), 400
-    if not has_financial_ai_configured():
-        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+    if report.get("parse_status") in (PARSE_STATUS_EXTRACTING, PARSE_STATUS_AI):
+        return jsonify({"error": "解析正在进行中，请稍后再试"}), 409
 
     app = current_app._get_current_object()
     run_parse_job(app, report_id)

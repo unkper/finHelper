@@ -65,6 +65,82 @@ def run_parse_job(app, report_id: int) -> None:
     thread.start()
 
 
+def run_text_analyze_job(app, report_id: int) -> None:
+    """在后台线程中执行：粘贴原文 → DeepSeek Pro 结构化 → pending_extracted_json。"""
+
+    def _worker():
+        with app.app_context():
+            _analyze_report_text(report_id)
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+
+
+def _analyze_report_text(report_id: int) -> None:
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return
+
+    source_text = (report.get("source_text") or "").strip()
+    if not source_text:
+        update_parse_state(
+            report_id,
+            status=PARSE_STATUS_FAILED,
+            progress=0,
+            error="原文为空，请先粘贴或保存财报解读文字",
+            message="分析失败",
+        )
+        return
+
+    try:
+        update_parse_state(
+            report_id,
+            status=PARSE_STATUS_AI,
+            progress=20,
+            message="DeepSeek 正在分析财报…",
+            error=None,
+        )
+
+        from app.services.settings import get_ai_financial_parse_model
+
+        result = extract_from_financial_text(
+            report["ticker"],
+            report["fiscal_period"],
+            report["title"],
+            source_text,
+            model=get_ai_financial_parse_model(),
+        )
+        if result.get("error"):
+            update_parse_state(
+                report_id,
+                status=PARSE_STATUS_FAILED,
+                progress=20,
+                error=result["error"],
+                message="AI 分析失败",
+            )
+            return
+
+        save_pending_analysis(
+            report_id,
+            result["extracted"],
+            result.get("ai_summary"),
+        )
+        update_parse_state(
+            report_id,
+            status=PARSE_STATUS_DONE,
+            progress=100,
+            message="分析完成，请确认结构化结果",
+        )
+    except Exception as exc:
+        update_parse_state(
+            report_id,
+            status=PARSE_STATUS_FAILED,
+            progress=0,
+            error=str(exc),
+            message="分析失败",
+        )
+
+
 def _parse_report(report_id: int) -> None:
     report = fetch_report_by_id(report_id)
     if not report:

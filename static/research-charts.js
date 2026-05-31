@@ -594,14 +594,36 @@
   }
 
   document.getElementById("analyzeReportBtn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("analyzeReportBtn");
+    let startedAsync = false;
     try {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "分析中…";
+      }
       const res = await fetch(cfg.analyzeUrl, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "分析失败");
-      openConfirmModal(data);
+      if (data.status === "ok" && data.report_id) {
+        startedAsync = true;
+        startParsePolling();
+        return;
+      }
+      if (data.extracted) {
+        openConfirmModal(data);
+      }
     } catch (err) {
       alert(err.message || "AI 分析失败");
+    } finally {
+      if (!startedAsync && btn) {
+        btn.disabled = false;
+        btn.textContent = cfg.hasAnalysis ? "重新 AI 分析" : "AI 分析";
+      }
     }
+  });
+
+  document.getElementById("openPendingConfirmBtn")?.addEventListener("click", () => {
+    openPendingConfirm().catch(() => {});
   });
 
   document.getElementById("closeConfirmModal")?.addEventListener("click", closeConfirmModal);
@@ -654,19 +676,25 @@
     }
   });
 
-  function setParseUi(status) {
+  function setParseUi(status, options = {}) {
+    const hasPending = !!options.hasPending;
     const panel = document.getElementById("parseProgressPanel");
     const bar = document.getElementById("parseProgressBar");
     const label = document.getElementById("parseProgressLabel");
     const errEl = document.getElementById("parseErrorText");
+    const openPendingBtn = document.getElementById("openPendingConfirmBtn");
     const busy = status === "extracting_text" || status === "ai_analyzing";
-    if (panel) panel.hidden = !busy && status !== "failed" && status !== "done";
-    if (bar && status?.progress != null) bar.value = status.progress;
-    if (label && status?.message) label.textContent = status.message;
+    if (panel) {
+      panel.hidden =
+        !busy && status !== "failed" && !(status === "done" && hasPending);
+    }
+    if (openPendingBtn) openPendingBtn.hidden = !hasPending;
+    if (bar && options.progress != null) bar.value = options.progress;
+    if (label && options.message) label.textContent = options.message;
     if (errEl) {
-      if (status?.error) {
+      if (options.error) {
         errEl.hidden = false;
-        errEl.textContent = status.error;
+        errEl.textContent = options.error;
       } else {
         errEl.hidden = true;
       }
@@ -695,8 +723,8 @@
       const res = await fetch(cfg.parseStatusUrl);
       const data = await res.json();
       if (!res.ok) return;
-      setParseUi({
-        status: data.status,
+      setParseUi(data.status, {
+        hasPending: data.has_pending,
         progress: data.progress,
         message: data.message,
         error: data.error,
@@ -742,6 +770,7 @@
   if (activeParse) {
     startParsePolling();
   } else if (cfg.parseStatus === "done" && cfg.hasPending) {
+    setParseUi("done", { hasPending: true, message: "分析完成，请确认结构化结果" });
     openPendingConfirm().catch(() => {});
   }
 })();

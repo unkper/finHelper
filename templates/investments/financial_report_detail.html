@@ -26,6 +26,7 @@
         {% if ai_configured and report.has_pdf %}
         <button type="button" class="secondary-btn" id="reparsePdfBtn">重新解析 PDF</button>
         {% endif %}
+        <button type="button" class="primary-btn" id="openPendingConfirmBtn" {% if not report.has_pending %}hidden{% endif %}>打开确认</button>
         {% if ai_configured %}
         <button type="button" class="primary-btn" id="analyzeReportBtn" {% if report.parse_status in ['extracting_text', 'ai_analyzing'] %}disabled{% endif %}>
           {{ '重新 AI 分析' if report.has_analysis else 'AI 分析' }}
@@ -42,7 +43,8 @@
     <p id="parseProgressLabel" class="research-parse-label">{{ report.parse_message or '准备解析…' }}</p>
     <progress id="parseProgressBar" class="research-parse-bar" max="100" value="{{ report.parse_progress or 0 }}"></progress>
     <p id="parseErrorText" class="research-parse-error" {% if not report.parse_error %}hidden{% endif %}>{{ report.parse_error or '' }}</p>
-    <p class="hint">PDF 解析流程：本地提取文字 → DeepSeek Pro 结构化（官方 API 暂不支持直接读 PDF）。</p>
+    <p class="hint research-parse-leave-hint">解析在服务器后台进行，关闭本页不影响；完成后请返回本报告点击「打开确认」或确认弹窗入库并生成图表。</p>
+    <p class="hint">PDF 路径：本地提取文字 → DeepSeek Pro 结构化（官方 API 暂不支持直接读 PDF）。粘贴模式：直接对原文做结构化。</p>
   </section>
 
   <div id="redFlagsPanel" class="panel research-red-flags" hidden></div>
@@ -274,7 +276,7 @@
   window.FINANCIAL_REPORT_PAGE = {
     reportId: {{ report.id }},
     hasAnalysis: {{ report.has_analysis|tojson }},
-    hasPending: {{ (report.pending_extracted is not none)|tojson }},
+    hasPending: {{ report.has_pending|tojson }},
     parseStatus: {{ report.parse_status|tojson }},
     analyzeUrl: {{ url_for('investments.research_report_analyze', report_id=report.id)|tojson }},
     confirmUrl: {{ url_for('investments.research_report_confirm', report_id=report.id)|tojson }},
