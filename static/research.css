@@ -391,7 +391,8 @@
 
 .research-red-flags {
   border-left: 4px solid #dc2626;
-  margin-bottom: 1rem;
+  margin-top: 1rem;
+  margin-bottom: 0;
 }
 
 .research-red-flags ul {
