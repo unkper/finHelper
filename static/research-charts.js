@@ -2,8 +2,319 @@
   const cfg = window.FINANCIAL_REPORT_PAGE || {};
   const charts = {};
   let lastChartPayload = null;
+  let lastGameRules = null;
+  let lastNarratives = {};
   let parsePollTimer = null;
   let activeSection = "profitability";
+  const STYLE_STORAGE_KEY = "finHelper:narrativeStyle";
+
+  function getNarrativeStyle() {
+    const saved = localStorage.getItem(STYLE_STORAGE_KEY);
+    if (saved === "professional" || saved === "game") return saved;
+    return "professional";
+  }
+
+  function setNarrativeStyle(style) {
+    localStorage.setItem(STYLE_STORAGE_KEY, style);
+    applyNarrativeStyle(style);
+  }
+
+  function applyThemeClass(style) {
+    const root = document.getElementById("researchDetailRoot");
+    if (!root) return;
+    root.classList.toggle("research-theme-game", style === "game");
+  }
+
+  function updateStyleToggleUi(style) {
+    document.querySelectorAll(".research-style-btn").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.style === style);
+    });
+  }
+
+  function updateSectionTabLabels(style) {
+    document.querySelectorAll(".research-section-tab").forEach((tab) => {
+      const label =
+        style === "game"
+          ? tab.dataset.labelGame || tab.textContent
+          : tab.dataset.labelPro || tab.textContent;
+      tab.textContent = label;
+    });
+  }
+
+  function setDashboardWrapOpen(open) {
+    const wrap = document.getElementById("researchDashboardWrap");
+    if (wrap) wrap.open = open;
+  }
+
+  function verdictLabel(verdict) {
+    if (verdict === "winning") return "势如破竹";
+    if (verdict === "losing") return "逆风局";
+    return "僵持局";
+  }
+
+  function renderProfessionalNarrative(narrative) {
+    const summaryEl = document.querySelector(".research-ai-summary");
+    const bulletsEl = document.getElementById("professionalBullets");
+    if (!narrative) return;
+    if (summaryEl && narrative.headline) {
+      summaryEl.textContent = narrative.headline;
+      summaryEl.hidden = false;
+    }
+    if (bulletsEl && narrative.bullets?.length) {
+      bulletsEl.innerHTML = narrative.bullets.map((b) => `<li>${escapeHtmlText(b)}</li>`).join("");
+      bulletsEl.hidden = false;
+    } else if (bulletsEl) {
+      bulletsEl.hidden = true;
+    }
+    if (narrative.risk_cards?.length) {
+      renderProfessionalRiskCards(narrative.risk_cards);
+    }
+  }
+
+  function renderProfessionalRiskCards(cards) {
+    const panel = document.getElementById("redFlagsPanel");
+    if (!panel) return;
+    panel.hidden = false;
+    panel.className = "panel research-red-flags";
+    panel.innerHTML = `<strong>风险提示</strong><ul>${cards
+      .map(
+        (c) =>
+          `<li><strong>${escapeHtmlText(c.title)}</strong> — ${escapeHtmlText(c.one_liner || "")}</li>`
+      )
+      .join("")}</ul>`;
+  }
+
+  function renderGameStats(stats, flavors) {
+    const panel = document.getElementById("gameStatsPanel");
+    if (!panel) return;
+    if (!stats?.length) {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    panel.innerHTML = `
+      <strong>角色属性</strong>
+      <div class="research-game-stats-grid">${stats
+        .map((s) => {
+          const tier = (s.tier || "B").toLowerCase();
+          const debuff = s.debuff ? " research-game-stat--debuff" : "";
+          const deltaCls =
+            s.delta && String(s.delta).includes("-") ? " negative" : "";
+          const flavor = flavors?.[s.key] ? `<div class="research-game-stat-flavor">${escapeHtmlText(flavors[s.key])}</div>` : "";
+          return `<article class="research-game-stat research-game-stat--tier-${tier}${debuff}">
+            <div class="research-game-stat-label">${escapeHtmlText(s.label)}</div>
+            <div class="research-game-stat-value">${escapeHtmlText(s.value)}</div>
+            ${s.delta ? `<div class="research-game-stat-delta${deltaCls}">${escapeHtmlText(s.delta)}</div>` : ""}
+            ${flavor}
+          </article>`;
+        })
+        .join("")}</div>`;
+  }
+
+  function renderGameRun(narrative, gameRules) {
+    const panel = document.getElementById("gameRunPanel");
+    if (!panel) return;
+    const verdict = narrative?.run_verdict || gameRules?.run_verdict || "stalemate";
+    const hp = narrative?.hp_pct ?? gameRules?.hp_pct ?? 50;
+    const ticker = cfg.ticker || "";
+    const season = cfg.fiscalPeriod ? `${cfg.fiscalPeriod} 赛季` : "本赛季";
+    panel.hidden = false;
+    panel.innerHTML = `
+      <div class="research-game-run-head">
+        <div>
+          <div class="research-game-guild">${escapeHtmlText(narrative?.guild_title || `${ticker} 公会`)}</div>
+          <div class="research-game-season">${escapeHtmlText(season)}结算</div>
+        </div>
+        <span class="research-game-verdict research-game-verdict--${verdict}">${verdictLabel(verdict)}</span>
+      </div>
+      <p class="research-game-headline">${escapeHtmlText(narrative?.run_headline || "战报生成中…")}</p>
+      <div class="research-game-hp" title="综合血条（规则计算）"><div class="research-game-hp-fill" style="width:${hp}%"></div></div>
+      ${
+        narrative?.patch_notes?.length
+          ? `<ul class="research-game-patch-notes">${narrative.patch_notes
+              .map((n) => `<li>${escapeHtmlText(n)}</li>`)
+              .join("")}</ul>`
+          : ""
+      }
+      <p class="research-game-footnote">${escapeHtmlText(narrative?.footnote || "")}</p>`;
+  }
+
+  function renderGameBosses(bosses) {
+    const panel = document.getElementById("gameBossPanel");
+    if (!panel) return;
+    if (!bosses?.length) {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    panel.innerHTML = `
+      <strong>BOSS 遭遇战</strong>
+      ${bosses
+        .map((b) => {
+          const threat = b.threat || "medium";
+          const bars = b.hp_bars || (threat === "high" ? 3 : threat === "low" ? 1 : 2);
+          const barHtml = Array.from({ length: bars })
+            .map(() => '<span class="research-game-boss-bar"></span>')
+            .join("");
+          return `<article class="research-game-boss-card research-game-boss-card--${threat}">
+            <div class="research-game-boss-name">${escapeHtmlText(b.boss_name)}</div>
+            <div class="research-game-boss-threat">威胁：${escapeHtmlText(threat)}</div>
+            <div class="research-game-boss-bars">${barHtml}</div>
+            ${b.attack_pattern ? `<p>${escapeHtmlText(b.attack_pattern)}</p>` : ""}
+            ${b.counter_tip ? `<p><em>应对：</em>${escapeHtmlText(b.counter_tip)}</p>` : ""}
+          </article>`;
+        })
+        .join("")}`;
+  }
+
+  function renderGameQuests(quests, materialEvents, unit) {
+    const panel = document.getElementById("gameQuestPanel");
+    const legacy = document.getElementById("materialEventsPanel");
+    if (!panel) return;
+    const items = [];
+    if (quests?.length) {
+      quests.forEach((q) => {
+        items.push({
+          title: q.quest_title,
+          type: q.quest_type === "penalty" ? "penalty" : "reward",
+          body: q.objective,
+        });
+      });
+    } else if (materialEvents?.length) {
+      materialEvents.forEach((e) => {
+        items.push({
+          title: e.title,
+          type: e.type === "loss" ? "penalty" : "reward",
+          body: e.description,
+          amount: e.amount_millions,
+        });
+      });
+    }
+    if (!items.length) {
+      panel.hidden = true;
+      if (legacy && getNarrativeStyle() !== "game") {
+        /* legacy panel handled by renderMaterialEvents */
+      }
+      return;
+    }
+    panel.hidden = false;
+    if (legacy) legacy.hidden = true;
+    const unitLabel = unit === "millions" ? " M USD" : "";
+    panel.innerHTML = `
+      <strong>支线任务</strong>
+      ${items
+        .map((q) => {
+          const cls = q.type === "penalty" ? "penalty" : "reward";
+          const amt =
+            q.amount != null ? `<span> · ${q.amount}${unitLabel}</span>` : "";
+          return `<article class="research-game-quest-card research-game-quest-card--${cls}">
+            <strong>${escapeHtmlText(q.title)}</strong>${amt}
+            <p>${escapeHtmlText(q.body || "")}</p>
+          </article>`;
+        })
+        .join("")}`;
+  }
+
+  function applyNarrativeStyle(style) {
+    updateStyleToggleUi(style);
+    applyThemeClass(style);
+    updateSectionTabLabels(style);
+    const proPanel = document.getElementById("professionalNarrative");
+    const gamePanel = document.getElementById("gameNarrative");
+    const bossPanel = document.getElementById("gameBossPanel");
+    const questPanel = document.getElementById("gameQuestPanel");
+    const redPanel = document.getElementById("redFlagsPanel");
+
+    if (style === "game") {
+      if (proPanel) proPanel.hidden = true;
+      if (gamePanel) gamePanel.hidden = false;
+      if (redPanel) redPanel.hidden = true;
+      setDashboardWrapOpen(false);
+      const rules = lastGameRules;
+      const narrative = lastNarratives.game;
+      if (rules) {
+        renderGameStats(
+          narrative?.game_rules?.stats || rules.stats,
+          narrative?.stat_flavors || {}
+        );
+      }
+      if (narrative) {
+        renderGameRun(narrative, rules);
+        renderGameBosses(narrative.boss_encounters);
+        renderGameQuests(narrative.quests, null, lastChartPayload?.unit);
+      } else if (rules) {
+        renderGameRun({ run_headline: "点击下方可刷新战报，或等待 AI 生成…" }, rules);
+        renderGameBosses(
+          (rules.boss_defaults || []).map((b) => ({
+            boss_name: b.boss_name,
+            threat: b.threat,
+            hp_bars: b.hp_bars,
+            attack_pattern: "",
+            counter_tip: "",
+          }))
+        );
+      }
+      if (!narrative?.quests?.length && lastChartPayload) {
+        renderGameQuests(null, lastChartPayload.material_events, lastChartPayload.unit);
+      }
+    } else {
+      if (proPanel) proPanel.hidden = false;
+      if (gamePanel) gamePanel.hidden = true;
+      if (bossPanel) bossPanel.hidden = true;
+      if (questPanel) questPanel.hidden = true;
+      setDashboardWrapOpen(true);
+      const narrative = lastNarratives.professional;
+      if (narrative) renderProfessionalNarrative(narrative);
+      else if (lastChartPayload) renderInsights(lastChartPayload);
+    }
+  }
+
+  async function fetchNarrative(style, force = false) {
+    if (!cfg.narrativeUrl || !cfg.aiConfigured || !cfg.hasAnalysis) return null;
+    if (!force && lastNarratives[style]) return lastNarratives[style];
+    const loading = document.getElementById("gameNarrativeLoading");
+    if (loading && style === "game") loading.hidden = false;
+    try {
+      const res = await fetch(cfg.narrativeUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ style }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "叙事生成失败");
+      if (data.game_rules) lastGameRules = data.game_rules;
+      if (data.narrative) lastNarratives[style] = data.narrative;
+      return data.narrative;
+    } catch (err) {
+      console.warn(err);
+      return null;
+    } finally {
+      if (loading) loading.hidden = true;
+    }
+  }
+
+  async function ensureNarrativeForStyle(style) {
+    if (lastNarratives[style]) {
+      applyNarrativeStyle(style);
+      return;
+    }
+    if (style === "professional" && document.querySelector(".research-ai-summary")?.textContent) {
+      lastNarratives.professional = {
+        headline: document.querySelector(".research-ai-summary").textContent,
+        bullets: [],
+        risk_cards: (lastChartPayload?.red_flags || []).map((f) => ({
+          title: f.message?.slice(0, 60),
+          one_liner: f.message,
+          severity: "medium",
+        })),
+      };
+      applyNarrativeStyle(style);
+      fetchNarrative("professional").then(() => applyNarrativeStyle(style));
+      return;
+    }
+    await fetchNarrative(style);
+    applyNarrativeStyle(style);
+  }
 
   function fmtNum(v, unit) {
     if (v == null || Number.isNaN(v)) return "—";
@@ -56,12 +367,26 @@
   function renderRedFlags(flags) {
     const panel = document.getElementById("redFlagsPanel");
     if (!panel) return;
+    if (getNarrativeStyle() === "game") {
+      panel.hidden = true;
+      if (flags?.length && lastGameRules) {
+        renderGameBosses(
+          (lastNarratives.game?.boss_encounters) ||
+            (lastGameRules.boss_defaults || []).map((b) => ({
+              boss_name: b.boss_name,
+              threat: b.threat,
+              hp_bars: b.hp_bars,
+            }))
+        );
+      }
+      return;
+    }
     if (!flags || !flags.length) {
       panel.hidden = true;
       return;
     }
     panel.hidden = false;
-    panel.innerHTML = `<strong>风险提示</strong><ul>${flags.map((f) => `<li>${f.message}</li>`).join("")}</ul>`;
+    panel.innerHTML = `<strong>风险提示</strong><ul>${flags.map((f) => `<li>${escapeHtmlText(f.message)}</li>`).join("")}</ul>`;
   }
 
   function escapeHtmlText(text) {
@@ -73,6 +398,10 @@
   function renderMaterialEvents(events, unit) {
     const panel = document.getElementById("materialEventsPanel");
     if (!panel) return;
+    if (getNarrativeStyle() === "game") {
+      renderGameQuests(lastNarratives.game?.quests, events, unit);
+      return;
+    }
     if (!events || !events.length) {
       panel.hidden = true;
       panel.innerHTML = "";
@@ -520,9 +849,7 @@
     renderCashflow(data);
     renderCashflowTrend(data);
     applySectionTab(activeSection);
-    const dash = document.getElementById("researchDashboard");
     const insightPanel = document.getElementById("dashboardInsightPanel");
-    if (dash) dash.hidden = false;
     if (insightPanel) insightPanel.hidden = false;
     if (data.ai_summary) {
       const el = document.querySelector(".research-ai-summary");
@@ -574,15 +901,28 @@
     const res = await fetch(cfg.chartDataUrl);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "加载图表失败");
+    lastChartPayload = data;
+    if (data.game_rules) lastGameRules = data.game_rules;
+    if (data.narratives && typeof data.narratives === "object") {
+      lastNarratives = { ...lastNarratives, ...data.narratives };
+    }
+    const wrap = document.getElementById("researchDashboardWrap");
+    if (wrap) wrap.hidden = false;
+    const styleToggle = document.getElementById("narrativeStyleToggle");
+    if (styleToggle) styleToggle.hidden = false;
     renderInsights(data);
     if (!data.periods?.length) {
+      applyNarrativeStyle(getNarrativeStyle());
+      ensureNarrativeForStyle(getNarrativeStyle());
       return;
     }
     renderChartPanels(data);
+    applyNarrativeStyle(getNarrativeStyle());
+    ensureNarrativeForStyle(getNarrativeStyle());
   }
 
   function insightCacheKey(chartType) {
-    return `finHelper:chartInsight:${cfg.reportId}:${chartType}`;
+    return `finHelper:chartInsight:${cfg.reportId}:${chartType}:${getNarrativeStyle()}`;
   }
 
   async function requestChartInsight(chartType, btn) {
@@ -603,7 +943,7 @@
       const res = await fetch(cfg.chartInsightUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chart_type: chartType }),
+        body: JSON.stringify({ chart_type: chartType, style: getNarrativeStyle() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "解读失败");
@@ -631,7 +971,7 @@
   });
 
   function dashboardCacheKey() {
-    return `finHelper:dashboardInsight:${cfg.reportId}`;
+    return `finHelper:dashboardInsight:${cfg.reportId}:${getNarrativeStyle()}`;
   }
 
   async function requestDashboardInsight() {
@@ -653,7 +993,11 @@
       btn.textContent = "解读中…";
     }
     try {
-      const res = await fetch(cfg.dashboardInsightUrl, { method: "POST" });
+      const res = await fetch(cfg.dashboardInsightUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ style: getNarrativeStyle() }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "全局解读失败");
       const text = data.insight || "";
@@ -882,6 +1226,17 @@
 
   window.addEventListener("resize", () => resizeVisibleCharts());
 
+  document.querySelectorAll(".research-style-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const style = btn.dataset.style;
+      if (style) setNarrativeStyle(style);
+      ensureNarrativeForStyle(style);
+    });
+  });
+
+  updateStyleToggleUi(getNarrativeStyle());
+  applyThemeClass(getNarrativeStyle());
+
   if (cfg.initialInsights) {
     renderInsights(cfg.initialInsights);
   }
@@ -900,5 +1255,7 @@
   } else if (cfg.parseStatus === "done" && cfg.hasPending) {
     setParseUi("done", { hasPending: true, message: "分析完成，请确认结构化结果" });
     openPendingConfirm().catch(() => {});
+  } else if (cfg.hasAnalysis) {
+    applyNarrativeStyle(getNarrativeStyle());
   }
 })();

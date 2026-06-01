@@ -47,6 +47,7 @@ from app.services.financial_reports import (
     get_pending_extracted,
     recover_stale_parse_jobs,
     save_financial_report_analysis,
+    save_report_narrative_cache,
     update_financial_report_meta,
     update_parse_state,
 )
@@ -59,6 +60,12 @@ from app.services.financial_ai import (
 from app.services.financial_statements import build_chart_payload
 from app.services.financial_pdf import run_parse_job, run_text_analyze_job, save_uploaded_pdf
 from app.services.financial_chart_insight import explain_chart, explain_dashboard
+from app.services.financial_game_rules import build_game_rules
+from app.services.financial_narrative import (
+    NARRATIVE_STYLES,
+    generate_narrative,
+    get_cached_narrative,
+)
 from app.services.settings import get_ai_financial_parse_model
 from app.scheduler_setup import configure_monitor_jobs
 
@@ -241,6 +248,7 @@ def research_report_detail(report_id):
         pending_url=url_for("investments.research_report_pending_extracted", report_id=report_id),
         pdf_url=url_for("investments.research_report_pdf", report_id=report_id) if report.get("has_pdf") else None,
         parse_pdf_url=url_for("investments.research_report_parse_pdf", report_id=report_id),
+        narrative_url=url_for("investments.research_report_narrative", report_id=report_id),
     )
 
 
@@ -259,6 +267,11 @@ def research_report_chart_data(report_id):
     )
     payload["report_id"] = report_id
     payload["title"] = report["title"]
+    if current_extracted:
+        payload["game_rules"] = build_game_rules(payload)
+        extracted = current_extracted
+        narratives = extracted.get("narratives") if isinstance(extracted.get("narratives"), dict) else {}
+        payload["narratives"] = narratives
     return jsonify(payload)
 
 
@@ -413,6 +426,9 @@ def research_report_chart_insight(report_id):
     chart_type = str(data.get("chart_type") or "").strip()
     if not chart_type:
         return jsonify({"error": "缺少 chart_type"}), 400
+    style = str(data.get("style") or "professional").strip().lower()
+    if style not in NARRATIVE_STYLES:
+        style = "professional"
 
     ip = get_client_ip()
     allowed, retry_after = consume_rate_limit(
@@ -428,10 +444,74 @@ def research_report_chart_insight(report_id):
         current_report_id=report_id,
         current_extracted=current_extracted,
     )
-    result = explain_chart(chart_type, chart_payload)
+    result = explain_chart(chart_type, chart_payload, style=style)
     if result.get("error"):
         return jsonify({"error": result["error"]}), 502
     return jsonify(result)
+
+
+@bp.route('/research/reports/<int:report_id>/narrative', methods=['POST'])
+def research_report_narrative(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+    if not report.get("has_analysis"):
+        return jsonify({"error": "请先完成财报结构化分析并确认入库"}), 400
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    data = request.get_json(silent=True) or {}
+    style = str(data.get("style") or "game").strip().lower()
+    if style not in NARRATIVE_STYLES:
+        return jsonify({"error": f"不支持的风格，可选: {', '.join(sorted(NARRATIVE_STYLES))}"}), 400
+
+    current_extracted = fetch_report_extracted(report_id)
+    chart_payload = build_chart_payload(
+        report["ticker"],
+        report.get("fiscal_period"),
+        current_report_id=report_id,
+        current_extracted=current_extracted,
+    )
+    game_rules = build_game_rules(chart_payload)
+
+    cached = get_cached_narrative(current_extracted, style)
+    if cached:
+        return jsonify({
+            "status": "ok",
+            "style": style,
+            "narrative": cached,
+            "game_rules": game_rules,
+            "cached": True,
+        })
+
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"narrative:{ip}", max_calls=10, window_seconds=3600
+    )
+    if not allowed:
+        return jsonify({"error": "叙事生成请求过于频繁", "retry_after": retry_after}), 429
+
+    result = generate_narrative(
+        chart_payload,
+        style,
+        ai_summary=report.get("ai_summary") or "",
+    )
+    if result.get("error"):
+        return jsonify({"error": result["error"]}), 502
+
+    narrative = result.get("narrative")
+    if not narrative:
+        return jsonify({"error": "叙事生成失败"}), 502
+
+    save_report_narrative_cache(report_id, style, narrative)
+
+    return jsonify({
+        "status": "ok",
+        "style": style,
+        "narrative": narrative,
+        "game_rules": result.get("game_rules") or game_rules,
+        "cached": False,
+    })
 
 
 @bp.route('/research/reports/<int:report_id>/dashboard-insight', methods=['POST'])
@@ -461,7 +541,12 @@ def research_report_dashboard_insight(report_id):
     if not chart_payload.get("periods"):
         return jsonify({"error": "暂无可用图表数据"}), 400
 
-    result = explain_dashboard(chart_payload)
+    data = request.get_json(silent=True) or {}
+    style = str(data.get("style") or "professional").strip().lower()
+    if style not in NARRATIVE_STYLES:
+        style = "professional"
+
+    result = explain_dashboard(chart_payload, style=style)
     if result.get("error"):
         return jsonify({"error": result["error"]}), 502
     return jsonify(result)

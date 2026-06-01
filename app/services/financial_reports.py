@@ -511,6 +511,35 @@ def clear_pending_extracted(report_id: int) -> None:
     db.commit()
 
 
+def save_report_narrative_cache(
+    report_id: int,
+    style: str,
+    narrative: Dict[str, Any],
+) -> None:
+    """将叙事缓存合并进 extracted_json.narratives[style]。"""
+    extracted = fetch_report_extracted(report_id)
+    if not extracted:
+        raise ValueError("报告尚无结构化数据")
+    merged = dict(extracted)
+    narratives = merged.get("narratives")
+    if not isinstance(narratives, dict):
+        narratives = {}
+    else:
+        narratives = dict(narratives)
+    narratives[style] = narrative
+    merged["narratives"] = narratives
+    db = get_db()
+    db.execute(
+        """
+        UPDATE financial_reports
+        SET extracted_json = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (json.dumps(merged, ensure_ascii=False), _now_iso(), report_id),
+    )
+    db.commit()
+
+
 def save_financial_report_analysis(
     report_id: int,
     extracted: Dict[str, Any],
@@ -518,11 +547,16 @@ def save_financial_report_analysis(
 ) -> None:
     db = get_db()
     row = db.execute(
-        "SELECT id FROM financial_reports WHERE id = ?",
+        "SELECT extracted_json FROM financial_reports WHERE id = ?",
         (report_id,),
     ).fetchone()
     if not row:
         raise ValueError("报告不存在")
+
+    prior = _parse_extracted(row["extracted_json"])
+    if prior and isinstance(prior.get("narratives"), dict) and "narratives" not in extracted:
+        extracted = dict(extracted)
+        extracted["narratives"] = prior["narratives"]
 
     db.execute(
         """

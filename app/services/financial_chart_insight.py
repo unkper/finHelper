@@ -35,6 +35,22 @@ _CHART_LABELS = {
 
 _MAX_PERIODS = 8
 
+_STYLE_HINTS = {
+    "professional": "",
+    "game": (
+        "用 RPG 副本攻略口吻写 3-6 句话（机制说明 + 对玩家的含义 + 1 条注意点），"
+        "可提「副本」「机制」「DEBUFF」，禁止编造数字、禁止预测股价。"
+    ),
+}
+
+_DASHBOARD_STYLE_HINTS = {
+    "professional": "",
+    "game": (
+        "用 RPG 赛季战报口吻，段首仍用【盈利与增长】【资产负债与现金流】【风险与跟踪】，"
+        "可提 BOSS/支线/版本更新隐喻，禁止编造数字、禁止预测股价。"
+    ),
+}
+
 _CHART_TYPES_WITH_EVENTS = frozenset({
     "kpi",
     "waterfall",
@@ -243,7 +259,12 @@ def _slice_context(chart_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"ticker": ticker, "period": period}
 
 
-def explain_chart(chart_type: str, chart_payload: Dict[str, Any]) -> Dict[str, Any]:
+def explain_chart(
+    chart_type: str,
+    chart_payload: Dict[str, Any],
+    *,
+    style: str = "professional",
+) -> Dict[str, Any]:
     if chart_type not in CHART_TYPES:
         return {"error": f"不支持的图表类型: {chart_type}"}
 
@@ -255,7 +276,11 @@ def explain_chart(chart_type: str, chart_payload: Dict[str, Any]) -> Dict[str, A
     if chart_type in _CHART_TYPES_WITH_EVENTS and context.get("material_events"):
         events_hint = "若 material_events 非空，须结合其中较大一次性盈利/亏损因素解读净利与现金流质量，勿编造未列出的事项。"
 
-    prompt = f"""你是财务分析助手。根据以下图表数据，用中文写 3-6 句话解读（现象 + 含义 + 1 条注意点），面向个人投资者，不要编造数据中没有的数字。
+    style_hint = _STYLE_HINTS.get(style) or _STYLE_HINTS["professional"]
+    tone = style_hint if style_hint else (
+        "用中文写 3-6 句话解读（现象 + 含义 + 1 条注意点），面向个人投资者，不要编造数据中没有的数字。"
+    )
+    prompt = f"""你是财务分析助手。根据以下图表数据，{tone}
 {events_hint}
 
 图表：{label}
@@ -275,15 +300,21 @@ def explain_chart(chart_type: str, chart_payload: Dict[str, Any]) -> Dict[str, A
     return {"status": "ok", "insight": text, "chart_type": chart_type}
 
 
-def explain_dashboard(payload: Dict[str, Any]) -> Dict[str, Any]:
+def explain_dashboard(payload: Dict[str, Any], *, style: str = "professional") -> Dict[str, Any]:
     context = build_dashboard_context(payload)
     linked_hint = _linked_hint(payload)
     model = get_ai_financial_parse_model()
 
-    prompt = f"""你是资深财务分析助手。根据以下财报仪表盘数据，写一份中文「全局解读」，共 8-12 句话，分三段（段首用【盈利与增长】【资产负债与现金流】【风险与跟踪】作小标题，不要用 markdown 其它格式）：
+    dash_hint = _DASHBOARD_STYLE_HINTS.get(style) or _DASHBOARD_STYLE_HINTS["professional"]
+    body_rules = (
+        dash_hint
+        if dash_hint
+        else """写一份中文「全局解读」，共 8-12 句话，分三段（段首用【盈利与增长】【资产负债与现金流】【风险与跟踪】作小标题，不要用 markdown 其它格式）：
 1. 盈利与增长：营收/利润趋势、毛利率/费用率要点；若 material_events 非空，须说明较大一次性盈利/亏损对净利解读的影响
 2. 资产负债与现金流：资产结构、经营/投资/筹资现金流与盈利质量
-3. 风险与跟踪：结合 red_flags 与 material_events（亏损/减值类），给出后续应关注的 1-2 点
+3. 风险与跟踪：结合 red_flags 与 material_events（亏损/减值类），给出后续应关注的 1-2 点"""
+    )
+    prompt = f"""你是资深财务分析助手。根据以下财报仪表盘数据，{body_rules}
 
 {linked_hint}
 禁止编造数据中不存在的指标或数字。若某块数据缺失，可略写。

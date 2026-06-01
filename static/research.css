@@ -530,6 +530,272 @@
   background: #fef2f2;
 }
 
+.research-style-toggle {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0.65rem 0 0.5rem;
+}
+
+.research-style-btn {
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border, #e5e7eb);
+  background: var(--panel-bg, #fff);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.research-style-btn.is-active {
+  background: var(--accent, #2563eb);
+  color: #fff;
+  border-color: transparent;
+}
+
+.research-professional-bullets {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+  line-height: 1.55;
+}
+
+.research-dashboard-wrap {
+  margin-bottom: 1rem;
+}
+
+.research-dashboard-wrap-summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.65rem 0;
+  list-style: none;
+}
+
+.research-dashboard-wrap-summary::-webkit-details-marker {
+  display: none;
+}
+
+.research-theme-game .research-style-btn.is-active {
+  background: #7c3aed;
+}
+
+.research-theme-game .research-game-run,
+.research-theme-game .research-game-stats,
+.research-theme-game .research-game-bosses,
+.research-theme-game .research-game-quests {
+  border: 1px solid #3f3f46;
+  background: linear-gradient(145deg, #18181b 0%, #27272a 100%);
+  color: #f4f4f5;
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.research-game-run-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.research-game-guild {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #c4b5fd;
+}
+
+.research-game-season {
+  font-size: 0.8rem;
+  color: #a1a1aa;
+}
+
+.research-game-verdict {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.research-game-verdict--winning {
+  background: #14532d;
+  color: #86efac;
+}
+
+.research-game-verdict--stalemate {
+  background: #713f12;
+  color: #fde68a;
+}
+
+.research-game-verdict--losing {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+
+.research-game-headline {
+  margin: 0.65rem 0 0.5rem;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+.research-game-hp {
+  height: 8px;
+  background: #3f3f46;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.research-game-hp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7c3aed, #a78bfa);
+  border-radius: 4px;
+}
+
+.research-game-patch-notes {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+  color: #d4d4d8;
+}
+
+.research-game-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.65rem;
+}
+
+.research-game-stat {
+  border: 1px solid #52525b;
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  background: #09090b;
+}
+
+.research-game-stat--tier-s {
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35);
+}
+
+.research-game-stat--tier-a {
+  border-color: #a78bfa;
+}
+
+.research-game-stat--tier-b {
+  border-color: #71717a;
+}
+
+.research-game-stat--tier-c {
+  border-color: #52525b;
+  opacity: 0.92;
+}
+
+.research-game-stat--debuff {
+  border-color: #ef4444;
+}
+
+.research-game-stat-label {
+  font-size: 0.72rem;
+  color: #a1a1aa;
+}
+
+.research-game-stat-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0.15rem 0;
+}
+
+.research-game-stat-delta {
+  font-size: 0.78rem;
+  color: #86efac;
+}
+
+.research-game-stat-delta.negative {
+  color: #fca5a5;
+}
+
+.research-game-stat-flavor {
+  font-size: 0.72rem;
+  color: #c4b5fd;
+  margin-top: 0.2rem;
+}
+
+.research-game-bosses strong,
+.research-game-quests strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #fca5a5;
+}
+
+.research-game-quests strong {
+  color: #86efac;
+}
+
+.research-game-boss-card {
+  border: 1px solid #7f1d1d;
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: #1c1917;
+}
+
+.research-game-boss-card--medium {
+  border-color: #b45309;
+}
+
+.research-game-boss-card--low {
+  border-color: #52525b;
+}
+
+.research-game-boss-name {
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.research-game-boss-threat {
+  font-size: 0.72rem;
+  color: #fca5a5;
+  margin-bottom: 0.35rem;
+}
+
+.research-game-boss-bars {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 0.4rem;
+}
+
+.research-game-boss-bar {
+  width: 28px;
+  height: 6px;
+  background: #ef4444;
+  border-radius: 2px;
+}
+
+.research-game-quest-card {
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.88rem;
+}
+
+.research-game-quest-card--reward {
+  border-left: 3px solid #22c55e;
+  background: #052e16;
+}
+
+.research-game-quest-card--penalty {
+  border-left: 3px solid #f59e0b;
+  background: #451a03;
+}
+
+.research-game-footnote {
+  font-size: 0.72rem;
+  color: #71717a;
+  margin-top: 0.65rem;
+}
+
+.research-theme-game .research-red-flags {
+  display: none !important;
+}
+
 @media (max-width: 640px) {
   .research-chart {
     height: 260px;
