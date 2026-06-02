@@ -35,8 +35,8 @@ def fetch_all_assistants():
         """
         SELECT
             a.*,
-            COALESCE(SUM(m.profit_loss), 0) AS total_pnl,
-            COUNT(CASE WHEN m.profit_loss IS NOT NULL THEN 1 END) AS scored_milestones
+            COALESCE(AVG(m.importance_score), 0) AS total_pnl,
+            COUNT(CASE WHEN m.importance_score IS NOT NULL THEN 1 END) AS scored_milestones
         FROM investment_assistants a
         LEFT JOIN themes t ON t.assistant_id = a.id AND t.archived_at IS NULL
         LEFT JOIN theme_milestones m ON m.theme_id = t.id
@@ -68,15 +68,15 @@ def create_assistant(name, description=None):
 
 
 def fetch_assistants_with_themes():
-    """返回 [(assistant, [themes...]), ...] 供列表页分组展示；助手按累计盈亏排名。"""
+    """返回 [(assistant, [themes...]), ...] 供列表页分组展示；助手按重要性均分排名。"""
     assistants = fetch_all_assistants()
     db = get_db()
     themes = db.execute(
         """
         SELECT
             t.*,
-            COALESCE(SUM(m.profit_loss), 0) AS theme_score,
-            COUNT(CASE WHEN m.profit_loss IS NOT NULL THEN 1 END) AS scored_milestones
+            COALESCE(AVG(m.importance_score), 0) AS theme_score,
+            COUNT(CASE WHEN m.importance_score IS NOT NULL THEN 1 END) AS scored_milestones
         FROM themes t
         LEFT JOIN theme_milestones m ON m.theme_id = t.id
         WHERE t.archived_at IS NULL
@@ -257,19 +257,93 @@ def delete_theme(theme_id):
 
 
 def fetch_theme_score(theme_id):
-    """主题评分 = 已填写盈亏的时间节点之和。"""
+    """主题评分 = 已评分时间节点的 AI 重要性均分（0–10）。"""
     db = get_db()
     row = db.execute(
         """
         SELECT
-            COALESCE(SUM(profit_loss), 0) AS theme_score,
-            COUNT(CASE WHEN profit_loss IS NOT NULL THEN 1 END) AS scored_milestones
+            COALESCE(AVG(importance_score), 0) AS theme_score,
+            COUNT(CASE WHEN importance_score IS NOT NULL THEN 1 END) AS scored_milestones
         FROM theme_milestones
         WHERE theme_id = ?
         """,
         (theme_id,),
     ).fetchone()
-    return dict(row) if row else {"theme_score": 0, "scored_milestones": 0}
+    if not row:
+        return {"theme_score": 0, "scored_milestones": 0}
+    result = dict(row)
+    if result.get("theme_score") is not None:
+        result["theme_score"] = round(float(result["theme_score"]), 1)
+    return result
+
+
+def fetch_milestone_by_id(theme_id: int, milestone_id: int) -> dict | None:
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM theme_milestones WHERE id = ? AND theme_id = ?",
+        (milestone_id, theme_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def set_milestone_importance_pending(theme_id: int, milestone_id: int) -> bool:
+    db = get_db()
+    row = db.execute(
+        "SELECT id, is_completed FROM theme_milestones WHERE id = ? AND theme_id = ?",
+        (milestone_id, theme_id),
+    ).fetchone()
+    if not row or not row["is_completed"]:
+        return False
+    db.execute(
+        """
+        UPDATE theme_milestones
+        SET importance_status = 'pending', importance_error = NULL
+        WHERE id = ?
+        """,
+        (milestone_id,),
+    )
+    db.commit()
+    return True
+
+
+def save_milestone_importance_result(
+    theme_id: int,
+    milestone_id: int,
+    *,
+    score: float | None,
+    rationale: str | None,
+    status: str,
+    error: str | None = None,
+) -> None:
+    from datetime import datetime
+
+    db = get_db()
+    now = datetime.now().isoformat(timespec="seconds")
+    db.execute(
+        """
+        UPDATE theme_milestones
+        SET importance_score = ?,
+            importance_rationale = ?,
+            importance_scored_at = ?,
+            importance_status = ?,
+            importance_error = ?
+        WHERE id = ? AND theme_id = ?
+        """,
+        (
+            score,
+            (rationale or "").strip() or None,
+            now if status == "done" else None,
+            status,
+            (error or "").strip() or None,
+            milestone_id,
+            theme_id,
+        ),
+    )
+    db.execute(
+        "UPDATE themes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (theme_id,),
+    )
+    db.commit()
 
 
 # --- 关联内容 (Articles, Assets, Milestones) 相关 ---
@@ -478,19 +552,21 @@ def update_theme_milestone(
     profit_loss=None,
     is_completed=None,
     end_date=None,
-):
-    """编辑时间线节点（盈亏为空则不纳入评分）。"""
+) -> tuple[bool, bool]:
+    """编辑时间线节点。返回 (成功, 是否新标记为已发生)。"""
     if not end_date:
         end_date = event_date
     db = get_db()
     row = db.execute(
-        "SELECT id FROM theme_milestones WHERE id = ? AND theme_id = ?",
+        "SELECT id, is_completed FROM theme_milestones WHERE id = ? AND theme_id = ?",
         (milestone_id, theme_id),
     ).fetchone()
     if not row:
-        return False
+        return False, False
 
+    was_completed = bool(row["is_completed"])
     completed_value = 1 if is_completed else 0 if is_completed is not None else None
+    newly_completed = completed_value == 1 and not was_completed
     if completed_value is not None:
         db.execute(
             """
@@ -510,12 +586,22 @@ def update_theme_milestone(
             """,
             (event_date, end_date, description, reminder_time, profit_loss, milestone_id),
         )
+    if newly_completed:
+        db.execute(
+            """
+            UPDATE theme_milestones
+            SET importance_status = 'pending', importance_error = NULL
+            WHERE id = ?
+            """,
+            (milestone_id,),
+        )
+
     db.execute(
         "UPDATE themes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         (theme_id,),
     )
     db.commit()
-    return True
+    return True, newly_completed
 
 
 def delete_theme_milestone(theme_id, milestone_id):

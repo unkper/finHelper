@@ -12,7 +12,14 @@ from app.services.investment import (
     add_theme_asset, add_theme_milestone, update_theme_milestone, add_theme_article,
     update_theme_article, update_theme_asset_monitoring,
     delete_theme_milestone, delete_theme_asset, delete_theme_article,
-    build_milestone_index, serialize_asset_for_edit,
+    build_milestone_index, serialize_asset_for_edit, fetch_milestone_by_id,
+    set_milestone_importance_pending,
+)
+from app.services.milestone_importance import (
+    has_milestone_ai_configured,
+    run_milestone_importance_job,
+    score_milestone_importance,
+    serialize_milestone_importance,
 )
 from app.services.settings import (
     get_macd_alert_settings,
@@ -761,6 +768,7 @@ def detail(theme_id):
         milestone_index=milestone_index,
         macd_alerts=get_macd_alert_settings(),
         ai_article_configured=has_article_ai_configured(),
+        milestone_ai_configured=has_milestone_ai_configured(),
     )
 
 
@@ -984,7 +992,6 @@ def add_milestone(theme_id):
         return redirect(url_for('investments.detail', theme_id=theme_id))
 
     try:
-        profit_loss = _parse_profit_loss(request.form.get('profit_loss'))
         event_date, end_date = _parse_milestone_dates(
             event_date,
             request.form.get('end_date'),
@@ -993,10 +1000,9 @@ def add_milestone(theme_id):
         flash(str(exc), "error")
         return redirect(url_for('investments.detail', theme_id=theme_id))
 
-    add_theme_milestone(theme_id, event_date, description, reminder_time, profit_loss, end_date)
+    add_theme_milestone(theme_id, event_date, description, reminder_time, None, end_date)
     range_hint = f"{event_date} ~ {end_date}" if end_date != event_date else event_date
-    score_hint = f"，盈亏 {profit_loss:+.2f}" if profit_loss is not None else ""
-    flash(f"时间线节点已添加，将于 {range_hint} 每日 {reminder_time} 飞书提醒{score_hint}", "success")
+    flash(f"时间线节点已添加，将于 {range_hint} 每日 {reminder_time} 飞书提醒", "success")
     return redirect(url_for('investments.detail', theme_id=theme_id))
 
 
@@ -1016,7 +1022,6 @@ def edit_milestone(theme_id, milestone_id):
         return redirect(url_for('investments.detail', theme_id=theme_id))
 
     try:
-        profit_loss = _parse_profit_loss(request.form.get('profit_loss'))
         event_date, end_date = _parse_milestone_dates(
             event_date,
             request.form.get('end_date'),
@@ -1025,20 +1030,73 @@ def edit_milestone(theme_id, milestone_id):
         flash(str(exc), "error")
         return redirect(url_for('investments.detail', theme_id=theme_id))
 
-    if update_theme_milestone(
+    ok, newly_completed = update_theme_milestone(
         theme_id,
         milestone_id,
         event_date,
         description,
         reminder_time,
-        profit_loss,
+        None,
         is_completed,
         end_date,
-    ):
-        flash("时间线节点已更新", "success")
+    )
+    if ok:
+        if newly_completed and has_milestone_ai_configured():
+            run_milestone_importance_job(
+                current_app._get_current_object(), theme_id, milestone_id
+            )
+            flash("时间线节点已更新；AI 正在评估事件重要性…", "success")
+        elif newly_completed:
+            flash("时间线节点已更新（未配置 AI，无法自动评分）", "success")
+        else:
+            flash("时间线节点已更新", "success")
     else:
         flash("节点不存在或已删除", "error")
     return redirect(url_for('investments.detail', theme_id=theme_id))
+
+
+@bp.route('/<int:theme_id>/milestones/<int:milestone_id>/score-importance', methods=['POST'])
+def milestone_score_importance(theme_id, milestone_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return block
+
+    if not has_milestone_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    milestone = fetch_milestone_by_id(theme_id, milestone_id)
+    if not milestone:
+        return jsonify({"error": "节点不存在"}), 404
+    if not milestone.get("is_completed"):
+        return jsonify({"error": "仅对已发生节点评分"}), 400
+
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"milestone-importance:{ip}", max_calls=20, window_seconds=3600
+    )
+    if not allowed:
+        return jsonify({"error": "评分请求过于频繁", "retry_after": retry_after}), 429
+
+    if not set_milestone_importance_pending(theme_id, milestone_id):
+        return jsonify({"error": "节点未标记为已发生"}), 400
+    run_milestone_importance_job(
+        current_app._get_current_object(), theme_id, milestone_id
+    )
+    return jsonify({"status": "ok", "importance_status": "pending"}), 202
+
+
+@bp.route('/<int:theme_id>/milestones/<int:milestone_id>/importance-status')
+def milestone_importance_status(theme_id, milestone_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return jsonify({"error": "主题已封存"}), 403
+
+    milestone = fetch_milestone_by_id(theme_id, milestone_id)
+    if not milestone:
+        return jsonify({"error": "节点不存在"}), 404
+    payload = serialize_milestone_importance(milestone)
+    payload["status"] = "ok"
+    return jsonify(payload)
 
 
 @bp.route('/<int:theme_id>/milestones/<int:milestone_id>/delete', methods=['POST'])
@@ -1256,10 +1314,6 @@ def ai_confirm_milestone(theme_id):
         return jsonify({"error": "日期和描述不能为空"}), 400
 
     try:
-        profit_loss_raw = data.get("profit_loss")
-        profit_loss = None
-        if profit_loss_raw is not None and str(profit_loss_raw).strip() != "":
-            profit_loss = float(profit_loss_raw)
         event_date, end_date = _parse_milestone_dates(
             event_date,
             data.get("end_date"),
@@ -1268,7 +1322,7 @@ def ai_confirm_milestone(theme_id):
         return jsonify({"error": str(exc)}), 400
 
     milestone_id = add_theme_milestone(
-        theme_id, event_date, description, reminder_time, profit_loss, end_date
+        theme_id, event_date, description, reminder_time, None, end_date
     )
     return jsonify({"status": "ok", "milestone_id": milestone_id})
 

@@ -440,6 +440,18 @@ def migrate_db(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "UPDATE theme_milestones SET end_date = event_date WHERE end_date IS NULL"
             )
+        if "importance_score" not in milestone_columns:
+            conn.execute("ALTER TABLE theme_milestones ADD COLUMN importance_score REAL")
+        if "importance_rationale" not in milestone_columns:
+            conn.execute("ALTER TABLE theme_milestones ADD COLUMN importance_rationale TEXT")
+        if "importance_scored_at" not in milestone_columns:
+            conn.execute("ALTER TABLE theme_milestones ADD COLUMN importance_scored_at TEXT")
+        if "importance_status" not in milestone_columns:
+            conn.execute(
+                "ALTER TABLE theme_milestones ADD COLUMN importance_status TEXT NOT NULL DEFAULT 'idle'"
+            )
+        if "importance_error" not in milestone_columns:
+            conn.execute("ALTER TABLE theme_milestones ADD COLUMN importance_error TEXT")
 
     alert_columns = {row["name"] for row in conn.execute("PRAGMA table_info(theme_asset_price_alerts)")}
     if alert_columns and "alert_type" not in alert_columns:

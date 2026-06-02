@@ -77,12 +77,12 @@
         <span class="badge">已封存</span>
         <span class="badge assistant-badge">{{ theme.assistant_name }}</span>
         {% if theme_score.scored_milestones > 0 %}
-          {% if theme_score.theme_score > 0 %}
-          <span class="theme-score-badge positive">评分 {{ "%+.2f"|format(theme_score.theme_score) }}</span>
-          {% elif theme_score.theme_score < 0 %}
-          <span class="theme-score-badge negative">评分 {{ "%+.2f"|format(theme_score.theme_score) }}</span>
+          {% if theme_score.theme_score >= 7 %}
+          <span class="theme-score-badge positive">重要性 {{ "%.1f"|format(theme_score.theme_score) }}/10</span>
+          {% elif theme_score.theme_score >= 4 %}
+          <span class="theme-score-badge neutral">重要性 {{ "%.1f"|format(theme_score.theme_score) }}/10</span>
           {% else %}
-          <span class="theme-score-badge neutral">评分 0.00</span>
+          <span class="theme-score-badge negative">重要性 {{ "%.1f"|format(theme_score.theme_score) }}/10</span>
           {% endif %}
         {% else %}
           <span class="theme-score-badge neutral">暂无评分</span>
@@ -116,9 +116,10 @@
           {% if milestone.is_completed %} · 已发生{% endif %}
         </div>
         <div class="timeline-desc">{{ milestone.description }}</div>
-        {% if milestone.profit_loss is not none %}
-        <div class="timeline-pnl {% if milestone.profit_loss > 0 %}positive{% elif milestone.profit_loss < 0 %}negative{% endif %}">
-          盈亏 {{ "%+.2f"|format(milestone.profit_loss) }}
+        {% if milestone.importance_score is not none %}
+        <div class="timeline-pnl {% if milestone.importance_score >= 7 %}positive{% elif milestone.importance_score >= 4 %}{% else %}negative{% endif %}">
+          重要性 {{ "%.1f"|format(milestone.importance_score) }}/10
+          {% if milestone.importance_rationale %} · {{ milestone.importance_rationale }}{% endif %}
         </div>
         {% endif %}
       </div>

@@ -113,12 +113,12 @@
       🤖 {{ assistant.name }}
       {% if assistant.is_default %}<span class="assistant-badge">默认</span>{% endif %}
       {% if assistant.scored_milestones > 0 %}
-        {% if assistant.total_pnl > 0 %}
-        <span class="assistant-pnl positive">{{ "%+.2f"|format(assistant.total_pnl) }}</span>
-        {% elif assistant.total_pnl < 0 %}
-        <span class="assistant-pnl negative">{{ "%+.2f"|format(assistant.total_pnl) }}</span>
+        {% if assistant.total_pnl >= 7 %}
+        <span class="assistant-pnl positive">{{ "%.1f"|format(assistant.total_pnl) }}/10</span>
+        {% elif assistant.total_pnl >= 4 %}
+        <span class="assistant-pnl neutral">{{ "%.1f"|format(assistant.total_pnl) }}/10</span>
         {% else %}
-        <span class="assistant-pnl neutral">0.00</span>
+        <span class="assistant-pnl negative">{{ "%.1f"|format(assistant.total_pnl) }}/10</span>
         {% endif %}
       {% else %}
         <span class="assistant-pnl neutral">暂无评分</span>
@@ -129,7 +129,7 @@
     {% else %}
     <p class="assistant-desc">
       {% if assistant.scored_milestones > 0 %}
-      累计 {{ assistant.scored_milestones }} 个评分节点
+      重要性均分 · {{ assistant.scored_milestones }} 个已评节点
       {% endif %}
     </p>
     {% endif %}
@@ -139,12 +139,12 @@
       <h4>
         <span>{{ theme.title }}</span>
         {% if theme.scored_milestones > 0 %}
-          {% if theme.theme_score > 0 %}
-          <span class="theme-score positive">{{ "%+.2f"|format(theme.theme_score) }}</span>
-          {% elif theme.theme_score < 0 %}
-          <span class="theme-score negative">{{ "%+.2f"|format(theme.theme_score) }}</span>
+          {% if theme.theme_score >= 7 %}
+          <span class="theme-score positive">{{ "%.1f"|format(theme.theme_score) }}/10</span>
+          {% elif theme.theme_score >= 4 %}
+          <span class="theme-score neutral">{{ "%.1f"|format(theme.theme_score) }}/10</span>
           {% else %}
-          <span class="theme-score neutral">0.00</span>
+          <span class="theme-score negative">{{ "%.1f"|format(theme.theme_score) }}/10</span>
           {% endif %}
         {% else %}
           <span class="theme-score neutral">—</span>

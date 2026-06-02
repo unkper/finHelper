@@ -324,6 +324,22 @@
 
   .inline-form-row { display: flex; gap: 12px; }
   .inline-form-row .form-group { flex: 1; }
+  .milestone-importance-row { margin-top: 8px; }
+  .milestone-importance-badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+  .milestone-importance-badge.high { background: #e3fcef; color: #006644; }
+  .milestone-importance-badge.mid { background: #fff7e6; color: #974f0c; }
+  .milestone-importance-badge.low { background: #ffebe6; color: #bf2600; }
+  .milestone-importance-badge.pending { background: #deebff; color: #0747a6; }
+  .milestone-importance-badge.failed { background: #ffebe6; color: #bf2600; }
+  .milestone-importance-badge.idle { background: #f4f5f7; color: #6b778c; }
+  .milestone-importance-rationale { margin-top: 6px; font-size: 12px; color: #5e6c84; }
+  .milestone-importance-rationale p { margin: 4px 0 0; line-height: 1.45; }
 </style>
 
 <div id="addMilestoneModal" class="modal-overlay">
@@ -356,10 +372,7 @@
           <label>事件描述</label>
           <textarea name="description" rows="2" placeholder="例如：美联储议息会议决议公布" required></textarea>
         </div>
-        <div class="form-group" style="margin-bottom: 0;">
-          <label>盈亏金额（可选）</label>
-          <input type="number" step="0.01" name="profit_loss" placeholder="正数盈利 / 负数亏损，留空不纳入评分">
-        </div>
+        <p class="milestone-range-hint" style="margin: 0;">标记为「已发生」后将由 AI 根据最新资讯与行情评估重要性（0–10）。</p>
       </div>
       <div class="modal-form-actions">
         <button type="button" class="secondary-btn" onclick="document.getElementById('addMilestoneModal').style.display='none'">取消</button>
@@ -398,10 +411,6 @@
         <div class="form-group" style="margin-bottom: 12px;">
           <label>事件描述</label>
           <textarea name="description" id="editDescription" rows="2" required></textarea>
-        </div>
-        <div class="form-group" style="margin-bottom: 12px;">
-          <label>盈亏金额（可选）</label>
-          <input type="number" step="0.01" name="profit_loss" id="editProfitLoss" placeholder="正数盈利 / 负数亏损，留空不纳入评分">
         </div>
         <label class="asset-macd-alert-option" style="font-weight: normal;">
           <input type="checkbox" name="is_completed" id="editIsCompleted" value="1">
@@ -707,21 +716,25 @@
         {{ theme.title }}
         <span class="badge">{{ theme.assistant_name }}</span>
         {% if theme_score.scored_milestones > 0 %}
-          {% if theme_score.theme_score > 0 %}
-          <span class="theme-score-badge positive">评分 {{ "%+.2f"|format(theme_score.theme_score) }}</span>
-          {% elif theme_score.theme_score < 0 %}
-          <span class="theme-score-badge negative">评分 {{ "%+.2f"|format(theme_score.theme_score) }}</span>
+          {% if theme_score.theme_score >= 7 %}
+          <span class="theme-score-badge positive">重要性 {{ "%.1f"|format(theme_score.theme_score) }}/10</span>
+          {% elif theme_score.theme_score >= 4 %}
+          <span class="theme-score-badge neutral">重要性 {{ "%.1f"|format(theme_score.theme_score) }}/10</span>
           {% else %}
-          <span class="theme-score-badge neutral">评分 0.00</span>
+          <span class="theme-score-badge negative">重要性 {{ "%.1f"|format(theme_score.theme_score) }}/10</span>
           {% endif %}
         {% else %}
-          <span class="theme-score-badge neutral">暂无评分</span>
+          <span class="theme-score-badge neutral">暂无 AI 评分</span>
         {% endif %}
       </h2>
       <p style="color: #5e6c84; margin-top: 8px; line-height: 1.5;">{{ theme.description }}</p>
       {% if theme_score.scored_milestones > 0 %}
       <p style="font-size: 12px; color: #8c939f; margin: 8px 0 0;">
-        基于 {{ theme_score.scored_milestones }} 个已记录盈亏的时间节点
+        主题重要性均分（{{ theme_score.scored_milestones }} 个已评节点）· 由事件后资讯与行情动态生成，非投资建议
+      </p>
+      {% elif milestone_ai_configured %}
+      <p style="font-size: 12px; color: #8c939f; margin: 8px 0 0;">
+        将节点标记为「已发生」后，AI 将自动评估重要性（0–10）
       </p>
       {% endif %}
     </div>
@@ -754,7 +767,11 @@
     </h3>
     <div style="margin-top: 20px;">
       {% for milestone in milestones %}
-      <div class="timeline-item" style="{% if milestone.is_completed %}opacity: 0.5;{% endif %}">
+      <div class="timeline-item milestone-timeline-item"
+        style="{% if milestone.is_completed %}opacity: 0.85;{% endif %}"
+        id="milestone-{{ milestone.id }}"
+        data-milestone-id="{{ milestone.id }}"
+        data-importance-status="{{ milestone.importance_status or 'idle' }}">
         <div class="item-row-header">
           <div class="timeline-date">
             <span class="timeline-no">#{{ loop.index }}</span>
@@ -767,6 +784,11 @@
             {% if milestone.is_completed %} · 已发生{% endif %}
           </div>
           <div class="timeline-actions">
+            {% if milestone.is_completed and milestone_ai_configured %}
+            <button type="button" class="btn-link milestone-rescore-btn"
+              data-score-url="{{ url_for('investments.milestone_score_importance', theme_id=theme.id, milestone_id=milestone.id) }}"
+              data-status-url="{{ url_for('investments.milestone_importance_status', theme_id=theme.id, milestone_id=milestone.id) }}">重新评估</button>
+            {% endif %}
             <button type="button" class="btn-link"
               onclick="openEditMilestoneModal(this)"
               data-edit-url="{{ url_for('investments.edit_milestone', theme_id=theme.id, milestone_id=milestone.id) }}"
@@ -774,17 +796,32 @@
               data-end-date="{{ milestone.end_date or milestone.event_date }}"
               data-reminder-time="{{ milestone.reminder_time or '12:00' }}"
               data-description="{{ milestone.description|replace('\n', ' ')|e }}"
-              data-profit-loss="{{ milestone.profit_loss if milestone.profit_loss is not none else '' }}"
               data-is-completed="{{ milestone.is_completed }}">编辑</button>
             {{ delete_button(url_for('investments.delete_milestone', theme_id=theme.id, milestone_id=milestone.id), '确定删除此时间线节点？') }}
           </div>
         </div>
         <div class="timeline-desc">{{ milestone.description }}</div>
-        {% if milestone.profit_loss is not none %}
-        <div class="timeline-pnl {% if milestone.profit_loss > 0 %}positive{% elif milestone.profit_loss < 0 %}negative{% endif %}">
-          盈亏 {{ "%+.2f"|format(milestone.profit_loss) }}
+        <div class="milestone-importance-row" id="milestoneImportance-{{ milestone.id }}">
+          {% if milestone.is_completed %}
+            {% if milestone.importance_status == 'pending' %}
+            <span class="milestone-importance-badge pending">AI 评分中…</span>
+            {% elif milestone.importance_score is not none %}
+            <span class="milestone-importance-badge {% if milestone.importance_score >= 7 %}high{% elif milestone.importance_score >= 4 %}mid{% else %}low{% endif %}">
+              重要性 {{ "%.1f"|format(milestone.importance_score) }}/10
+            </span>
+            {% if milestone.importance_rationale %}
+            <details class="milestone-importance-rationale">
+              <summary>评分理由</summary>
+              <p>{{ milestone.importance_rationale }}</p>
+            </details>
+            {% endif %}
+            {% elif milestone.importance_status == 'failed' %}
+            <span class="milestone-importance-badge failed">评分失败{% if milestone.importance_error %}：{{ milestone.importance_error }}{% endif %}</span>
+            {% else %}
+            <span class="milestone-importance-badge idle">待 AI 评分</span>
+            {% endif %}
+          {% endif %}
         </div>
-        {% endif %}
       </div>
       {% else %}
       <p style="font-size: 13px; color: #8c939f;">暂未设定关键时间点。</p>
@@ -1465,10 +1502,105 @@
     syncMilestoneEndDate(eventDateInput, endDateInput);
     document.getElementById('editReminderTime').value = (button.dataset.reminderTime || '12:00').slice(0, 5);
     document.getElementById('editDescription').value = button.dataset.description || '';
-    document.getElementById('editProfitLoss').value = button.dataset.profitLoss || '';
     document.getElementById('editIsCompleted').checked = button.dataset.isCompleted === '1';
     document.getElementById('editMilestoneModal').style.display = 'flex';
   }
+
+  const MilestoneImportance = {
+  themeId: {{ theme.id }},
+  pollTimers: {},
+
+  renderBadge(milestoneId, data) {
+    const row = document.getElementById(`milestoneImportance-${milestoneId}`);
+    if (!row) return;
+    const item = document.getElementById(`milestone-${milestoneId}`);
+    if (item && data.importance_status) {
+      item.dataset.importanceStatus = data.importance_status;
+    }
+    if (data.importance_status === 'pending') {
+      row.innerHTML = '<span class="milestone-importance-badge pending">AI 评分中…</span>';
+      return;
+    }
+    if (data.importance_status === 'failed') {
+      const err = data.importance_error ? `：${data.importance_error}` : '';
+      row.innerHTML = `<span class="milestone-importance-badge failed">评分失败${err}</span>`;
+      return;
+    }
+    if (data.importance_score != null && data.importance_score !== '') {
+      const score = Number(data.importance_score);
+      let cls = 'mid';
+      if (score >= 7) cls = 'high';
+      else if (score < 4) cls = 'low';
+      let html = `<span class="milestone-importance-badge ${cls}">重要性 ${score.toFixed(1)}/10</span>`;
+      if (data.importance_rationale) {
+        const safe = document.createElement('div');
+        safe.textContent = data.importance_rationale;
+        html += `<details class="milestone-importance-rationale"><summary>评分理由</summary><p>${safe.innerHTML}</p></details>`;
+      }
+      row.innerHTML = html;
+      return;
+    }
+    row.innerHTML = '<span class="milestone-importance-badge idle">待 AI 评分</span>';
+  },
+
+  async pollStatus(milestoneId, statusUrl) {
+    if (this.pollTimers[milestoneId]) clearInterval(this.pollTimers[milestoneId]);
+    const tick = async () => {
+      try {
+        const res = await fetch(statusUrl);
+        const data = await res.json();
+        if (!res.ok) return;
+        this.renderBadge(milestoneId, data);
+        if (data.importance_status !== 'pending') {
+          clearInterval(this.pollTimers[milestoneId]);
+          delete this.pollTimers[milestoneId];
+          if (data.importance_status === 'done') {
+            window.location.reload();
+          }
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    };
+    await tick();
+    this.pollTimers[milestoneId] = setInterval(tick, 2500);
+  },
+
+  async requestScore(btn) {
+    const scoreUrl = btn.dataset.scoreUrl;
+    const statusUrl = btn.dataset.statusUrl;
+    const milestoneId = scoreUrl.match(/milestones\/(\d+)\//)?.[1];
+    if (!milestoneId) return;
+    btn.disabled = true;
+  btn.textContent = '评估中…';
+    try {
+      const res = await fetch(scoreUrl, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '评分失败');
+      this.renderBadge(milestoneId, { importance_status: 'pending' });
+      this.pollStatus(milestoneId, statusUrl);
+    } catch (err) {
+      alert(err.message || 'AI 评分失败');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '重新评估';
+    }
+  },
+
+  init() {
+    document.querySelectorAll('.milestone-rescore-btn').forEach((btn) => {
+      btn.addEventListener('click', () => this.requestScore(btn));
+    });
+    document.querySelectorAll('.milestone-timeline-item').forEach((item) => {
+      if (item.dataset.importanceStatus === 'pending') {
+        const id = item.dataset.milestoneId;
+        const btn = item.querySelector('.milestone-rescore-btn');
+        if (btn) this.pollStatus(id, btn.dataset.statusUrl);
+      }
+    });
+  },
+  };
+  MilestoneImportance.init();
 
   const addEventDateInput = document.getElementById('addEventDate');
   const addEndDateInput = document.getElementById('addEndDate');
