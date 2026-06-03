@@ -118,7 +118,17 @@ def stocks_chart_data():
             "retry_after": retry_after,
         }), 429
 
-    return jsonify(build_stock_chart_payload(force_refresh=force_refresh))
+    page = request.args.get("page", 1)
+    per_page = request.args.get("per_page")
+    query = request.args.get("q", "")
+    return jsonify(
+        build_stock_chart_payload(
+            force_refresh,
+            page=page,
+            per_page=per_page,
+            query=query,
+        )
+    )
 
 
 @bp.route('/api/macd-alerts', methods=['POST'])

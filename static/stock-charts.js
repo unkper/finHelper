@@ -1,7 +1,12 @@
 (function () {
   const chartInstances = new Map();
   const INDICATOR_STORAGE_KEY = "finhelper-chart-indicators";
+  const PER_PAGE_STORAGE_KEY = "finhelper-stocks-per-page";
+  const DEFAULT_PER_PAGE = 8;
   let allAssets = [];
+  let currentPage = 1;
+  let perPage = DEFAULT_PER_PAGE;
+  let filterDebounceTimer = null;
 
   const defaultIndicators = {
     ma5: true,
@@ -598,12 +603,64 @@
     });
   }
 
-  function applyFilter(keyword) {
-    const value = (keyword || "").trim().toUpperCase();
-    document.querySelectorAll(".stock-chart-card").forEach((card) => {
-      const ticker = card.dataset.ticker || "";
-      card.classList.toggle("is-hidden", value && !ticker.includes(value));
-    });
+  function loadPerPageSetting() {
+    try {
+      const raw = localStorage.getItem(PER_PAGE_STORAGE_KEY);
+      const parsed = parseInt(raw, 10);
+      if (parsed >= 4 && parsed <= 24) return parsed;
+    } catch (e) {
+      /* ignore */
+    }
+    return DEFAULT_PER_PAGE;
+  }
+
+  function savePerPageSetting(value) {
+    localStorage.setItem(PER_PAGE_STORAGE_KEY, String(value));
+  }
+
+  function syncPerPageSelect() {
+    const select = document.getElementById("stocksPerPage");
+    if (!select) return;
+    if (![...select.options].some((opt) => Number(opt.value) === perPage)) {
+      const option = document.createElement("option");
+      option.value = String(perPage);
+      option.textContent = `${perPage} 个`;
+      select.appendChild(option);
+    }
+    select.value = String(perPage);
+  }
+
+  function buildChartDataUrl(forceRefresh) {
+    const params = new URLSearchParams();
+    params.set("page", String(currentPage));
+    params.set("per_page", String(perPage));
+    const q = document.getElementById("tickerFilter")?.value?.trim();
+    if (q) params.set("q", q);
+    if (forceRefresh) params.set("refresh", "1");
+    return `/investments/stocks/api/chart-data?${params.toString()}`;
+  }
+
+  function updatePaginationControls(summary) {
+    const nav = document.getElementById("stocksPagination");
+    const info = document.getElementById("stocksPageInfo");
+    const prevBtn = document.getElementById("stocksPrevPage");
+    const nextBtn = document.getElementById("stocksNextPage");
+    if (!nav || !summary) return;
+
+    const total = summary.ticker_count || 0;
+    const totalPages = summary.total_pages || 0;
+    if (total <= 0) {
+      nav.hidden = true;
+      return;
+    }
+
+    nav.hidden = false;
+    const page = summary.page || 1;
+    if (info) {
+      info.textContent = `第 ${page} / ${totalPages} 页 · 本页 ${summary.page_count || 0} 个`;
+    }
+    if (prevBtn) prevBtn.disabled = page <= 1;
+    if (nextBtn) nextBtn.disabled = page >= totalPages;
   }
 
   function renderAssets(payload) {
@@ -620,11 +677,31 @@
 
     loading.hidden = true;
 
+    const summary = payload.summary || {};
+    summaryTicker.textContent = String(summary.ticker_count || 0);
+    summaryLinks.textContent = String(summary.theme_link_count || 0);
+    updatePaginationControls(summary);
+
+    if (!summary.ticker_count) {
+      empty.hidden = false;
+      grid.hidden = true;
+      const emptyMsg = empty.querySelector("p");
+      if (emptyMsg) {
+        emptyMsg.textContent = "请先在投资主题详情页添加监控标的。";
+      }
+      if (chartModeHint) chartModeHint.textContent = "";
+      return;
+    }
+
     if (!payload.assets || !payload.assets.length) {
       empty.hidden = false;
       grid.hidden = true;
-      summaryTicker.textContent = "0";
-      summaryLinks.textContent = "0";
+      const emptyMsg = empty.querySelector("p");
+      if (emptyMsg) {
+        emptyMsg.textContent = summary.filtered
+          ? "没有匹配的标的，请调整筛选条件。"
+          : "当前页暂无数据。";
+      }
       if (chartModeHint) chartModeHint.textContent = "";
       return;
     }
@@ -633,8 +710,7 @@
     grid.hidden = false;
     allAssets = payload.assets;
 
-    summaryTicker.textContent = String(payload.summary.ticker_count || payload.assets.length);
-    summaryLinks.textContent = String(payload.summary.theme_link_count || 0);
+    currentPage = summary.page || currentPage;
 
     const candleCount = payload.assets.filter((a) => a.chart_type === "candlestick").length;
     if (chartModeHint) {
@@ -652,7 +728,6 @@
     });
 
     payload.assets.forEach((asset) => mountChart(asset));
-    applyFilter(document.getElementById("tickerFilter")?.value || "");
   }
 
   async function loadChartData(forceRefresh) {
@@ -664,12 +739,8 @@
     grid.hidden = true;
     empty.hidden = true;
 
-    const url = forceRefresh
-      ? "/investments/stocks/api/chart-data?refresh=1"
-      : "/investments/stocks/api/chart-data";
-
     try {
-      const response = await fetch(url);
+      const response = await fetch(buildChartDataUrl(forceRefresh));
       if (!response.ok) throw new Error("加载失败");
       const payload = await response.json();
       renderAssets(payload);
@@ -688,6 +759,9 @@
   document.addEventListener("DOMContentLoaded", () => {
     if (!document.querySelector(".stocks-page")) return;
 
+    perPage = loadPerPageSetting();
+    syncPerPageSelect();
+
     syncIndicatorToolbar();
 
     document.querySelectorAll("[data-indicator]").forEach((input) => {
@@ -705,8 +779,31 @@
       loadChartData(true);
     });
 
-    document.getElementById("tickerFilter")?.addEventListener("input", (event) => {
-      applyFilter(event.target.value);
+    document.getElementById("stocksPerPage")?.addEventListener("change", (event) => {
+      perPage = parseInt(event.target.value, 10) || DEFAULT_PER_PAGE;
+      savePerPageSetting(perPage);
+      currentPage = 1;
+      loadChartData(false);
+    });
+
+    document.getElementById("stocksPrevPage")?.addEventListener("click", () => {
+      if (currentPage > 1) {
+        currentPage -= 1;
+        loadChartData(false);
+      }
+    });
+
+    document.getElementById("stocksNextPage")?.addEventListener("click", () => {
+      currentPage += 1;
+      loadChartData(false);
+    });
+
+    document.getElementById("tickerFilter")?.addEventListener("input", () => {
+      clearTimeout(filterDebounceTimer);
+      filterDebounceTimer = setTimeout(() => {
+        currentPage = 1;
+        loadChartData(false);
+      }, 350);
     });
 
     window.addEventListener("resize", handleResize);

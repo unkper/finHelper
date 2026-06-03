@@ -10,7 +10,7 @@
       <div>
         <p class="eyebrow">Market Charts</p>
         <h2>监控标的走势</h2>
-        <p class="hint">汇总所有投资主题下的监控标的。配置 EODHD 时显示日 K 蜡烛图，否则为收盘价折线；可开关 MA / MACD / RSI(6,12,24)。</p>
+        <p class="hint">汇总所有投资主题下的监控标的，分页加载以加快打开速度。配置 EODHD 时显示日 K 蜡烛图，否则为收盘价折线；可开关 MA / MACD / RSI(6,12,24)。</p>
         <p class="hint" id="chartModeHint"></p>
       </div>
       <div class="stocks-hero-actions">
@@ -28,6 +28,16 @@
     <label class="stocks-search">
       <span>筛选标的</span>
       <input type="search" id="tickerFilter" placeholder="输入代码，如 AAPL">
+    </label>
+    <label class="stocks-page-size">
+      <span>每页展示</span>
+      <select id="stocksPerPage" aria-label="每页展示标的数量">
+        <option value="4">4 个</option>
+        <option value="6">6 个</option>
+        <option value="8" selected>8 个</option>
+        <option value="12">12 个</option>
+        <option value="16">16 个</option>
+      </select>
     </label>
     <div class="indicator-toggles" role="group" aria-label="图表指标">
       <span class="indicator-toggles-label">图表</span>
@@ -53,6 +63,12 @@
   </div>
 
   <div id="stocksGrid" class="stocks-grid" hidden></div>
+
+  <nav id="stocksPagination" class="stocks-pagination panel" hidden aria-label="标的分页">
+    <button type="button" class="secondary-btn" id="stocksPrevPage" disabled>上一页</button>
+    <span class="stocks-page-info" id="stocksPageInfo">第 1 / 1 页</span>
+    <button type="button" class="secondary-btn" id="stocksNextPage" disabled>下一页</button>
+  </nav>
 </main>
 
 <script src="{{ url_for('static', filename='stock-charts.js') }}"></script>
