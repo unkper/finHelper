@@ -59,12 +59,88 @@
   }
 
   function formatChange(changePct) {
-    if (changePct === null || changePct === undefined) {
+    if (changePct === null || changePct === undefined || Number.isNaN(Number(changePct))) {
       return '<span class="change-flat">--</span>';
     }
     const cls = changePct >= 0 ? "change-up" : "change-down";
     const sign = changePct >= 0 ? "+" : "";
-    return `<span class="${cls}">${sign}${changePct}%</span>`;
+    return `<span class="${cls}">${sign}${Number(changePct).toFixed(2)}%</span>`;
+  }
+
+  function calcDailyChangePct(points, index) {
+    if (!points || index < 1 || index >= points.length) return null;
+    const prev = Number(points[index - 1].close);
+    const cur = Number(points[index].close);
+    if (!prev || Number.isNaN(prev) || Number.isNaN(cur)) return null;
+    return Math.round((cur - prev) / prev * 10000) / 100;
+  }
+
+  function calcPeriodChangePct(points, startIdx, endIdx) {
+    if (!points || !points.length) return null;
+    let start = Math.max(0, startIdx);
+    let end = Math.min(points.length - 1, endIdx);
+    if (start > end) {
+      const tmp = start;
+      start = end;
+      end = tmp;
+    }
+    const first = Number(points[start].close);
+    const last = Number(points[end].close);
+    if (!first || Number.isNaN(first) || Number.isNaN(last)) return null;
+    return Math.round((last - first) / first * 10000) / 100;
+  }
+
+  function visibleIndexRange(dataLen, startPercent, endPercent) {
+    if (dataLen <= 0) return { start: 0, end: 0 };
+    if (dataLen === 1) return { start: 0, end: 0 };
+    const start = Math.max(0, Math.floor((startPercent / 100) * (dataLen - 1)));
+    const end = Math.min(dataLen - 1, Math.ceil((endPercent / 100) * (dataLen - 1)));
+    return { start, end };
+  }
+
+  function isDefaultChartZoom(startPercent, endPercent) {
+    return startPercent >= 54 && endPercent >= 99;
+  }
+
+  function getChartDataZoomRange(chart) {
+    const opt = chart.getOption();
+    const zoomList = opt.dataZoom || [];
+    let start = 55;
+    let end = 100;
+    zoomList.forEach((z) => {
+      if (z.start != null && z.end != null) {
+        start = z.start;
+        end = z.end;
+      }
+    });
+    return { start, end };
+  }
+
+  function updateCardChangeDisplay(card, asset, chart) {
+    const points = asset.series || [];
+    const changeEl = card.querySelector(".stock-chart-change");
+    const labelEl = card.querySelector(".stock-chart-change-label");
+    if (!changeEl) return;
+
+    let label = "日涨跌";
+    let pct = asset.change_pct;
+
+    if (chart && points.length > 1) {
+      const { start, end } = getChartDataZoomRange(chart);
+      const range = visibleIndexRange(points.length, start, end);
+      if (!isDefaultChartZoom(start, end)) {
+        const dayCount = range.end - range.start + 1;
+        label = dayCount <= 1 ? "日涨跌" : `区间 ${dayCount} 日`;
+        pct = calcPeriodChangePct(points, range.start, range.end);
+      } else {
+        pct = calcDailyChangePct(points, points.length - 1);
+      }
+    } else if (points.length > 1) {
+      pct = calcDailyChangePct(points, points.length - 1);
+    }
+
+    if (labelEl) labelEl.textContent = label;
+    changeEl.innerHTML = formatChange(pct);
   }
 
   function uniqueThemeLabels(themes) {
@@ -188,6 +264,7 @@
     const series = asset.series || [];
     const dates = series.map((p) => p.date);
     const closes = series.map((p) => Number(p.close));
+    // ECharts 蜡烛图顺序：[开盘, 收盘, 最低, 最高]
     const ohlc = series.map((p) => [
       Number(p.open),
       Number(p.close),
@@ -195,7 +272,23 @@
       Number(p.high),
     ]);
     const hasOhlc = asset.chart_type === "candlestick";
-    return { dates, closes, ohlc, hasOhlc };
+    return { series, dates, closes, ohlc, hasOhlc };
+  }
+
+  function formatOhlcTooltip(point, dayChangePct) {
+    const open = Number(point.open);
+    const high = Number(point.high);
+    const low = Number(point.low);
+    const close = Number(point.close);
+    const lines = [
+      `开 $${open.toFixed(2)} 高 $${high.toFixed(2)}`,
+      `低 $${low.toFixed(2)} 收 $${close.toFixed(2)}`,
+    ];
+    if (dayChangePct != null) {
+      const sign = dayChangePct >= 0 ? "+" : "";
+      lines.push(`日涨跌 ${sign}${dayChangePct.toFixed(2)}%`);
+    }
+    return lines;
   }
 
   function buildChartLayout(settings) {
@@ -241,7 +334,7 @@
 
   function buildChartOption(asset) {
     const settings = indicatorSettings;
-    const { dates, closes, ohlc, hasOhlc } = extractSeriesData(asset);
+    const { series: seriesPoints, dates, closes, ohlc, hasOhlc } = extractSeriesData(asset);
     const layout = buildChartLayout(settings);
     const dataZoom = [
       { type: "inside", xAxisIndex: layout.xAxes.map((_, i) => i), start: 55, end: 100 },
@@ -388,12 +481,12 @@
           const date = params[0].axisValue;
           const lines = [`<strong>${date}</strong>`];
           params.forEach((item) => {
-            if (item.seriesType === "candlestick" && Array.isArray(item.data)) {
-              const [open, close, low, high] = item.data;
-              lines.push(
-                `开 $${open.toFixed(2)} 高 $${high.toFixed(2)}`,
-                `低 $${low.toFixed(2)} 收 $${close.toFixed(2)}`
-              );
+            if (item.seriesType === "candlestick") {
+              const idx = item.dataIndex;
+              const point = seriesPoints[idx];
+              if (point && point.open != null && point.high != null && point.low != null) {
+                lines.push(...formatOhlcTooltip(point, calcDailyChangePct(seriesPoints, idx)));
+              }
             } else if (item.data != null && item.seriesName !== "MACD") {
               const val = Number(item.data);
               const isRsi = String(item.seriesName).startsWith("RSI");
@@ -450,7 +543,10 @@
         </div>
         <div class="stock-chart-price">
           <strong>${formatPrice(asset.current_price)}</strong>
-          ${formatChange(asset.change_pct)}
+          <div class="stock-chart-change-wrap">
+            <span class="stock-chart-change-label">日涨跌</span>
+            <span class="stock-chart-change">${formatChange(asset.change_pct)}</span>
+          </div>
         </div>
       </div>
       <div class="stock-theme-tags">${themeTags}</div>
@@ -479,6 +575,13 @@
 
     const chart = echarts.init(dom);
     chart.setOption(buildChartOption(asset), true);
+
+    const card = dom.closest(".stock-chart-card");
+    if (card) {
+      updateCardChangeDisplay(card, asset, chart);
+      chart.on("dataZoom", () => updateCardChangeDisplay(card, asset, chart));
+    }
+
     chartInstances.set(asset.ticker, chart);
   }
 

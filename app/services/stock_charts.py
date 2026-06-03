@@ -24,11 +24,32 @@ def _series_has_ohlc(series: List[Dict[str, Any]]) -> bool:
     return True
 
 
-def _calc_change_pct(series: List[Dict[str, Any]]) -> float | None:
+def _calc_daily_change_pct(series: List[Dict[str, Any]]) -> float | None:
+    """最近一个交易日的涨跌幅（相对前一交易日收盘价）。"""
     if len(series) < 2:
         return None
-    first_close = series[0]["close"]
+    prev_close = series[-2]["close"]
     last_close = series[-1]["close"]
+    if not prev_close:
+        return None
+    return round((last_close - prev_close) / prev_close * 100, 2)
+
+
+def _calc_period_change_pct(
+    series: List[Dict[str, Any]],
+    start_index: int = 0,
+    end_index: int | None = None,
+) -> float | None:
+    """区间内涨跌幅：以区间首尾收盘价计算。"""
+    if not series:
+        return None
+    end_index = len(series) - 1 if end_index is None else end_index
+    start_index = max(0, min(start_index, len(series) - 1))
+    end_index = max(0, min(end_index, len(series) - 1))
+    if start_index > end_index:
+        start_index, end_index = end_index, start_index
+    first_close = series[start_index]["close"]
+    last_close = series[end_index]["close"]
     if not first_close:
         return None
     return round((last_close - first_close) / first_close * 100, 2)
@@ -80,7 +101,7 @@ def build_stock_chart_payload(force_refresh: bool = False) -> Dict[str, Any]:
             "ticker": ticker,
             "exchange": item["exchange"],
             "current_price": current_price,
-            "change_pct": _calc_change_pct(series),
+            "change_pct": _calc_daily_change_pct(series),
             "themes": item["themes"],
             "alerts": item["alerts"],
             "series": series,

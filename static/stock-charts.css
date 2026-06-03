@@ -185,6 +185,20 @@
   color: var(--text);
 }
 
+.stock-chart-change-wrap {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.stock-chart-change-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .stock-chart-price .change-up {
   color: #1f6f5f;
 }
