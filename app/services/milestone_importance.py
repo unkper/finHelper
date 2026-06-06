@@ -1,11 +1,12 @@
-"""时间线节点 AI 重要性评分（DeepSeek Flash + 主题内最新动态）。"""
+"""时间线节点 AI 重要性评分（DeepSeek Flash + 主题动态 + 大盘/EODHD 宏观回退）。"""
 from __future__ import annotations
 
 import json
 import re
 import threading
-from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+import time
+from datetime import date
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from flask import current_app
@@ -15,6 +16,10 @@ from app.services.investment import (
     save_milestone_importance_result,
     set_milestone_importance_pending,
 )
+from app.services.milestone_market_context import (
+    build_macro_context_block,
+    format_rationale_with_basis,
+)
 from app.services.quotes import fetch_us_quotes
 from app.services.settings import get_ai_article_model
 from app.services.stock_history import fetch_daily_series
@@ -22,22 +27,33 @@ from app.services.stock_history import fetch_daily_series
 _SUMMARY_MAX = 400
 _ARTICLE_LIMIT_AFTER = 8
 _ARTICLE_LIMIT_FALLBACK = 3
+_CONTEXT_CACHE_TTL_SEC = 6 * 3600
+_SCORING_TIMEOUT_SEC = 120
 
-_SCORING_PROMPT = """你是投资主题时间线评审助手。请根据下列「节点信息」与「事件后动态」，评估该已发生事件对投资主题的重要性。
+_CONTEXT_CACHE: Dict[Tuple[int, int], Tuple[float, Dict[str, Any]]] = {}
+_CONTEXT_CACHE_LOCK = threading.Lock()
 
-评分标准（0–10，保留一位小数）：
-- 9–10：主题逻辑的关键验证/转折，动态与事件高度一致且影响大
+_SCORING_PROMPT = """你是投资主题时间线评审助手。请评估「已发生事件」对该投资主题的重要性（0–10，一位小数）。
+
+上下文含：主题信息、节点、主题内文章、主题标的涨跌、大盘指数（SPY/QQQ）、EODHD 新闻与宏观日历。
+注意 evidence_hint 字段：
+- theme_rich：优先用主题文章与主题标的评估
+- macro_or_sparse：主题内证据偏少或节点偏宏观，必须结合 market_dynamics、external_news、economic_events 评估对主题的间接影响（风险偏好、波动、板块分化等），并联系主题描述（如波段机会→波动与趋势环境）
+
+评分标准：
+- 9–10：主题逻辑的关键验证/转折，或宏观/大盘变化对主题高度相关且影响大
 - 7–8：明显影响仓位或观点，有较充分事后证据
-- 4–6：有一定参考价值但影响有限，或证据不充分
-- 0–3：与主题关联弱、已被证伪或几乎无增量信息
+- 4–6：有一定参考价值但影响有限
+- 0–3：与主题关联弱或几乎无增量信息
 
 要求：
-1. 只依据上下文中提供的信息，禁止编造行情、财报或新闻
-2. 若动态信息不足，给 4–6 分并在 rationale 中说明「证据不足」
-3. 仅返回 JSON，不要 markdown
+1. 只依据上下文中提供的信息，禁止编造行情、数据或新闻
+2. 当 evidence_hint 为 macro_or_sparse 时，禁止仅以「无具体数值、无法评估、证据不足」收尾；应写明「主题内证据有限」，并引用标普/纳指涨跌幅或新闻/日历要点
+3. 若新闻与日历为空，可主要依据 market_dynamics，并说明缺少事件细节解读
+4. 仅返回 JSON，不要 markdown
 
 JSON 格式：
-{{"importance_score": 7.5, "rationale": "不超过80字的中文理由"}}
+{{"importance_score": 7.5, "rationale": "不超过80字的中文理由", "scoring_basis": "theme 或 market 或 mixed"}}
 
 上下文：
 {context_json}
@@ -90,6 +106,34 @@ def _price_on_or_before(series: List[Dict[str, Any]], target_date: str) -> Optio
     return price
 
 
+def invalidate_scoring_context_cache(theme_id: int, milestone_id: int) -> None:
+    with _CONTEXT_CACHE_LOCK:
+        _CONTEXT_CACHE.pop((theme_id, milestone_id), None)
+
+
+def _read_scoring_context_cache(theme_id: int, milestone_id: int) -> Dict[str, Any] | None:
+    key = (theme_id, milestone_id)
+    now = time.time()
+    with _CONTEXT_CACHE_LOCK:
+        entry = _CONTEXT_CACHE.get(key)
+        if not entry:
+            return None
+        cached_at, payload = entry
+        if now - cached_at > _CONTEXT_CACHE_TTL_SEC:
+            _CONTEXT_CACHE.pop(key, None)
+            return None
+        return payload
+
+
+def _write_scoring_context_cache(
+    theme_id: int,
+    milestone_id: int,
+    payload: Dict[str, Any],
+) -> None:
+    with _CONTEXT_CACHE_LOCK:
+        _CONTEXT_CACHE[(theme_id, milestone_id)] = (time.time(), payload)
+
+
 def _build_price_dynamics(theme_id: int, event_date: str) -> List[Dict[str, Any]]:
     from app.database import get_db
 
@@ -122,7 +166,17 @@ def _build_price_dynamics(theme_id: int, event_date: str) -> List[Dict[str, Any]
     return result
 
 
-def build_scoring_context(theme_id: int, milestone_id: int) -> Dict[str, Any] | None:
+def build_scoring_context(
+    theme_id: int,
+    milestone_id: int,
+    *,
+    use_cache: bool = True,
+) -> Dict[str, Any] | None:
+    if use_cache:
+        cached = _read_scoring_context_cache(theme_id, milestone_id)
+        if cached:
+            return cached
+
     from app.database import get_db
 
     milestone = fetch_milestone_by_id(theme_id, milestone_id)
@@ -181,7 +235,14 @@ def build_scoring_context(theme_id: int, milestone_id: int) -> Dict[str, Any] | 
     except ValueError:
         days_since = None
 
-    return {
+    macro_block = build_macro_context_block(
+        event_date=event_date,
+        milestone_description=milestone["description"],
+        theme_title=theme["title"],
+        articles=articles_payload,
+    )
+
+    context = {
         "theme": {
             "title": theme["title"],
             "description": _truncate(theme["description"] or "", 500),
@@ -195,8 +256,11 @@ def build_scoring_context(theme_id: int, milestone_id: int) -> Dict[str, Any] | 
         },
         "articles": articles_payload,
         "price_dynamics": _build_price_dynamics(theme_id, event_date),
+        **macro_block,
         "as_of": today,
     }
+    _write_scoring_context_cache(theme_id, milestone_id, context)
+    return context
 
 
 def score_milestone_importance(theme_id: int, milestone_id: int) -> Dict[str, Any]:
@@ -217,7 +281,8 @@ def score_milestone_importance(theme_id: int, milestone_id: int) -> Dict[str, An
     if not milestone.get("is_completed"):
         return {"error": "仅对已发生节点评分"}
 
-    context = build_scoring_context(theme_id, milestone_id)
+    invalidate_scoring_context_cache(theme_id, milestone_id)
+    context = build_scoring_context(theme_id, milestone_id, use_cache=False)
     if not context:
         return {"error": "无法构建评分上下文"}
 
@@ -246,7 +311,7 @@ def score_milestone_importance(theme_id: int, milestone_id: int) -> Dict[str, An
                 "stream": False,
             },
             proxies=proxies,
-            timeout=90,
+            timeout=_SCORING_TIMEOUT_SEC,
         )
     except requests.RequestException as exc:
         save_milestone_importance_result(
@@ -313,7 +378,10 @@ def score_milestone_importance(theme_id: int, milestone_id: int) -> Dict[str, An
         return {"error": "AI 返回不是有效 JSON"}
 
     score = clamp_importance_score(parsed.get("importance_score"))
-    rationale = str(parsed.get("rationale") or "").strip()
+    rationale = format_rationale_with_basis(
+        str(parsed.get("rationale") or "").strip(),
+        str(parsed.get("scoring_basis") or "").strip(),
+    )
     if score is None:
         save_milestone_importance_result(
             theme_id,

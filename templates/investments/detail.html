@@ -13,8 +13,144 @@
     background: #e3fcef; color: #006644;
     padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;
   }
-  .assistant-move-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .assistant-move-form select { padding: 8px 12px; border: 2px solid #dfe1e6; border-radius: 4px; font-size: 13px; min-width: 160px; }
+  .detail-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .theme-toolbar {
+    display: inline-flex;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 6px;
+    background: linear-gradient(180deg, #fafbfc 0%, #f4f5f7 100%);
+    border: 1px solid #dfe1e6;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(9, 30, 66, 0.06);
+  }
+  .theme-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border: 1px solid #b3d4ff;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #fff 0%, #f4f9ff 100%);
+    color: #0052cc;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+  }
+  .theme-edit-btn:hover {
+    border-color: #0052cc;
+    box-shadow: 0 4px 12px rgba(0, 82, 204, 0.12);
+    transform: translateY(-1px);
+  }
+  .theme-edit-btn-icon {
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: #deebff;
+    font-size: 11px;
+    line-height: 1;
+  }
+  .assistant-move-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 4px 4px 4px 8px;
+    border-left: 1px solid #ebecf0;
+  }
+  .assistant-move-form label {
+    font-size: 11px;
+    color: #6b778c;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .assistant-move-form select {
+    padding: 9px 12px;
+    border: 1px solid #dfe1e6;
+    border-radius: 10px;
+    font-size: 13px;
+    min-width: 148px;
+    background: #fff;
+    color: #172b4d;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .assistant-move-form select:focus {
+    outline: none;
+    border-color: #4c9aff;
+    box-shadow: 0 0 0 3px rgba(76, 154, 255, 0.2);
+  }
+  .theme-save-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #1f6f5f 0%, #185a4d 100%);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(31, 111, 95, 0.25);
+    transition: transform 0.12s, box-shadow 0.15s;
+  }
+  .theme-save-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(31, 111, 95, 0.28);
+  }
+  .theme-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid #ebecf0;
+  }
+  .theme-modal-save-btn {
+    min-width: 108px;
+    padding: 11px 20px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #1f6f5f 0%, #185a4d 100%);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(31, 111, 95, 0.28);
+    transition: transform 0.12s, box-shadow 0.15s;
+  }
+  .theme-modal-save-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(31, 111, 95, 0.32);
+  }
+  .theme-modal-cancel-btn {
+    padding: 11px 18px;
+    border: 1px solid #dfe1e6;
+    border-radius: 10px;
+    background: #fff;
+    color: #5e6c84;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .theme-modal-cancel-btn:hover {
+    background: #fafbfc;
+    border-color: #c1c7d0;
+  }
+  .danger-btn {
+    background: #fff; color: #de350b; border: 1px solid #de350b; padding: 8px 14px;
+    border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;
+    transition: background 0.15s, box-shadow 0.15s;
+  }
+  .danger-btn:hover { background: #ffebe6; }
 
   .dashboard-grid {
     display: grid;
@@ -66,12 +202,6 @@
   .theme-score-badge.positive { background: #e3fcef; color: #006644; }
   .theme-score-badge.negative { background: #ffebe6; color: #bf2600; }
   .theme-score-badge.neutral { background: #f4f5f7; color: #5e6c84; }
-  .detail-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .danger-btn {
-    background: #fff; color: #de350b; border: 1px solid #de350b; padding: 8px 14px;
-    border-radius: 4px; cursor: pointer; font-size: 13px;
-  }
-  .danger-btn:hover { background: #ffebe6; }
 
   /* 文章列表样式 */
   .articles-panel-body {
@@ -372,7 +502,7 @@
           <label>事件描述</label>
           <textarea name="description" rows="2" placeholder="例如：美联储议息会议决议公布" required></textarea>
         </div>
-        <p class="milestone-range-hint" style="margin: 0;">标记为「已发生」后将由 AI 根据最新资讯与行情评估重要性（0–10）。</p>
+        <p class="milestone-range-hint" style="margin: 0;">标记为「已发生」后将由 AI 评估重要性（0–10）；主题内证据不足时会参考标普/纳指与 EODHD 宏观资讯。</p>
       </div>
       <div class="modal-form-actions">
         <button type="button" class="secondary-btn" onclick="document.getElementById('addMilestoneModal').style.display='none'">取消</button>
@@ -689,9 +819,10 @@
 </div>
 
 <div id="editThemeModal" class="modal-overlay">
-  <div class="modal-content">
+  <div class="modal-content modal-form">
     <button class="modal-close" onclick="document.getElementById('editThemeModal').style.display='none'">✕</button>
-    <h3 style="margin-top: 0; margin-bottom: 20px;">编辑投资主题</h3>
+    <h3 class="modal-form-title">编辑投资主题</h3>
+    <p class="modal-form-subtitle">修改标题与描述，保存后立即生效。</p>
     <form action="{{ url_for('investments.edit_theme', theme_id=theme.id) }}" method="POST">
       <div class="form-group">
         <label>主题标题</label>
@@ -701,9 +832,9 @@
         <label>描述</label>
         <textarea name="description" rows="4">{{ theme.description or '' }}</textarea>
       </div>
-      <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
-        <button type="button" class="secondary-btn" onclick="document.getElementById('editThemeModal').style.display='none'">取消</button>
-        <button type="submit" class="primary-btn">保存</button>
+      <div class="theme-modal-actions">
+        <button type="button" class="theme-modal-cancel-btn" onclick="document.getElementById('editThemeModal').style.display='none'">取消</button>
+        <button type="submit" class="theme-modal-save-btn">保存主题</button>
       </div>
     </form>
   </div>
@@ -739,18 +870,23 @@
       {% endif %}
     </div>
     <div class="detail-actions">
-      <button type="button" class="secondary-btn" onclick="document.getElementById('editThemeModal').style.display='flex'">编辑</button>
-      <form class="assistant-move-form" method="post" action="{{ url_for('investments.move_assistant', theme_id=theme.id) }}">
-        <label style="font-size: 12px; color: #5e6c84; font-weight: bold;">移至助手</label>
-        <select name="assistant_id" required>
-          {% for assistant in assistants %}
-          <option value="{{ assistant.id }}" {% if assistant.id == theme.assistant_id %}selected{% endif %}>
-            {{ assistant.name }}
-          </option>
-          {% endfor %}
-        </select>
-        <button type="submit" class="secondary-btn">保存</button>
-      </form>
+      <div class="theme-toolbar">
+        <button type="button" class="theme-edit-btn" onclick="document.getElementById('editThemeModal').style.display='flex'">
+          <span class="theme-edit-btn-icon" aria-hidden="true">✎</span>
+          编辑主题
+        </button>
+        <form class="assistant-move-form" method="post" action="{{ url_for('investments.move_assistant', theme_id=theme.id) }}">
+          <label for="assistantMoveSelect">移至助手</label>
+          <select id="assistantMoveSelect" name="assistant_id" required>
+            {% for assistant in assistants %}
+            <option value="{{ assistant.id }}" {% if assistant.id == theme.assistant_id %}selected{% endif %}>
+              {{ assistant.name }}
+            </option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="theme-save-btn">保存</button>
+        </form>
+      </div>
       <form method="post" action="{{ url_for('investments.archive_theme_route', theme_id=theme.id) }}"
         onsubmit="return confirm('确定移入回收站？主题将永久封存：停止一切飞书提醒，标的不再出现在走势/财报中，数据仅可只读查阅，不可恢复。');">
         <button type="submit" class="danger-btn">移入回收站</button>
