@@ -113,6 +113,10 @@
         <button type="submit" class="primary-btn">保存配置</button>
       </div>
     </form>
+    <p class="hint" style="margin-top: 16px;">
+      美股价位飞书提醒的重复间隔与全局告警列表，请前往
+      <a href="{{ url_for('investments.price_alerts') }}">价位告警管理</a> 页面配置。
+    </p>
   </section>
 </main>
 {% endblock %}

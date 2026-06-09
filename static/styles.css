@@ -160,6 +160,10 @@ canvas {
   background: linear-gradient(145deg, #5f7fd8 0%, #3957b8 100%);
 }
 
+.nav-icon-btn--alerts .nav-icon-glyph {
+  background: linear-gradient(145deg, #e8885f 0%, #c45a28 100%);
+}
+
 .nav-icon-btn--earnings .nav-icon-glyph {
   background: linear-gradient(145deg, #c9a227 0%, #9a7b0a 100%);
 }

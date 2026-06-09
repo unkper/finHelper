@@ -7,8 +7,7 @@ from app.services.notification import (
     CollectResult,
 )
 from app.services.quotes import fetch_us_quotes
-
-ALERT_COOLDOWN_HOURS = 12
+from app.services.settings import get_price_alert_cooldown_hours
 
 
 def _alert_is_due(last_triggered_at: str | None) -> bool:
@@ -18,7 +17,8 @@ def _alert_is_due(last_triggered_at: str | None) -> bool:
         last = datetime.fromisoformat(last_triggered_at)
     except ValueError:
         return True
-    return datetime.now() - last >= timedelta(hours=ALERT_COOLDOWN_HOURS)
+    cooldown = get_price_alert_cooldown_hours()
+    return datetime.now() - last >= timedelta(hours=cooldown)
 
 
 def _price_reached(current: float, target: float, direction: str) -> bool:
@@ -60,6 +60,7 @@ def collect_price_alerts() -> CollectResult:
         print("价格监控：未获取到行情，跳过本轮检查。")
         return CollectResult()
 
+    cooldown_hours = get_price_alert_cooldown_hours()
     events: list[AlertEvent] = []
     pending_updates: list[tuple[str, int]] = []
     now_iso = datetime.now().isoformat(timespec="seconds")
@@ -79,7 +80,7 @@ def collect_price_alerts() -> CollectResult:
             f"💰 现价：${current:.2f}\n"
             f"🎯 触发：{_direction_label(row['direction'])} ${row['target_price']:.2f}\n"
             f"{note_line}"
-            f"⏳ 12 小时内不再重复提醒此价位"
+            f"⏳ {cooldown_hours} 小时内不再重复提醒此价位"
         )
         events.append(
             AlertEvent(

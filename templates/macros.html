@@ -80,6 +80,20 @@
 
       </svg>
 
+      {% elif icon == 'alerts' %}
+
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+
+        <path d="M12 2v4"/>
+
+        <circle cx="12" cy="14" r="6"/>
+
+        <path d="M12 10v4"/>
+
+        <path d="M9 20h6"/>
+
+      </svg>
+
       {% elif icon == 'earnings' %}
 
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -137,6 +151,8 @@
   {{ nav_icon(url_for('investments.index'), '投资', 'investments', ['investments.index', 'investments.detail']) }}
 
   {{ nav_icon(url_for('investments.stocks'), '行情', 'stocks', ['investments.stocks']) }}
+
+  {{ nav_icon(url_for('investments.price_alerts'), '告警', 'alerts', ['investments.price_alerts']) }}
 
   {{ nav_icon(url_for('investments.research'), '投研', 'earnings', ['investments.research', 'investments.research_report_detail', 'investments.earnings']) }}
 

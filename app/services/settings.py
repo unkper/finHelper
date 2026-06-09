@@ -10,12 +10,14 @@ EARNINGS_REMIND_DAYS_BEFORE_KEY = "earnings_remind_days_before"
 EARNINGS_REMIND_ENABLED_KEY = "earnings_remind_enabled"
 AI_ARTICLE_MODEL_KEY = "ai_article_model"
 AI_FINANCIAL_PARSE_MODEL_KEY = "ai_financial_parse_model"
+PRICE_ALERT_COOLDOWN_HOURS_KEY = "price_alert_cooldown_hours"
 ALLOWED_AI_ARTICLE_MODELS = ("deepseek-v4-flash", "deepseek-v4-pro")
 DEFAULT_AI_ARTICLE_MODEL = "deepseek-v4-flash"
 DEFAULT_AI_FINANCIAL_PARSE_MODEL = "deepseek-v4-pro"
 DEFAULT_MONITOR_INTERVAL = 1
 DEFAULT_QUOTE_CACHE_MINUTES = 5
 DEFAULT_HISTORY_CACHE_HOURS = 12
+DEFAULT_PRICE_ALERT_COOLDOWN_HOURS = 12
 DEFAULT_EARNINGS_HORIZON_DAYS = 30
 DEFAULT_EARNINGS_REMIND_DAYS_BEFORE = 3
 MIN_EARNINGS_HORIZON_DAYS = 7
@@ -28,6 +30,8 @@ MIN_QUOTE_CACHE_MINUTES = 1
 MAX_QUOTE_CACHE_MINUTES = 120
 MIN_HISTORY_CACHE_HOURS = 1
 MAX_HISTORY_CACHE_HOURS = 168
+MIN_PRICE_ALERT_COOLDOWN_HOURS = 1
+MAX_PRICE_ALERT_COOLDOWN_HOURS = 168
 
 
 def ensure_default_settings() -> None:
@@ -43,6 +47,7 @@ def ensure_default_settings() -> None:
         (EARNINGS_REMIND_ENABLED_KEY, "1"),
         (AI_ARTICLE_MODEL_KEY, DEFAULT_AI_ARTICLE_MODEL),
         (AI_FINANCIAL_PARSE_MODEL_KEY, DEFAULT_AI_FINANCIAL_PARSE_MODEL),
+        (PRICE_ALERT_COOLDOWN_HOURS_KEY, str(DEFAULT_PRICE_ALERT_COOLDOWN_HOURS)),
     )
     for key, value in defaults:
         db.execute(
@@ -227,3 +232,31 @@ def get_ai_financial_settings() -> dict:
         "chart_insight_model": "deepseek-v4-flash",
         "allowed_models": list(ALLOWED_AI_ARTICLE_MODELS),
     }
+
+
+def get_price_alert_cooldown_hours() -> int:
+    raw = get_setting(
+        PRICE_ALERT_COOLDOWN_HOURS_KEY,
+        str(DEFAULT_PRICE_ALERT_COOLDOWN_HOURS),
+    )
+    try:
+        hours = int(raw)
+    except ValueError:
+        hours = DEFAULT_PRICE_ALERT_COOLDOWN_HOURS
+    return max(
+        MIN_PRICE_ALERT_COOLDOWN_HOURS,
+        min(MAX_PRICE_ALERT_COOLDOWN_HOURS, hours),
+    )
+
+
+def set_price_alert_cooldown_hours(hours: int) -> int:
+    clamped = max(
+        MIN_PRICE_ALERT_COOLDOWN_HOURS,
+        min(MAX_PRICE_ALERT_COOLDOWN_HOURS, int(hours)),
+    )
+    set_setting(PRICE_ALERT_COOLDOWN_HOURS_KEY, str(clamped))
+    return clamped
+
+
+def get_price_alert_settings() -> dict:
+    return {"cooldown_hours": get_price_alert_cooldown_hours()}

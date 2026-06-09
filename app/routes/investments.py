@@ -29,6 +29,9 @@ from app.services.settings import (
     set_earnings_horizon_days,
     set_earnings_remind_days_before,
     set_earnings_remind_enabled,
+    get_price_alert_settings,
+    set_price_alert_cooldown_hours,
+    get_ai_financial_parse_model,
 )
 from app.services.earnings_calendar import (
     build_earnings_payload,
@@ -36,6 +39,10 @@ from app.services.earnings_calendar import (
     is_earnings_api_configured,
 )
 from app.services.stock_charts import build_stock_chart_payload
+from app.services.price_alerts import (
+    build_price_alerts_payload,
+    delete_price_alerts,
+)
 from app.services.rate_limit import consume_rate_limit, get_client_ip
 from app.services.article_ai import extract_from_article, has_article_ai_configured
 from app.services.features import is_earnings_enabled
@@ -73,7 +80,6 @@ from app.services.financial_narrative import (
     generate_narrative,
     get_cached_narrative,
 )
-from app.services.settings import get_ai_financial_parse_model
 from app.scheduler_setup import configure_monitor_jobs
 
 bp = Blueprint('investments', __name__, url_prefix='/investments')
@@ -129,6 +135,66 @@ def stocks_chart_data():
             query=query,
         )
     )
+
+
+@bp.route('/price-alerts')
+def price_alerts():
+    return render_template(
+        "investments/price_alerts.html",
+        price_alert_settings=get_price_alert_settings(),
+    )
+
+
+@bp.route('/price-alerts/api/list')
+def price_alerts_list_api():
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"price-alerts-list:{ip}", max_calls=60, window_seconds=60
+    )
+    if not allowed:
+        return jsonify({"error": "请求过于频繁", "retry_after": retry_after}), 429
+
+    query = (request.args.get("q") or "").strip() or None
+    theme_id_raw = request.args.get("theme_id")
+    theme_id = int(theme_id_raw) if theme_id_raw and theme_id_raw.isdigit() else None
+    return jsonify(build_price_alerts_payload(query=query, theme_id=theme_id))
+
+
+@bp.route('/price-alerts/api/settings', methods=['POST'])
+def price_alerts_settings_api():
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"price-alerts-settings:{ip}", max_calls=10, window_seconds=60
+    )
+    if not allowed:
+        return jsonify({"error": "请求过于频繁", "retry_after": retry_after}), 429
+
+    data = request.get_json(silent=True) or request.form
+    try:
+        hours = int(data.get("cooldown_hours", 12))
+    except (TypeError, ValueError):
+        return jsonify({"error": "重复间隔必须是整数小时"}), 400
+
+    cooldown = set_price_alert_cooldown_hours(hours)
+    return jsonify({"status": "ok", "settings": {"cooldown_hours": cooldown}})
+
+
+@bp.route('/price-alerts/api/delete', methods=['POST'])
+def price_alerts_delete_api():
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"price-alerts-delete:{ip}", max_calls=30, window_seconds=60
+    )
+    if not allowed:
+        return jsonify({"error": "请求过于频繁", "retry_after": retry_after}), 429
+
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get("alert_ids") or []
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return jsonify({"error": "请选择要删除的告警"}), 400
+
+    deleted = delete_price_alerts(raw_ids)
+    return jsonify({"status": "ok", "deleted": deleted})
 
 
 @bp.route('/api/macd-alerts', methods=['POST'])
