@@ -650,17 +650,20 @@ def delete_theme_article(theme_id, article_id):
     return row["title"]
 
 
-def add_theme_article(theme_id, title, url=None, summary=None):
+def add_theme_article(theme_id, title, url=None, summary=None, ai_summary=None):
     """为主题添加研报/资讯文章"""
     db = get_db()
     db.execute(
-        "INSERT INTO theme_articles (theme_id, title, url, summary) VALUES (?, ?, ?, ?)",
-        (theme_id, title, url or None, summary or None)
+        """
+        INSERT INTO theme_articles (theme_id, title, url, summary, ai_summary)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (theme_id, title, url or None, summary or None, ai_summary or None),
     )
     db.commit()
 
 
-def update_theme_article(theme_id, article_id, title, url=None, summary=None):
+def update_theme_article(theme_id, article_id, title, url=None, summary=None, ai_summary=None):
     """更新主题下的研报/资讯文章。"""
     db = get_db()
     row = db.execute(
@@ -671,10 +674,11 @@ def update_theme_article(theme_id, article_id, title, url=None, summary=None):
         return False
     db.execute(
         """
-        UPDATE theme_articles SET title = ?, url = ?, summary = ?
+        UPDATE theme_articles
+        SET title = ?, url = ?, summary = ?, ai_summary = ?
         WHERE id = ? AND theme_id = ?
         """,
-        (title, url or None, summary or None, article_id, theme_id),
+        (title, url or None, summary or None, ai_summary or None, article_id, theme_id),
     )
     db.execute(
         "UPDATE themes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -682,6 +686,38 @@ def update_theme_article(theme_id, article_id, title, url=None, summary=None):
     )
     db.commit()
     return True
+
+
+def update_theme_article_ai_summary(theme_id, article_id, ai_summary):
+    """仅更新主题下文章的 AI 归纳字段，不修改原文 summary。"""
+    db = get_db()
+    row = db.execute(
+        "SELECT id FROM theme_articles WHERE id = ? AND theme_id = ?",
+        (article_id, theme_id),
+    ).fetchone()
+    if not row:
+        return None
+    db.execute(
+        """
+        UPDATE theme_articles
+        SET ai_summary = ?, ai_summarized_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND theme_id = ?
+        """,
+        (ai_summary or None, article_id, theme_id),
+    )
+    db.execute(
+        "UPDATE themes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (theme_id,),
+    )
+    db.commit()
+    saved = db.execute(
+        """
+        SELECT ai_summary, ai_summarized_at FROM theme_articles
+        WHERE id = ? AND theme_id = ?
+        """,
+        (article_id, theme_id),
+    ).fetchone()
+    return dict(saved) if saved else None
 
 
 def serialize_asset_for_edit(asset: dict) -> dict:

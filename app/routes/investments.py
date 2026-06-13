@@ -10,7 +10,7 @@ from app.services.investment import (
     move_theme_to_assistant, archive_theme, update_theme,
     fetch_archived_themes, fetch_archived_theme_by_id, count_archived_themes,
     add_theme_asset, add_theme_milestone, update_theme_milestone, add_theme_article,
-    update_theme_article, update_theme_asset_monitoring,
+    update_theme_article, update_theme_article_ai_summary, update_theme_asset_monitoring,
     delete_theme_milestone, delete_theme_asset, delete_theme_article,
     build_milestone_index, serialize_asset_for_edit, fetch_milestone_by_id,
     set_milestone_importance_pending,
@@ -44,7 +44,7 @@ from app.services.price_alerts import (
     delete_price_alerts,
 )
 from app.services.rate_limit import consume_rate_limit, get_client_ip
-from app.services.article_ai import extract_from_article, has_article_ai_configured
+from app.services.article_ai import extract_from_article, has_article_ai_configured, summarize_article
 from app.services.features import is_earnings_enabled
 from app.services.financial_reports import (
     PARSE_STATUS_AI,
@@ -1225,11 +1225,12 @@ def add_article(theme_id):
     title = request.form.get('title', '').strip()
     url = request.form.get('url', '').strip()
     summary = request.form.get('summary', '').strip()
+    ai_summary = request.form.get('ai_summary', '').strip() or None
 
     if not title:
         flash("文章标题不能为空", "error")
     else:
-        add_theme_article(theme_id, title, url, summary)
+        add_theme_article(theme_id, title, url, summary, ai_summary)
         flash("文章已添加", "success")
 
     return redirect(url_for('investments.detail', theme_id=theme_id))
@@ -1244,12 +1245,13 @@ def edit_article(theme_id, article_id):
     title = request.form.get('title', '').strip()
     url = request.form.get('url', '').strip()
     summary = request.form.get('summary', '').strip()
+    ai_summary = request.form.get('ai_summary', '').strip() or None
 
     if not title:
         flash("文章标题不能为空", "error")
         return redirect(url_for('investments.detail', theme_id=theme_id))
 
-    if update_theme_article(theme_id, article_id, title, url, summary):
+    if update_theme_article(theme_id, article_id, title, url, summary, ai_summary):
         flash("文章已更新", "success")
     else:
         flash("文章不存在或已删除", "error")
@@ -1373,6 +1375,120 @@ def ai_analyze_article(theme_id, article_id):
 
     result["article_id"] = article_id
     return jsonify(result)
+
+
+def _check_article_summarize_allowed():
+    """校验 AI 归纳是否可用；通过返回 None，否则返回 (response, status_code)。"""
+    if not has_article_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY，请在 .env 中设置"}), 503
+
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"article-ai-summarize:{ip}", max_calls=15, window_seconds=3600
+    )
+    if not allowed:
+        return jsonify({
+            "error": "AI 归纳请求过于频繁，请稍后再试",
+            "retry_after": retry_after,
+        }), 429
+    return None
+
+
+@bp.route('/<int:theme_id>/articles/<int:article_id>/ai-summarize', methods=['POST'])
+def ai_summarize_article(theme_id, article_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return jsonify({"error": "主题已封存或不存在"}), 403
+
+    data = request.get_json(silent=True) or {}
+    regenerate = request.args.get("regenerate", "").lower() in ("1", "true", "yes")
+    if not regenerate and "regenerate" in data:
+        regenerate = bool(data.get("regenerate"))
+
+    article = _fetch_theme_article(theme_id, article_id)
+    if not article:
+        return jsonify({"error": "文章不存在"}), 404
+
+    original = (article["summary"] or "").strip()
+    if not original:
+        return jsonify({"error": "请先填写文章摘要后再进行 AI 归纳"}), 400
+
+    cached_ai = (article["ai_summary"] or "").strip()
+    if not regenerate and cached_ai:
+        return jsonify({
+            "article_id": article_id,
+            "original_summary": original,
+            "refined_summary": cached_ai,
+            "ai_summary": cached_ai,
+            "cached": True,
+        })
+
+    blocked = _check_article_summarize_allowed()
+    if blocked:
+        return blocked
+
+    result = summarize_article(article["title"], original)
+    if result.get("error"):
+        status = 400 if "请先填写" in result["error"] else 502
+        return jsonify({"error": result["error"]}), status
+
+    return jsonify({
+        "article_id": article_id,
+        "original_summary": original,
+        "refined_summary": result["summary"],
+        "ai_summary": result["summary"],
+        "cached": False,
+    })
+
+
+@bp.route('/<int:theme_id>/articles/<int:article_id>/apply-summary', methods=['POST'])
+def apply_article_summary(theme_id, article_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return jsonify({"error": "主题已封存或不存在"}), 403
+
+    data = request.get_json(silent=True) or {}
+    ai_summary = (data.get("ai_summary") or data.get("summary") or "").strip()
+    if not ai_summary:
+        return jsonify({"error": "AI 归纳内容不能为空"}), 400
+
+    saved = update_theme_article_ai_summary(theme_id, article_id, ai_summary)
+    if not saved:
+        return jsonify({"error": "文章不存在"}), 404
+
+    return jsonify({
+        "status": "ok",
+        "article_id": article_id,
+        "ai_summary": saved.get("ai_summary"),
+        "ai_summarized_at": saved.get("ai_summarized_at"),
+    })
+
+
+@bp.route('/<int:theme_id>/articles/ai-summarize-draft', methods=['POST'])
+def ai_summarize_article_draft(theme_id):
+    _, block = _require_active_theme(theme_id)
+    if block:
+        return jsonify({"error": "主题已封存或不存在"}), 403
+
+    blocked = _check_article_summarize_allowed()
+    if blocked:
+        return blocked
+
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    original = (data.get("summary") or "").strip()
+    if not original:
+        return jsonify({"error": "请先填写文章摘要后再进行 AI 归纳"}), 400
+
+    result = summarize_article(title, original)
+    if result.get("error"):
+        status = 400 if "请先填写" in result["error"] else 502
+        return jsonify({"error": result["error"]}), status
+
+    return jsonify({
+        "original_summary": original,
+        "refined_summary": result["summary"],
+    })
 
 
 @bp.route('/<int:theme_id>/ai-confirm/milestone', methods=['POST'])

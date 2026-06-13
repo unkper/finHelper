@@ -58,6 +58,21 @@ JSON 格式：
 {summary}
 """
 
+_SUMMARIZE_PROMPT = """你是一名资深美股投研助手。请将以下研报/资讯摘要精炼为便于快速阅读的归纳总结。
+
+要求：
+1. 使用中文，总长度约 150–400 字
+2. 以 2–4 条要点呈现（每条以「- 」开头），突出核心观点、关键数据、重要日期、相关美股 ticker 与价位
+3. 保留原文中的事实与数字，不编造、不臆测
+4. 去掉冗余、重复与无关铺垫，语言简洁专业
+5. 仅输出归纳正文，不要标题、前言或 markdown 代码块
+
+标题：{title}
+
+原文摘要：
+{summary}
+"""
+
 
 def _build_extraction_prompt(title: str, summary: str) -> str:
     today = date.today()
@@ -65,6 +80,13 @@ def _build_extraction_prompt(title: str, summary: str) -> str:
         current_date=today.isoformat(),
         current_date_cn=f"{today.year}年{today.month}月{today.day}日",
         current_year=today.year,
+        title=(title or "").strip() or "（无标题）",
+        summary=(summary or "").strip(),
+    )
+
+
+def _build_summarize_prompt(title: str, summary: str) -> str:
+    return _SUMMARIZE_PROMPT.format(
         title=(title or "").strip() or "（无标题）",
         summary=(summary or "").strip(),
     )
@@ -264,3 +286,24 @@ def extract_from_article(title: str, summary: str) -> Dict[str, Any]:
         "milestones": milestones,
         "assets": assets,
     }
+
+
+def summarize_article(title: str, summary: str) -> Dict[str, Any]:
+    """调用 DeepSeek 将研报/资讯摘要精炼为结构化短摘要。"""
+    if not has_article_ai_configured():
+        return {"error": "未配置 DEEPSEEK_API_KEY，请在 .env 中设置"}
+
+    text = (summary or "").strip()
+    if not text:
+        return {"error": "请先填写文章摘要后再进行 AI 归纳"}
+
+    prompt = _build_summarize_prompt(title, text)
+    result = _call_deepseek_chat(prompt)
+    if result.get("error"):
+        return {"error": result["error"]}
+
+    refined = (result.get("content") or "").strip()
+    if not refined:
+        return {"error": "AI 未返回有效归纳内容，请稍后重试"}
+
+    return {"summary": refined}

@@ -453,6 +453,13 @@ def migrate_db(conn: sqlite3.Connection) -> None:
         if "importance_error" not in milestone_columns:
             conn.execute("ALTER TABLE theme_milestones ADD COLUMN importance_error TEXT")
 
+    article_columns = {row["name"] for row in conn.execute("PRAGMA table_info(theme_articles)")}
+    if article_columns:
+        if "ai_summary" not in article_columns:
+            conn.execute("ALTER TABLE theme_articles ADD COLUMN ai_summary TEXT")
+        if "ai_summarized_at" not in article_columns:
+            conn.execute("ALTER TABLE theme_articles ADD COLUMN ai_summarized_at TEXT")
+
     alert_columns = {row["name"] for row in conn.execute("PRAGMA table_info(theme_asset_price_alerts)")}
     if alert_columns and "alert_type" not in alert_columns:
         conn.execute(

@@ -237,15 +237,32 @@
   }
   .article-item-title.is-link:hover { text-decoration: underline; }
   .article-summary-preview {
-    font-size: 12px;
+    font-size: 13px;
     color: #5e6c84;
     margin: 6px 0 0;
-    line-height: 1.5;
+    line-height: 1.55;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    white-space: pre-wrap;
+  }
+  .article-summary-preview .article-readable-content.is-compact {
+    display: inline;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+  }
+  .article-summary-preview .article-readable-content.is-compact ul,
+  .article-summary-preview .article-readable-content.is-compact p {
+    display: inline;
+    margin: 0;
+    padding: 0;
+  }
+  .article-summary-preview .article-readable-content.is-compact li {
+    display: inline;
+  }
+  .article-summary-preview .article-readable-content.is-compact li::before {
+    content: '· ';
   }
   .article-item-actions {
     display: flex;
@@ -254,27 +271,32 @@
     flex-shrink: 0;
     margin-top: 2px;
   }
-  .modal-content.modal-article { width: min(640px, 92vw); max-height: 85vh; display: flex; flex-direction: column; }
+  .modal-content.modal-article {
+    width: min(640px, 92vw);
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
   .article-detail-title {
     margin: 0 48px 12px 0;
     font-size: 18px;
     line-height: 1.4;
     color: #172b4d;
+    flex-shrink: 0;
   }
-  .article-detail-meta { margin-bottom: 16px; }
+  .article-detail-meta { margin-bottom: 12px; flex-shrink: 0; }
   .article-detail-link {
     font-size: 13px;
     color: #0052cc;
     word-break: break-all;
   }
-  .article-detail-body {
+  .article-detail-scroll {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    font-size: 14px;
-    line-height: 1.65;
-    color: #172b4d;
-    white-space: pre-wrap;
-    margin: 0;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 2px;
   }
   .article-detail-empty {
     font-size: 13px;
@@ -288,6 +310,203 @@
     margin-top: 16px;
     padding-top: 16px;
     border-top: 1px solid #ebecf0;
+    flex-shrink: 0;
+  }
+  .article-readable-content {
+    font-size: clamp(14px, 3.6vw, 15px);
+    line-height: 1.7;
+    color: #172b4d;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .article-readable-content p {
+    margin: 0;
+  }
+  .article-readable-content p + p {
+    margin-top: 0.75em;
+  }
+  .article-readable-content ul {
+    margin: 0;
+    padding-left: 1.25em;
+  }
+  .article-readable-content li + li {
+    margin-top: 0.35em;
+  }
+  .article-readable-content.is-original {
+    padding: 12px 14px;
+    background: #fff;
+    border: 1px solid #ebecf0;
+    border-radius: 8px;
+  }
+  .article-readable-content.is-ai {
+    padding: 12px 14px;
+    background: #f4f5f7;
+    border-radius: 8px;
+    border-left: 3px solid #0052cc;
+  }
+  .article-readable-content.is-compact ul {
+    padding-left: 0;
+    list-style: none;
+  }
+  .article-readable-content .article-ticker {
+    font-weight: 600;
+    color: #0052cc;
+  }
+  .article-summary-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 6px;
+  }
+  .article-summarize-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .article-summarize-tabs {
+    display: none;
+    gap: 8px;
+    margin: 12px 0 0;
+  }
+  .article-summarize-tab {
+    flex: 1;
+    border: 1px solid #dfe1e6;
+    background: #fafbfc;
+    color: #42526e;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .article-summarize-tab.is-active {
+    background: #deebff;
+    border-color: #0052cc;
+    color: #0052cc;
+  }
+  .article-summarize-block {
+    border: 1px solid #ebecf0;
+    border-radius: 8px;
+    padding: 14px;
+    background: #fafbfc;
+    min-height: 120px;
+    max-height: min(40vh, 320px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .article-summarize-block h4 {
+    margin: 0 0 10px;
+    font-size: 12px;
+    color: #6b778c;
+    font-weight: 600;
+  }
+  .article-summarize-block .article-readable-content.is-original {
+    border: none;
+    background: transparent;
+    padding: 0;
+  }
+  .article-summarize-block .article-readable-content.is-ai {
+    background: transparent;
+    border: none;
+    border-left: 3px solid #0052cc;
+    padding: 0 0 0 10px;
+    border-radius: 0;
+  }
+  .article-summarize-status {
+    font-size: 13px;
+    color: #5e6c84;
+    margin: 0 0 8px;
+    min-height: 1.2em;
+  }
+  .article-ai-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    color: #0052cc;
+    background: #deebff;
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .article-detail-section {
+    margin-bottom: 16px;
+  }
+  .article-detail-section:last-child {
+    margin-bottom: 0;
+  }
+  .article-detail-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b778c;
+    margin: 0 0 8px;
+  }
+  .edit-article-ai-preview-wrap {
+    margin: 8px 0 0;
+  }
+  .edit-article-ai-preview-wrap.empty .article-readable-content.is-ai {
+    color: #8c939f;
+    background: #fafbfc;
+    border-left-color: #dfe1e6;
+  }
+  @media (max-width: 640px) {
+    .article-item {
+      flex-direction: column;
+      gap: 8px;
+    }
+    .article-item-actions {
+      align-self: flex-start;
+      flex-wrap: wrap;
+      margin-top: 0;
+    }
+    .article-summary-preview {
+      -webkit-line-clamp: 2;
+    }
+    .modal-content.modal-article {
+      width: 100%;
+      max-height: 92vh;
+      border-radius: 12px 12px 0 0;
+    }
+    .article-detail-title {
+      font-size: 16px;
+      margin-right: 40px;
+    }
+    .article-detail-actions,
+    #articleSummarizeResult .modal-form-actions {
+      flex-wrap: wrap;
+    }
+    .article-detail-actions .primary-btn,
+    #articleSummarizeResult .modal-form-actions .primary-btn {
+      flex: 1 1 100%;
+    }
+    .article-detail-actions .secondary-btn,
+    #articleSummarizeResult .modal-form-actions .secondary-btn {
+      flex: 1 1 calc(50% - 4px);
+      min-width: calc(50% - 4px);
+    }
+    .article-summarize-tabs {
+      display: flex;
+    }
+    .article-summarize-compare {
+      grid-template-columns: 1fr;
+      margin-top: 10px;
+    }
+    .article-summarize-compare.show-ai .article-summarize-block[data-panel="original"] {
+      display: none;
+    }
+    .article-summarize-compare.show-original .article-summarize-block[data-panel="ai"] {
+      display: none;
+    }
+    .article-summarize-block {
+      max-height: min(45vh, 360px);
+    }
+  }
+  @media (min-width: 641px) {
+    .article-summarize-compare .article-summarize-block[data-panel="original"],
+    .article-summarize-compare .article-summarize-block[data-panel="ai"] {
+      display: block !important;
+    }
   }
   .ai-source-quote {
     font-size: 12px;
@@ -570,7 +789,14 @@
       </div>
       <div class="form-group">
         <label>摘要 (Summary)</label>
-        <textarea name="summary" rows="3" placeholder="核心观点、关键数据或阅读笔记"></textarea>
+        <textarea name="summary" id="addArticleSummary" rows="3" placeholder="核心观点、关键数据或阅读笔记"></textarea>
+        <div class="article-summary-actions">
+          <button type="button" class="btn-link" id="addArticleSummarizeBtn"
+            title="{% if ai_article_configured %}AI 归纳原文摘要{% else %}需配置 DEEPSEEK_API_KEY{% endif %}"
+            {% if not ai_article_configured %}disabled{% endif %}
+            onclick="ArticleSummarize.startFromAdd()">AI 归纳</button>
+        </div>
+        <input type="hidden" name="ai_summary" id="addArticleAiSummary" value="">
       </div>
       <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
         <button type="submit" class="primary-btn">确认添加</button>
@@ -595,6 +821,19 @@
       <div class="form-group">
         <label>摘要 (Summary)</label>
         <textarea name="summary" id="editArticleSummary" rows="5" placeholder="核心观点、关键数据或阅读笔记"></textarea>
+        <div class="article-summary-actions">
+          <button type="button" class="btn-link" id="editArticleSummarizeBtn"
+            title="{% if ai_article_configured %}AI 归纳原文摘要{% else %}需配置 DEEPSEEK_API_KEY{% endif %}"
+            {% if not ai_article_configured %}disabled{% endif %}
+            onclick="ArticleSummarize.startFromEdit()">AI 归纳</button>
+        </div>
+        <input type="hidden" name="ai_summary" id="editArticleAiSummary" value="">
+      </div>
+      <div class="form-group" id="editArticleAiPreviewGroup" hidden>
+        <label>AI 归纳（只读预览）</label>
+        <div class="edit-article-ai-preview-wrap" id="editArticleAiPreviewWrap">
+          <div id="editArticleAiPreview" class="article-readable-content is-ai"></div>
+        </div>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
         <button type="button" class="secondary-btn" onclick="document.getElementById('editArticleModal').style.display='none'">取消</button>
@@ -611,11 +850,57 @@
     <div class="article-detail-meta" id="articleDetailMeta" hidden>
       <a id="articleDetailLink" class="article-detail-link" href="#" target="_blank" rel="noopener noreferrer"></a>
     </div>
-    <p class="article-detail-body" id="articleDetailSummary"></p>
-    <p class="article-detail-empty" id="articleDetailEmpty" hidden>暂无摘要内容</p>
+    <div class="article-detail-scroll">
+      <div class="article-detail-section" id="articleDetailAiSection" hidden>
+        <p class="article-detail-section-title">AI 归纳</p>
+        <div id="articleDetailAiSummary" class="article-readable-content is-ai"></div>
+      </div>
+      <div class="article-detail-section" id="articleDetailOriginalSection" hidden>
+        <p class="article-detail-section-title">原文摘要</p>
+        <div id="articleDetailSummary" class="article-readable-content is-original"></div>
+      </div>
+      <p class="article-detail-empty" id="articleDetailEmpty" hidden>暂无摘要内容</p>
+    </div>
     <div class="article-detail-actions" id="articleDetailActions" hidden>
       <button type="button" class="secondary-btn" onclick="openEditArticleModal(currentArticleId)">编辑</button>
+      <button type="button" class="secondary-btn" id="articleDetailSummarizeBtn"
+        title="{% if ai_article_configured %}AI 归纳精炼摘要{% else %}需配置 DEEPSEEK_API_KEY{% endif %}"
+        {% if not ai_article_configured %}disabled{% endif %}
+        onclick="ArticleSummarize.startFromDetail()">AI 归纳总结</button>
       <button type="button" class="secondary-btn" id="articleDetailAiBtn" onclick="ArticleAiWizard.startFromDetail()">🤖 AI 分析</button>
+    </div>
+  </div>
+</div>
+
+<div id="articleSummarizeModal" class="modal-overlay">
+  <div class="modal-content modal-form modal-wide">
+    <button class="modal-close" type="button" onclick="ArticleSummarize.close()">✕</button>
+    <h3 class="modal-form-title">AI 归纳总结</h3>
+    <p class="modal-form-subtitle">对比原文与 AI 归纳结果，确认后保存归纳（不覆盖原文）。</p>
+    <p class="article-summarize-status" id="articleSummarizeStatus"></p>
+    <div id="articleSummarizeLoading" hidden>
+      <p style="font-size: 14px; color: #5e6c84; margin: 0;">正在归纳，请稍候…</p>
+    </div>
+    <div id="articleSummarizeResult" hidden>
+      <div class="article-summarize-tabs" id="articleSummarizeTabs">
+        <button type="button" class="article-summarize-tab" data-tab="original" onclick="ArticleSummarize.switchTab('original')">原文摘要</button>
+        <button type="button" class="article-summarize-tab is-active" data-tab="ai" onclick="ArticleSummarize.switchTab('ai')">AI 归纳</button>
+      </div>
+      <div class="article-summarize-compare show-ai" id="articleSummarizeCompare">
+        <div class="article-summarize-block" data-panel="original">
+          <h4>原文摘要</h4>
+          <div id="articleSummarizeOriginal" class="article-readable-content is-original"></div>
+        </div>
+        <div class="article-summarize-block" data-panel="ai">
+          <h4>AI 归纳</h4>
+          <div id="articleSummarizeRefined" class="article-readable-content is-ai"></div>
+        </div>
+      </div>
+      <div class="modal-form-actions">
+        <button type="button" class="secondary-btn" id="articleSummarizeRegenerateBtn" hidden onclick="ArticleSummarize.regenerate()">重新归纳</button>
+        <button type="button" class="secondary-btn" onclick="ArticleSummarize.close()">取消</button>
+        <button type="button" class="primary-btn" id="articleSummarizeApplyBtn" onclick="ArticleSummarize.apply()">保存归纳</button>
+      </div>
     </div>
   </div>
 </div>
@@ -972,9 +1257,10 @@
     </h3>
     <div class="articles-panel-body">
       {% for article in articles %}
-      <div class="article-item">
+      {% set has_article_body = article.summary or article.ai_summary %}
+      <div class="article-item" id="article-item-{{ article.id }}">
         <div class="article-item-body">
-          {% if article.summary %}
+          {% if has_article_body %}
           <button type="button" class="article-item-title"
             onclick="openArticleDetailModal({{ article.id }})">{{ article.title }}</button>
           {% elif article.url %}
@@ -982,8 +1268,11 @@
           {% else %}
           <span class="article-item-title" style="cursor: default; color: #172b4d;">{{ article.title }}</span>
           {% endif %}
-          {% if article.summary %}
-          <p class="article-summary-preview">{{ article.summary }}</p>
+          {% if has_article_body %}
+          <p class="article-summary-preview">
+            {% if article.ai_summary %}<span class="article-ai-tag">AI 归纳</span>{% endif %}
+            <span class="article-summary-preview-content" data-preview-text="{{ (article.ai_summary or article.summary) | e }}"></span>
+          </p>
           <button type="button" class="btn-link" onclick="openArticleDetailModal({{ article.id }})">查看详情</button>
           {% endif %}
         </div>
@@ -991,13 +1280,17 @@
           <button type="button" class="btn-link" onclick="openEditArticleModal({{ article.id }})">编辑</button>
           {% if article.summary %}
           <button type="button" class="btn-ai-link"
+            title="{% if ai_article_configured %}AI 归纳精炼摘要{% else %}需配置 DEEPSEEK_API_KEY{% endif %}"
+            {% if not ai_article_configured %}disabled{% endif %}
+            onclick="ArticleSummarize.startFromList({{ article.id }})">归纳</button>
+          <button type="button" class="btn-ai-link"
             title="{% if ai_article_configured %}从摘要提取时间节点与监控标的{% else %}需配置 DEEPSEEK_API_KEY{% endif %}"
             {% if not ai_article_configured %}disabled{% endif %}
             onclick="ArticleAiWizard.start({{ article.id }})">AI</button>
           {% endif %}
           {{ delete_button(url_for('investments.delete_article', theme_id=theme.id, article_id=article.id), '确定删除此文章？') }}
         </div>
-        <script type="application/json" id="article-source-{{ article.id }}">{{ {"title": article.title or "", "url": article.url or "", "summary": article.summary or ""} | tojson }}</script>
+        <script type="application/json" id="article-source-{{ article.id }}">{{ {"title": article.title or "", "url": article.url or "", "summary": article.summary or "", "ai_summary": article.ai_summary or ""} | tojson }}</script>
       </div>
       {% else %}
       <p style="font-size: 13px; color: #8c939f;">暂无关联资料。</p>
@@ -1181,6 +1474,22 @@
     document.getElementById('editArticleTitle').value = data.title || '';
     document.getElementById('editArticleUrl').value = data.url || '';
     document.getElementById('editArticleSummary').value = data.summary || '';
+    document.getElementById('editArticleAiSummary').value = data.ai_summary || '';
+    const aiPreview = document.getElementById('editArticleAiPreview');
+    const aiPreviewGroup = document.getElementById('editArticleAiPreviewGroup');
+    const aiPreviewWrap = document.getElementById('editArticleAiPreviewWrap');
+    const aiText = (data.ai_summary || '').trim();
+    if (aiPreview && aiPreviewGroup) {
+      aiPreviewGroup.hidden = false;
+      if (aiText) {
+        setArticleReadableContent(aiPreview, aiText, { variant: 'is-ai', highlightTickers: true });
+        if (aiPreviewWrap) aiPreviewWrap.classList.remove('empty');
+      } else {
+        aiPreview.innerHTML = '<p>暂无 AI 归纳</p>';
+        aiPreview.className = 'article-readable-content is-ai';
+        if (aiPreviewWrap) aiPreviewWrap.classList.add('empty');
+      }
+    }
     document.getElementById('articleDetailModal').style.display = 'none';
     document.getElementById('editArticleModal').style.display = 'flex';
   }
@@ -1217,6 +1526,99 @@
       endInput.value = startInput.value;
     }
     endInput.min = startInput.value;
+  }
+
+  function escapeArticleHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function highlightArticleTickers(html) {
+    return html.replace(/\b[A-Z][A-Z0-9.\-]{0,9}\b/g, (match) => (
+      `<strong class="article-ticker">${match}</strong>`
+    ));
+  }
+
+  function formatArticleReadable(text, options) {
+    const opts = options || {};
+    const highlightTickers = !!opts.highlightTickers;
+    const raw = String(text || '').trim();
+    if (!raw) return '';
+
+    const lines = raw.split(/\r?\n/);
+    const parts = [];
+    let listItems = [];
+    let paragraphLines = [];
+
+    function formatInline(content) {
+      let html = escapeArticleHtml(content);
+      if (highlightTickers) html = highlightArticleTickers(html);
+      return html.replace(/\n/g, '<br>');
+    }
+
+    function flushParagraph() {
+      if (!paragraphLines.length) return;
+      parts.push(`<p>${formatInline(paragraphLines.join('\n'))}</p>`);
+      paragraphLines = [];
+    }
+
+    function flushList() {
+      if (!listItems.length) return;
+      const items = listItems.map((item) => `<li>${formatInline(item)}</li>`).join('');
+      parts.push(`<ul>${items}</ul>`);
+      listItems = [];
+    }
+
+    lines.forEach((line) => {
+      const bullet = line.match(/^\s*[-–—•*]\s+(.*)$/);
+      if (bullet) {
+        flushParagraph();
+        listItems.push(bullet[1]);
+        return;
+      }
+      if (!line.trim()) {
+        flushList();
+        flushParagraph();
+        return;
+      }
+      if (listItems.length) flushList();
+      paragraphLines.push(line);
+    });
+
+    flushList();
+    flushParagraph();
+    return parts.join('') || `<p>${formatInline(raw)}</p>`;
+  }
+
+  function setArticleReadableContent(el, text, options) {
+    if (!el) return;
+    const opts = options || {};
+    const variant = opts.variant || '';
+    const compact = !!opts.compact;
+    const highlightTickers = opts.highlightTickers !== false;
+    const classes = ['article-readable-content'];
+    if (variant) classes.push(variant);
+    if (compact) classes.push('is-compact');
+    el.className = classes.join(' ');
+    el.innerHTML = formatArticleReadable(text, {
+      highlightTickers: compact ? false : highlightTickers,
+    });
+  }
+
+  function buildArticleListPreviewHtml(aiSummary) {
+    const tag = '<span class="article-ai-tag">AI 归纳</span>';
+    const content = formatArticleReadable(aiSummary, { highlightTickers: false });
+    return `${tag}<span class="article-readable-content is-compact">${content}</span>`;
+  }
+
+  function initArticleListPreviews() {
+    document.querySelectorAll('.article-summary-preview-content').forEach((el) => {
+      const text = el.getAttribute('data-preview-text') || '';
+      setArticleReadableContent(el, text, { compact: true, highlightTickers: false });
+    });
   }
 
   const articleAiThemeId = {{ theme.id }};
@@ -1582,6 +1984,281 @@
   };
   window.ArticleAiWizard = ArticleAiWizard;
 
+  const ArticleSummarize = {
+    configured: {{ 'true' if ai_article_configured else 'false' }},
+    themeId: articleAiThemeId,
+    busy: false,
+    saving: false,
+    mode: 'saved',
+    articleId: null,
+    refinedSummary: '',
+    originalSummary: '',
+    regenerateNext: false,
+
+    urls: {
+      summarize(articleId, regenerate) {
+        const base = `/investments/${articleAiThemeId}/articles/${articleId}/ai-summarize`;
+        return regenerate ? `${base}?regenerate=1` : base;
+      },
+      apply(articleId) {
+        return `/investments/${articleAiThemeId}/articles/${articleId}/apply-summary`;
+      },
+      draft: `/investments/${articleAiThemeId}/articles/ai-summarize-draft`,
+    },
+
+    startFromList(articleId, regenerate = false) {
+      if (!this.configured || this.busy) return;
+      const data = getArticleSourceData(articleId);
+      if (!data || !(data.summary || '').trim()) return;
+      this.mode = 'saved';
+      this.articleId = articleId;
+      this.regenerateNext = regenerate;
+      this.openModal();
+      if (!regenerate && (data.ai_summary || '').trim()) {
+        this.showCached(data.summary || '', data.ai_summary || '');
+        return;
+      }
+      this.runSummarize({ useDraft: false, regenerate });
+    },
+
+    startFromDetail() {
+      if (!currentArticleId) return;
+      document.getElementById('articleDetailModal').style.display = 'none';
+      this.startFromList(currentArticleId);
+    },
+
+    startFromEdit() {
+      if (!this.configured || this.busy) return;
+      const summary = (document.getElementById('editArticleSummary').value || '').trim();
+      if (!summary) return;
+      const form = document.getElementById('editArticleForm');
+      const match = (form.action || '').match(/articles\/(\d+)\/edit/);
+      this.mode = 'edit';
+      this.articleId = match ? parseInt(match[1], 10) : null;
+      this.regenerateNext = true;
+      this.openModal();
+      this.runSummarize({
+        useDraft: true,
+        title: document.getElementById('editArticleTitle').value || '',
+        summary,
+      });
+    },
+
+    startFromAdd() {
+      if (!this.configured || this.busy) return;
+      const summary = (document.getElementById('addArticleSummary').value || '').trim();
+      if (!summary) return;
+      this.mode = 'add';
+      this.articleId = null;
+      this.regenerateNext = true;
+      this.openModal();
+      this.runSummarize({
+        useDraft: true,
+        title: document.querySelector('#addArticleModal input[name="title"]').value || '',
+        summary,
+      });
+    },
+
+    regenerate() {
+      if (this.mode === 'saved' && this.articleId) {
+        this.regenerateNext = true;
+        document.getElementById('articleSummarizeResult').hidden = true;
+        document.getElementById('articleSummarizeLoading').hidden = false;
+        document.getElementById('articleSummarizeStatus').textContent = '';
+        this.runSummarize({ useDraft: false, regenerate: true });
+        return;
+      }
+      if (this.mode === 'edit') {
+        this.startFromEdit();
+        return;
+      }
+      if (this.mode === 'add') {
+        this.startFromAdd();
+      }
+    },
+
+    openModal() {
+      document.getElementById('articleSummarizeModal').style.display = 'flex';
+      document.getElementById('articleSummarizeStatus').textContent = '';
+      document.getElementById('articleSummarizeLoading').hidden = false;
+      document.getElementById('articleSummarizeResult').hidden = true;
+      document.getElementById('articleSummarizeRegenerateBtn').hidden = true;
+      this.refinedSummary = '';
+      this.originalSummary = '';
+      this.setApplyButtonLabel();
+    },
+
+    close() {
+      if (this.busy && !this.saving) return;
+      document.getElementById('articleSummarizeModal').style.display = 'none';
+    },
+
+    setApplyButtonLabel() {
+      const btn = document.getElementById('articleSummarizeApplyBtn');
+      if (!btn) return;
+      btn.textContent = (this.mode === 'add' || this.mode === 'edit') ? '填入 AI 归纳' : '保存归纳';
+    },
+
+    showResult(original, refined, cached) {
+      this.originalSummary = original || '';
+      this.refinedSummary = refined || '';
+      setArticleReadableContent(
+        document.getElementById('articleSummarizeOriginal'),
+        this.originalSummary,
+        { variant: 'is-original', highlightTickers: true },
+      );
+      setArticleReadableContent(
+        document.getElementById('articleSummarizeRefined'),
+        this.refinedSummary,
+        { variant: 'is-ai', highlightTickers: true },
+      );
+      this.switchTab('ai');
+      document.getElementById('articleSummarizeLoading').hidden = true;
+      document.getElementById('articleSummarizeResult').hidden = false;
+      const regenBtn = document.getElementById('articleSummarizeRegenerateBtn');
+      if (regenBtn) {
+        regenBtn.hidden = this.mode === 'add' || this.mode === 'edit';
+      }
+      if (cached) {
+        document.getElementById('articleSummarizeStatus').textContent = '已加载已保存的 AI 归纳，可重新归纳或保存新版本。';
+      }
+    },
+
+    showCached(original, aiSummary) {
+      this.busy = false;
+      this.showResult(original, aiSummary, true);
+    },
+
+    async runSummarize({ useDraft, title, summary, regenerate = false }) {
+      this.busy = true;
+      this.setApplyButtonLabel();
+      try {
+        let response;
+        if (useDraft) {
+          response = await fetch(this.urls.draft, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: title || '', summary: summary || '' }),
+          });
+        } else {
+          response = await fetch(this.urls.summarize(this.articleId, regenerate || this.regenerateNext), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ regenerate: !!(regenerate || this.regenerateNext) }),
+          });
+        }
+        this.regenerateNext = false;
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || '归纳失败');
+
+        this.showResult(payload.original_summary || '', payload.refined_summary || payload.ai_summary || '', !!payload.cached);
+      } catch (error) {
+        document.getElementById('articleSummarizeLoading').hidden = true;
+        document.getElementById('articleSummarizeStatus').textContent = error.message || '归纳失败，请重试';
+      } finally {
+        this.busy = false;
+      }
+    },
+
+    switchTab(tab) {
+      const compare = document.getElementById('articleSummarizeCompare');
+      if (!compare) return;
+      compare.classList.remove('show-ai', 'show-original');
+      compare.classList.add(tab === 'original' ? 'show-original' : 'show-ai');
+      document.querySelectorAll('.article-summarize-tab').forEach((btn) => {
+        btn.classList.toggle('is-active', btn.dataset.tab === tab);
+      });
+    },
+
+    updateArticleDom(articleId, aiSummary) {
+      const jsonEl = document.getElementById('article-source-' + articleId);
+      if (jsonEl) {
+        try {
+          const data = JSON.parse(jsonEl.textContent);
+          data.ai_summary = aiSummary;
+          jsonEl.textContent = JSON.stringify(data);
+        } catch (error) {
+          console.error('Failed to update article source', error);
+        }
+      }
+      const item = document.getElementById('article-item-' + articleId);
+      if (item) {
+        const preview = item.querySelector('.article-summary-preview');
+        if (preview) {
+          preview.innerHTML = aiSummary
+            ? buildArticleListPreviewHtml(aiSummary)
+            : '';
+        }
+      }
+    },
+
+    escapeHtml(text) {
+      return escapeArticleHtml(text);
+    },
+
+    updateDetailModalAiSummary(aiSummary) {
+      const aiSection = document.getElementById('articleDetailAiSection');
+      const aiEl = document.getElementById('articleDetailAiSummary');
+      if (aiEl) {
+        setArticleReadableContent(aiEl, aiSummary, { variant: 'is-ai', highlightTickers: true });
+      }
+      if (aiSection) aiSection.hidden = !aiSummary;
+      const emptyEl = document.getElementById('articleDetailEmpty');
+      const originalSection = document.getElementById('articleDetailOriginalSection');
+      const hasOriginal = originalSection && !originalSection.hidden;
+      if (emptyEl) emptyEl.hidden = Boolean(hasOriginal || aiSummary);
+    },
+
+    apply() {
+      if (this.busy || !this.refinedSummary) return;
+      if (this.mode === 'add') {
+        document.getElementById('addArticleAiSummary').value = this.refinedSummary;
+        this.close();
+        return;
+      }
+      if (this.mode === 'edit') {
+        document.getElementById('editArticleAiSummary').value = this.refinedSummary;
+        const aiPreview = document.getElementById('editArticleAiPreview');
+        const aiPreviewGroup = document.getElementById('editArticleAiPreviewGroup');
+        const aiPreviewWrap = document.getElementById('editArticleAiPreviewWrap');
+        if (aiPreview) {
+          setArticleReadableContent(aiPreview, this.refinedSummary, { variant: 'is-ai', highlightTickers: true });
+          if (aiPreviewWrap) aiPreviewWrap.classList.remove('empty');
+        }
+        if (aiPreviewGroup) aiPreviewGroup.hidden = false;
+        this.close();
+        return;
+      }
+      if (!this.articleId) return;
+
+      const articleId = this.articleId;
+      const aiSummary = this.refinedSummary;
+      const previousData = getArticleSourceData(articleId);
+      const previousAi = previousData ? (previousData.ai_summary || '') : '';
+
+      this.updateArticleDom(articleId, aiSummary);
+      this.updateDetailModalAiSummary(aiSummary);
+      this.close();
+
+      this.saving = true;
+      fetch(this.urls.apply(articleId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ai_summary: aiSummary }),
+      }).then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || '保存失败');
+      }).catch((error) => {
+        this.updateArticleDom(articleId, previousAi);
+        this.updateDetailModalAiSummary(previousAi);
+        alert(error.message || '保存归纳失败，请重试');
+      }).finally(() => {
+        this.saving = false;
+      });
+    },
+  };
+  window.ArticleSummarize = ArticleSummarize;
+
   function openArticleDetailModal(articleId) {
     const data = getArticleSourceData(articleId);
     if (!data) return;
@@ -1590,6 +2267,7 @@
     const title = data.title || '';
     const url = data.url || '';
     const summary = data.summary || '';
+    const aiSummary = data.ai_summary || '';
 
     document.getElementById('articleDetailTitle').textContent = title;
 
@@ -1604,25 +2282,43 @@
     }
 
     const summaryEl = document.getElementById('articleDetailSummary');
+    const originalSection = document.getElementById('articleDetailOriginalSection');
+    const aiSection = document.getElementById('articleDetailAiSection');
+    const aiSummaryEl = document.getElementById('articleDetailAiSummary');
     const emptyEl = document.getElementById('articleDetailEmpty');
     const actionsEl = document.getElementById('articleDetailActions');
     const aiBtn = document.getElementById('articleDetailAiBtn');
-    if (summary.trim()) {
-      summaryEl.textContent = summary;
-      summaryEl.hidden = false;
-      emptyEl.hidden = true;
+    const summarizeBtn = document.getElementById('articleDetailSummarizeBtn');
+
+    const hasOriginal = Boolean(summary.trim());
+    const hasAi = Boolean(aiSummary.trim());
+
+    if (hasOriginal) {
+      setArticleReadableContent(summaryEl, summary, { variant: 'is-original', highlightTickers: true });
+      originalSection.hidden = false;
     } else {
-      summaryEl.hidden = true;
-      emptyEl.hidden = false;
+      originalSection.hidden = true;
+      if (summaryEl) summaryEl.innerHTML = '';
     }
+
+    if (hasAi) {
+      setArticleReadableContent(aiSummaryEl, aiSummary, { variant: 'is-ai', highlightTickers: true });
+      aiSection.hidden = false;
+    } else {
+      aiSection.hidden = true;
+      if (aiSummaryEl) aiSummaryEl.innerHTML = '';
+    }
+
+    emptyEl.hidden = hasOriginal || hasAi;
+
     if (actionsEl) actionsEl.hidden = false;
     if (aiBtn) {
-      if (summary.trim()) {
-        aiBtn.hidden = false;
-        aiBtn.disabled = !ArticleAiWizard.configured;
-      } else {
-        aiBtn.hidden = true;
-      }
+      aiBtn.hidden = !hasOriginal;
+      aiBtn.disabled = !ArticleAiWizard.configured;
+    }
+    if (summarizeBtn) {
+      summarizeBtn.hidden = !hasOriginal;
+      summarizeBtn.disabled = !ArticleSummarize.configured;
     }
 
     document.getElementById('articleDetailModal').style.display = 'flex';
@@ -1812,6 +2508,8 @@
   if (aiMilestoneEventDate && aiMilestoneEndDate) {
     aiMilestoneEventDate.addEventListener('change', () => syncMilestoneEndDate(aiMilestoneEventDate, aiMilestoneEndDate));
   }
+
+  initArticleListPreviews();
 </script>
 
 {% endblock %}
