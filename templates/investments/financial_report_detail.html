@@ -64,6 +64,26 @@
   <div id="gameQuestPanel" class="panel research-game-quests" hidden></div>
   <div id="materialEventsPanel" class="panel research-material-events" hidden></div>
 
+  <section class="panel research-qa-panel" id="researchQaPanel"
+    {% if not ai_configured or (not report.has_analysis and not report.has_source_text) %}hidden{% endif %}>
+    <div class="research-chart-head">
+      <h3>AI 答疑</h3>
+    </div>
+    <p class="hint">基于当前报告原文与已确认数据回答；仅供参考，不构成投资建议。同页可连续追问。</p>
+    <div class="research-qa-presets" id="qaPresetButtons">
+      {% for preset in qa_presets %}
+      <button type="button" class="secondary-btn research-qa-preset" data-preset-id="{{ preset.id }}">{{ preset.label }}</button>
+      {% endfor %}
+    </div>
+    <div class="research-qa-compose">
+      <textarea id="qaQuestionInput" class="research-qa-input" rows="3" placeholder="输入自定义问题，例如：本季毛利率变化的主要原因是什么？"></textarea>
+      <button type="button" class="primary-btn" id="qaAskBtn"
+        {% if report.parse_status in ['extracting_text', 'ai_analyzing'] %}disabled{% endif %}>提问</button>
+    </div>
+    <p id="qaStatus" class="research-qa-status" hidden></p>
+    <div id="qaSessionList" class="research-qa-session"></div>
+  </section>
+
   <section class="panel research-dashboard-insight-panel" id="dashboardInsightPanel" {% if not report.has_analysis %}hidden{% endif %}>
     <div class="research-chart-head">
       <h3>AI 全局解读</h3>
@@ -312,6 +332,9 @@
     chartInsightUrl: {{ chart_insight_url|tojson }},
     dashboardInsightUrl: {{ dashboard_insight_url|tojson }},
     narrativeUrl: {{ narrative_url|tojson }},
+    askUrl: {{ ask_url|tojson }},
+    qaPresets: {{ qa_presets|tojson }},
+    hasSourceText: {{ report.has_source_text|tojson }},
     fiscalPeriod: {{ report.fiscal_period|tojson }},
     ticker: {{ report.ticker|tojson }},
     parseStatusUrl: {{ parse_status_url|tojson }},
@@ -325,5 +348,6 @@
   };
 </script>
 <script src="{{ url_for('static', filename='research-detail.js') }}"></script>
+<script src="{{ url_for('static', filename='research-qa.js') }}"></script>
 <script src="{{ url_for('static', filename='research-charts.js') }}"></script>
 {% endblock %}

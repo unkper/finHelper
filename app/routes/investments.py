@@ -79,6 +79,7 @@ from app.services.financial_narrative import (
     generate_narrative,
     get_cached_narrative,
 )
+from app.services.financial_qa import PRESET_QUESTIONS, ask_report_question, get_preset_question
 from app.scheduler_setup import configure_monitor_jobs
 
 bp = Blueprint('investments', __name__, url_prefix='/investments')
@@ -328,6 +329,8 @@ def research_report_detail(report_id):
         pdf_url=url_for("investments.research_report_pdf", report_id=report_id) if report.get("has_pdf") else None,
         parse_pdf_url=url_for("investments.research_report_parse_pdf", report_id=report_id),
         narrative_url=url_for("investments.research_report_narrative", report_id=report_id),
+        ask_url=url_for("investments.research_report_ask", report_id=report_id),
+        qa_presets=PRESET_QUESTIONS,
     )
 
 
@@ -629,6 +632,47 @@ def research_report_dashboard_insight(report_id):
     if result.get("error"):
         return jsonify({"error": result["error"]}), 502
     return jsonify(result)
+
+
+@bp.route('/research/reports/<int:report_id>/ask', methods=['POST'])
+def research_report_ask(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    source_text = get_report_source_text(report_id)
+    if not source_text and not report.get("has_analysis"):
+        return jsonify({"error": "暂无可用于答疑的报告数据，请先粘贴原文或完成 AI 分析"}), 400
+
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"report-qa:{ip}", max_calls=30, window_seconds=3600
+    )
+    if not allowed:
+        return jsonify({"error": "答疑请求过于频繁", "retry_after": retry_after}), 429
+
+    data = request.get_json(silent=True) or {}
+    preset_id = str(data.get("preset_id") or "").strip() or None
+    question = str(data.get("question") or "").strip()
+    if preset_id:
+        preset_question = get_preset_question(preset_id)
+        if not preset_question:
+            return jsonify({"error": "无效的预设问题"}), 400
+        question = preset_question
+
+    session_messages = data.get("session_messages")
+    result = ask_report_question(report_id, question, session_messages)
+    if result.get("error"):
+        status = 400 if "问题" in result["error"] or "数据" in result["error"] else 502
+        return jsonify({"error": result["error"]}), status
+
+    return jsonify({
+        "status": "ok",
+        "answer": result["answer"],
+        "preset_id": preset_id,
+    })
 
 
 @bp.route('/research/reports/<int:report_id>/confirm', methods=['POST'])

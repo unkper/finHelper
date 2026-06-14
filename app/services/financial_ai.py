@@ -289,7 +289,7 @@ def check_extracted_warnings(extracted: Dict[str, Any]) -> List[str]:
     return warnings
 
 
-def _call_deepseek_chat(prompt: str, model: str | None = None) -> Dict[str, Any]:
+def _call_deepseek_messages(messages: List[Dict[str, str]], model: str | None = None) -> Dict[str, Any]:
     api_key = current_app.config.get("DEEPSEEK_API_KEY", "").strip()
     base_url = current_app.config.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
     model = model or get_ai_article_model()
@@ -300,7 +300,7 @@ def _call_deepseek_chat(prompt: str, model: str | None = None) -> Dict[str, Any]
     }
     payload = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": messages,
         "stream": False,
     }
     if model == "deepseek-v4-pro":
@@ -332,6 +332,10 @@ def _call_deepseek_chat(prompt: str, model: str | None = None) -> Dict[str, Any]
         return {"error": "AI 返回格式异常，无法解析"}
 
     return {"content": content}
+
+
+def _call_deepseek_chat(prompt: str, model: str | None = None) -> Dict[str, Any]:
+    return _call_deepseek_messages([{"role": "user", "content": prompt}], model=model)
 
 
 def extract_from_financial_text(
@@ -387,6 +391,14 @@ def extract_from_financial_text(
 def chat_completion_text(prompt: str, *, model: str) -> Dict[str, Any]:
     """通用短文本生成（如图表解读）。"""
     result = _call_deepseek_chat(prompt, model=model)
+    if result.get("error"):
+        return result
+    return {"text": (result.get("content") or "").strip()}
+
+
+def chat_completion_messages(messages: List[Dict[str, str]], *, model: str) -> Dict[str, Any]:
+    """多轮 messages 调用（如财报答疑）。"""
+    result = _call_deepseek_messages(messages, model=model)
     if result.get("error"):
         return result
     return {"text": (result.get("content") or "").strip()}
