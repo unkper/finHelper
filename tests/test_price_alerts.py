@@ -112,5 +112,45 @@ class DeletePriceAlertsTest(unittest.TestCase):
         self.assertEqual(remaining[0][1], "milestone")
 
 
+class PriceAlertsRouteTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        cls.tmp.close()
+        from app import create_app
+
+        cls.app = create_app()
+        cls.app.config["DATABASE_PATH"] = cls.tmp.name
+        cls.app.config["WEB_PASSWORD"] = "test"
+        with cls.app.app_context():
+            from app.database import init_db
+
+            init_db()
+
+    @classmethod
+    def tearDownClass(cls):
+        Path(cls.tmp.name).unlink(missing_ok=True)
+
+    def setUp(self):
+        self.client = self.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["authenticated"] = True
+
+    def test_price_alerts_page_redirects_to_settings_tab(self):
+        rv = self.client.get("/investments/price-alerts")
+        self.assertEqual(rv.status_code, 302)
+        location = rv.headers.get("Location", "")
+        self.assertIn("/settings", location)
+        self.assertIn("tab=price-alerts", location)
+
+    def test_settings_price_alerts_tab_renders(self):
+        rv = self.client.get("/settings?tab=price-alerts")
+        self.assertEqual(rv.status_code, 200)
+        body = rv.get_data(as_text=True)
+        self.assertIn("价位告警管理", body)
+        self.assertIn("cooldownSettingsForm", body)
+        self.assertIn("PRICE_ALERTS_PAGE", body)
+
+
 if __name__ == "__main__":
     unittest.main()

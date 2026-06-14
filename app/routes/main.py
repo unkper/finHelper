@@ -11,6 +11,7 @@ from app.services.settings import (
     get_ai_financial_parse_model,
     get_history_cache_hours,
     get_monitor_interval_minutes,
+    get_price_alert_settings,
     get_quote_cache_minutes,
     set_ai_article_model,
     set_ai_financial_parse_model,
@@ -104,6 +105,10 @@ def settings():
         )
         return redirect(url_for(".settings"))
 
+    tab = request.args.get("tab", "system")
+    if tab not in ("system", "price-alerts"):
+        tab = "system"
+
     return render_template(
         "settings.html",
         monitor_interval_minutes=get_monitor_interval_minutes(),
@@ -113,4 +118,6 @@ def settings():
         ai_article_models=ALLOWED_AI_ARTICLE_MODELS,
         ai_financial_parse_model=get_ai_financial_parse_model(),
         deepseek_configured=bool(current_app.config.get("DEEPSEEK_API_KEY", "").strip()),
+        price_alert_settings=get_price_alert_settings(),
+        active_tab=tab,
     )

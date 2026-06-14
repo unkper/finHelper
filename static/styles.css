@@ -436,6 +436,53 @@ select:focus {
   gap: 12px;
 }
 
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-tab {
+  padding: 10px 16px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  margin-bottom: -1px;
+}
+
+.settings-tab:hover {
+  color: var(--text);
+}
+
+.settings-tab.is-active {
+  color: var(--accent, #0052cc);
+  border-bottom-color: var(--accent, #0052cc);
+}
+
+.settings-tab-panel {
+  display: none;
+}
+
+.settings-tab-panel.is-active {
+  display: block;
+}
+
+.settings-tab-panel.price-alerts-page {
+  display: none;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-tab-panel.price-alerts-page.is-active {
+  display: flex;
+}
+
 .toolbar-panel {
   padding-top: 18px;
   padding-bottom: 18px;

@@ -171,6 +171,7 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     if (!document.querySelector(".price-alerts-page")) return;
+    if (cfg.activeTab && cfg.activeTab !== "price-alerts") return;
 
     $("cooldownSettingsForm")?.addEventListener("submit", saveSettings);
     $("refreshAlertsBtn")?.addEventListener("click", loadAlerts);

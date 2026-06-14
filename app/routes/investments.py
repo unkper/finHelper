@@ -29,7 +29,6 @@ from app.services.settings import (
     set_earnings_horizon_days,
     set_earnings_remind_days_before,
     set_earnings_remind_enabled,
-    get_price_alert_settings,
     set_price_alert_cooldown_hours,
     get_ai_financial_parse_model,
 )
@@ -139,10 +138,7 @@ def stocks_chart_data():
 
 @bp.route('/price-alerts')
 def price_alerts():
-    return render_template(
-        "investments/price_alerts.html",
-        price_alert_settings=get_price_alert_settings(),
-    )
+    return redirect(url_for("main.settings", tab="price-alerts"))
 
 
 @bp.route('/price-alerts/api/list')

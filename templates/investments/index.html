@@ -47,7 +47,7 @@
   <div class="invest-actions">
     <a href="{{ url_for('investments.archive_list') }}" class="secondary-btn">🗑 回收站{% if archived_count %} ({{ archived_count }}){% endif %}</a>
     <a href="{{ url_for('investments.stocks') }}" class="secondary-btn">📈 股票走势</a>
-    <a href="{{ url_for('investments.price_alerts') }}" class="secondary-btn">🎯 价位告警</a>
+    <a href="{{ url_for('main.settings', tab='price-alerts') }}" class="secondary-btn">🎯 价位告警</a>
     <button class="secondary-btn" onclick="document.getElementById('createAssistantModal').style.display='flex'">+ 新建投资助手</button>
     <button class="primary-btn" onclick="document.getElementById('createThemeModal').style.display='flex'">+ 新建投资主题</button>
   </div>
