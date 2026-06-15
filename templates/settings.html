@@ -21,6 +21,9 @@
          id="price-alerts"
          class="settings-tab{% if active_tab == 'price-alerts' %} is-active{% endif %}"
          {% if active_tab == 'price-alerts' %}aria-current="page"{% endif %}>价位告警</a>
+      <a href="{{ url_for('main.settings', tab='api-usage', days=usage_days) }}"
+         class="settings-tab{% if active_tab == 'api-usage' %} is-active{% endif %}"
+         {% if active_tab == 'api-usage' %}aria-current="page"{% endif %}>API 统计</a>
     </nav>
 
     <div class="settings-tab-panel{% if active_tab == 'system' %} is-active{% endif %}" data-tab="system">
@@ -211,9 +214,36 @@
         </div>
       </section>
     </div>
+
+    <div class="settings-tab-panel{% if active_tab == 'api-usage' %} is-active{% endif %}" data-tab="api-usage">
+      <p class="hint">统计 EODHD、Alpha Vantage、FMP、DeepSeek 的实际 HTTP 请求次数；行情缓存命中不计入。历史数据永久保留。</p>
+      <div class="api-usage-summary" id="apiUsageSummary">
+        <span class="api-usage-summary-pill">今日合计 <strong id="apiUsageTodayTotal">--</strong></span>
+        <span class="api-usage-summary-pill"><span id="apiUsagePeriodLabel">区间合计</span> <strong id="apiUsagePeriodTotal">--</strong></span>
+      </div>
+      <div class="api-usage-provider-totals" id="apiUsageProviderTotals"></div>
+      <div class="api-usage-range" id="apiUsageRange">
+        <span>时间范围</span>
+        <a href="{{ url_for('main.settings', tab='api-usage', days=7) }}" class="api-usage-range-btn{% if usage_days == 7 %} is-active{% endif %}">7 天</a>
+        <a href="{{ url_for('main.settings', tab='api-usage', days=30) }}" class="api-usage-range-btn{% if usage_days == 30 %} is-active{% endif %}">30 天</a>
+        <a href="{{ url_for('main.settings', tab='api-usage', days=90) }}" class="api-usage-range-btn{% if usage_days == 90 %} is-active{% endif %}">90 天</a>
+        <a href="{{ url_for('main.settings', tab='api-usage', days=0) }}" class="api-usage-range-btn{% if usage_days == 0 %} is-active{% endif %}">全部</a>
+      </div>
+      <div id="apiUsageChart" class="api-usage-chart"></div>
+      <p id="apiUsageStatus" class="api-usage-status" hidden></p>
+    </div>
   </section>
 </main>
 
+<script>
+  window.SETTINGS_PAGE = {
+    activeTab: {{ active_tab|tojson }},
+    usageStatsUrl: {{ url_for('main.settings_usage_stats')|tojson }},
+    defaultDays: {{ usage_days|tojson }},
+  };
+</script>
+<script src="{{ url_for('static', filename='chart-component.js') }}"></script>
+<script src="{{ url_for('static', filename='settings-api-usage.js') }}"></script>
 <script>
   window.PRICE_ALERTS_PAGE = {
     listUrl: {{ url_for('investments.price_alerts_list_api')|tojson }},

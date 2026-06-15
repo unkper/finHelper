@@ -9,6 +9,8 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from flask import current_app
 
+from app.services.api_usage import record_api_call
+
 from app.services.quote_client import chunk_list, normalize_us_tickers, parse_price
 
 EODHD_BASE = "https://eodhd.com/api"
@@ -51,6 +53,7 @@ def _http_get_json(path: str, params: Dict[str, str], *, feature: str = "") -> A
         )
     }
     api_proxy = current_app.config.get("API_PROXY")
+    record_api_call("eodhd")
     try:
         if api_proxy:
             opener = build_opener(ProxyHandler({"http": api_proxy, "https": api_proxy}))

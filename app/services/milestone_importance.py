@@ -16,6 +16,7 @@ from app.services.investment import (
     save_milestone_importance_result,
     set_milestone_importance_pending,
 )
+from app.services.api_usage import record_api_call
 from app.services.milestone_market_context import (
     build_macro_context_block,
     format_rationale_with_basis,
@@ -298,6 +299,7 @@ def score_milestone_importance(theme_id: int, milestone_id: int) -> Dict[str, An
     if api_proxy:
         proxies = {"http": api_proxy, "https": api_proxy}
 
+    record_api_call("deepseek")
     try:
         response = requests.post(
             f"{base_url}/chat/completions",

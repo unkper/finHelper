@@ -8,6 +8,7 @@ import requests
 from flask import current_app
 
 from app.services.quote_providers import eodhd
+from app.services.api_usage import record_api_call
 from app.services.settings import get_ai_article_model
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -240,6 +241,7 @@ def _call_deepseek_chat(prompt: str) -> Dict[str, Any]:
     if api_proxy:
         proxies = {"http": api_proxy, "https": api_proxy}
 
+    record_api_call("deepseek")
     try:
         response = requests.post(url, headers=headers, json=payload, proxies=proxies, timeout=120)
     except requests.RequestException as exc:

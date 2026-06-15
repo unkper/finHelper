@@ -1,10 +1,11 @@
 from datetime import date
 
-from flask import flash, redirect, render_template, request, url_for, current_app
+from flask import flash, redirect, render_template, request, url_for, current_app, jsonify
 
 from app.database import SUPPORTED_CURRENCIES
 from app.database import get_db
 from app.scheduler_setup import configure_monitor_jobs
+from app.services.api_usage import fetch_usage_stats
 from app.services.settings import (
     ALLOWED_AI_ARTICLE_MODELS,
     get_ai_article_model,
@@ -106,8 +107,16 @@ def settings():
         return redirect(url_for(".settings"))
 
     tab = request.args.get("tab", "system")
-    if tab not in ("system", "price-alerts"):
+    if tab not in ("system", "price-alerts", "api-usage"):
         tab = "system"
+
+    usage_days = request.args.get("days", "30")
+    try:
+        usage_days = int(usage_days)
+    except ValueError:
+        usage_days = 30
+    if usage_days != 0:
+        usage_days = max(7, min(365, usage_days))
 
     return render_template(
         "settings.html",
@@ -120,4 +129,15 @@ def settings():
         deepseek_configured=bool(current_app.config.get("DEEPSEEK_API_KEY", "").strip()),
         price_alert_settings=get_price_alert_settings(),
         active_tab=tab,
+        usage_days=usage_days,
     )
+
+
+@bp.route("/settings/api/usage-stats")
+def settings_usage_stats():
+    days = request.args.get("days", "30")
+    try:
+        days = int(days)
+    except ValueError:
+        days = 30
+    return jsonify(fetch_usage_stats(days))

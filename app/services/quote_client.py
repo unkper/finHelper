@@ -7,6 +7,8 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from flask import current_app
 
+from app.services.api_usage import infer_provider_from_url, record_api_call
+
 
 def normalize_us_tickers(tickers: List[str]) -> List[str]:
     seen = set()
@@ -33,6 +35,9 @@ def http_get_json(url: str, params: Optional[Dict[str, str]] = None) -> Any:
         )
     }
     api_proxy = current_app.config.get("API_PROXY")
+    provider = infer_provider_from_url(full_url)
+    if provider:
+        record_api_call(provider)
     try:
         if api_proxy:
             opener = build_opener(ProxyHandler({"http": api_proxy, "https": api_proxy}))

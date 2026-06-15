@@ -415,6 +415,19 @@ def _migrate_financial_reports(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE financial_reports ADD COLUMN {name} {typedef}")
 
 
+def _migrate_api_usage_daily(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS api_usage_daily (
+            usage_date TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            call_count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (usage_date, provider)
+        )
+        """
+    )
+
+
 def migrate_db(conn: sqlite3.Connection) -> None:
     _migrate_investment_assistants(conn)
     _migrate_stock_daily_cache(conn)
@@ -422,6 +435,7 @@ def migrate_db(conn: sqlite3.Connection) -> None:
     _migrate_asset_price_alerts(conn)
     _migrate_earnings_tables(conn)
     _migrate_financial_reports(conn)
+    _migrate_api_usage_daily(conn)
 
     milestone_columns = {row["name"] for row in conn.execute("PRAGMA table_info(theme_milestones)")}
     if milestone_columns:

@@ -483,6 +483,86 @@ select:focus {
   display: flex;
 }
 
+.api-usage-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.api-usage-summary-pill {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #f4f5f7;
+  border: 1px solid #dfe1e6;
+  font-size: 0.9rem;
+  color: var(--muted, #6b778c);
+}
+
+.api-usage-summary-pill strong {
+  color: var(--text, #172b4d);
+  margin-left: 4px;
+}
+
+.api-usage-provider-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.api-usage-provider-pill {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  font-size: 0.85rem;
+}
+
+.api-usage-provider-pill strong {
+  margin-left: 4px;
+}
+
+.api-usage-range {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+  color: var(--muted, #6b778c);
+}
+
+.api-usage-range-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #dfe1e6;
+  text-decoration: none;
+  color: var(--text, #172b4d);
+  font-size: 0.85rem;
+}
+
+.api-usage-range-btn.is-active {
+  background: #deebff;
+  border-color: #0052cc;
+  color: #0052cc;
+}
+
+.api-usage-chart {
+  width: 100%;
+  height: 320px;
+  margin-bottom: 8px;
+}
+
+.api-usage-status {
+  font-size: 0.85rem;
+  color: #6b778c;
+}
+
+.api-usage-status.is-error {
+  color: #de350b;
+}
+
 .toolbar-panel {
   padding-top: 18px;
   padding-bottom: 18px;

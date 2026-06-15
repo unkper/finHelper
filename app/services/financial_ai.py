@@ -8,6 +8,7 @@ from flask import current_app
 
 from app.services.financial_period import normalize_fiscal_period
 from app.services.financial_statements import _sort_periods
+from app.services.api_usage import record_api_call
 from app.services.settings import get_ai_article_model, get_ai_financial_parse_model  # noqa: F401
 
 CHART_INSIGHT_MODEL = "deepseek-v4-flash"
@@ -312,6 +313,7 @@ def _call_deepseek_messages(messages: List[Dict[str, str]], model: str | None = 
     if api_proxy:
         proxies = {"http": api_proxy, "https": api_proxy}
 
+    record_api_call("deepseek")
     try:
         response = requests.post(url, headers=headers, json=payload, proxies=proxies, timeout=120)
     except requests.RequestException as exc:
