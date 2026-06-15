@@ -176,14 +176,37 @@ def daily_series_batch_delay() -> float:
     return REALTIME_BATCH_DELAY_SEC if has_api_key() else 0.3
 
 
-def _normalize_news_item(item: dict, *, content_max: int = 300) -> Dict[str, str]:
+def is_news_feature_on_cooldown() -> bool:
+    return _feature_on_cooldown("news")
+
+
+def _sentiment_label(raw: Any) -> str:
+    if not isinstance(raw, dict):
+        return "中性"
+    try:
+        polarity = float(raw.get("polarity", 0))
+    except (TypeError, ValueError):
+        return "中性"
+    if polarity >= 0.2:
+        return "偏正面"
+    if polarity <= -0.2:
+        return "偏负面"
+    return "中性"
+
+
+def _normalize_news_item(item: dict, *, content_max: int = 300) -> Dict[str, Any]:
     content = (item.get("content") or "").strip()
     if len(content) > content_max:
         content = content[: content_max - 1] + "…"
+    tags_raw = item.get("tags") or []
+    tags = [str(t).strip() for t in tags_raw if str(t).strip()] if isinstance(tags_raw, list) else []
     return {
         "date": str(item.get("date") or ""),
         "title": str(item.get("title") or "").strip(),
         "summary": content,
+        "link": str(item.get("link") or "").strip(),
+        "tags": tags,
+        "sentiment_label": _sentiment_label(item.get("sentiment")),
     }
 
 
@@ -194,7 +217,8 @@ def fetch_financial_news(
     from_date: str | None = None,
     to_date: str | None = None,
     limit: int = 8,
-) -> List[Dict[str, str]]:
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
     """EODHD 财经新闻（/api/news），需 s 或 t 之一。"""
     api_key = _api_key()
     if not api_key:
@@ -206,7 +230,7 @@ def fetch_financial_news(
         "api_token": api_key,
         "fmt": "json",
         "limit": str(max(1, min(50, limit))),
-        "offset": "0",
+        "offset": str(max(0, offset)),
     }
     if symbol:
         params["s"] = to_eodhd_symbol(symbol) if "." not in symbol else symbol
@@ -221,7 +245,7 @@ def fetch_financial_news(
     if not isinstance(payload, list):
         return []
 
-    result: List[Dict[str, str]] = []
+    result: List[Dict[str, Any]] = []
     for item in payload:
         if isinstance(item, dict) and item.get("title"):
             result.append(_normalize_news_item(item))

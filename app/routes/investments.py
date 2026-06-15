@@ -1,5 +1,6 @@
 # app/routes/investments.py
 import io
+from datetime import date, timedelta
 from pathlib import Path
 
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, current_app, send_file
@@ -37,7 +38,17 @@ from app.services.earnings_calendar import (
     fetch_tracked_us_tickers,
     is_earnings_api_configured,
 )
+from app.services.quote_providers import eodhd
 from app.services.stock_charts import build_stock_chart_payload
+from app.services.stock_news import (
+    DEFAULT_LIMIT,
+    fetch_ticker_news,
+    is_news_available,
+    list_news_tickers,
+    _normalize_limit,
+    _normalize_offset,
+)
+from app.services.news_translate import is_translation_available
 from app.services.price_alerts import (
     build_price_alerts_payload,
     delete_price_alerts,
@@ -135,6 +146,79 @@ def stocks_chart_data():
             query=query,
         )
     )
+
+
+@bp.route('/news')
+def news():
+    tickers = list_news_tickers()
+    selected = (request.args.get("ticker") or "").strip().upper()
+    if not selected and tickers:
+        selected = tickers[0]["ticker"]
+    news_range = (request.args.get("range") or "30").strip()
+    if news_range not in ("7", "30", "all"):
+        news_range = "30"
+    return render_template(
+        "investments/news.html",
+        tickers=tickers,
+        selected_ticker=selected if any(t["ticker"] == selected for t in tickers) else "",
+        news_range=news_range,
+        news_configured=is_news_available(),
+        has_eodhd_key=eodhd.has_api_key(),
+        translate_configured=is_translation_available(),
+    )
+
+
+@bp.route('/news/api/feed')
+def news_feed_api():
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"news-feed:{ip}", max_calls=30, window_seconds=60
+    )
+    if not allowed:
+        return jsonify({"error": "请求过于频繁", "retry_after": retry_after}), 429
+
+    ticker = (request.args.get("ticker") or "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "请选择标的"}), 400
+    if not eodhd.has_api_key():
+        return jsonify({"error": "未配置 EODHD_API_KEY，请在 .env 中设置"}), 503
+
+    from_date = (request.args.get("from") or "").strip() or None
+    to_date = (request.args.get("to") or "").strip() or None
+    news_range = (request.args.get("range") or "").strip()
+    if not from_date and news_range in ("7", "30"):
+        days = int(news_range)
+        from_date = (date.today() - timedelta(days=days)).isoformat()
+        to_date = date.today().isoformat()
+
+    force_refresh = request.args.get("refresh") == "1"
+    offset = request.args.get("offset", 0)
+    limit = request.args.get("limit", DEFAULT_LIMIT)
+    items, has_more, meta = fetch_ticker_news(
+        ticker,
+        offset=offset,
+        limit=limit,
+        from_date=from_date,
+        to_date=to_date,
+        force_refresh=force_refresh,
+    )
+    if meta.get("error") and not items:
+        status = 503 if not meta.get("configured", True) else 400
+        return jsonify({"error": meta["error"], "configured": meta.get("configured", False)}), status
+
+    norm_offset = _normalize_offset(offset)
+    norm_limit = _normalize_limit(limit)
+
+    return jsonify({
+        "ticker": ticker,
+        "items": items,
+        "offset": norm_offset,
+        "limit": norm_limit,
+        "has_more": has_more,
+        "configured": meta.get("configured", True),
+        "from": from_date,
+        "to": to_date,
+    })
 
 
 @bp.route('/price-alerts')

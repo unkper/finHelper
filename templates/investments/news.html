@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}财经新闻 · FinHelper{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='stock-news.css') }}">
+
+<main class="layout news-page">
+  <section class="panel news-hero">
+    <div class="news-hero-inner">
+      <div>
+        <p class="eyebrow">Financial News</p>
+        <h2>监控标的新闻</h2>
+        <p class="hint">汇总投资主题下美股监控标的的 EODHD 财经新闻；按标的切换浏览，数据约 30 分钟缓存。{% if translate_configured %}英文内容将自动译为中文（Argos 离线翻译，首次需下载语言包）。{% endif %}</p>
+        {% if not has_eodhd_key %}
+        <p class="hint news-hint-warn">未配置 <code>EODHD_API_KEY</code>，无法拉取新闻。</p>
+        {% elif not news_configured %}
+        <p class="hint news-hint-warn">EODHD 新闻接口暂不可用（可能当前套餐不含新闻 API）。</p>
+        {% endif %}
+      </div>
+      <div class="news-hero-actions">
+        <a href="{{ url_for('investments.index') }}" class="secondary-btn">← 主题列表</a>
+        <button type="button" class="primary-btn" id="refreshNewsBtn" {% if not selected_ticker %}disabled{% endif %}>刷新</button>
+      </div>
+    </div>
+    <div class="news-summary">
+      <span class="summary-pill"><strong id="newsTickerCount">{{ tickers|length }}</strong> 个监控标的</span>
+    </div>
+  </section>
+
+  {% if tickers %}
+  <section class="panel news-ticker-tabs-panel">
+    <nav class="news-ticker-tabs" aria-label="监控标的">
+      {% for item in tickers %}
+      <a href="{{ url_for('investments.news', ticker=item.ticker, range=news_range) }}"
+         class="news-ticker-tab{% if item.ticker == selected_ticker %} is-active{% endif %}"
+         data-ticker="{{ item.ticker }}">{{ item.ticker }}</a>
+      {% endfor %}
+    </nav>
+  </section>
+
+  <section class="panel news-toolbar">
+    <div class="news-range" id="newsRange">
+      <span>时间范围</span>
+      <a href="{{ url_for('investments.news', ticker=selected_ticker, range='7') }}"
+         class="news-range-btn{% if news_range == '7' %} is-active{% endif %}" data-range="7">近 7 天</a>
+      <a href="{{ url_for('investments.news', ticker=selected_ticker, range='30') }}"
+         class="news-range-btn{% if news_range == '30' %} is-active{% endif %}" data-range="30">近 30 天</a>
+      <a href="{{ url_for('investments.news', ticker=selected_ticker, range='all') }}"
+         class="news-range-btn{% if news_range == 'all' %} is-active{% endif %}" data-range="all">全部</a>
+    </div>
+  </section>
+
+  <div id="newsLoading" class="news-loading panel" hidden>
+    <div class="loading-spinner"></div>
+    <p>正在加载新闻…</p>
+  </div>
+
+  <div id="newsEmpty" class="news-empty panel" hidden>
+    <h3>暂无新闻</h3>
+    <p>该标的在所选时间范围内没有返回新闻，可尝试扩大时间范围或稍后刷新。</p>
+  </div>
+
+  <section id="newsListPanel" class="panel news-list-panel" hidden>
+    <div id="newsList" class="news-list"></div>
+    <div class="news-load-more-wrap">
+      <button type="button" class="secondary-btn" id="loadMoreNewsBtn" hidden>加载更多</button>
+    </div>
+  </section>
+  {% else %}
+  <div class="news-empty panel">
+    <h3>暂无监控标的</h3>
+    <p>请先在投资主题详情页添加美股监控标的。</p>
+    <a href="{{ url_for('investments.index') }}" class="primary-btn">去添加标的</a>
+  </div>
+  {% endif %}
+
+  <p id="newsStatus" class="news-status" hidden></p>
+</main>
+
+<script>
+  window.STOCK_NEWS_PAGE = {
+    feedUrl: {{ url_for('investments.news_feed_api')|tojson }},
+    selectedTicker: {{ selected_ticker|tojson }},
+    newsRange: {{ news_range|tojson }},
+    configured: {{ news_configured|tojson }},
+    hasTickers: {{ (tickers|length > 0)|tojson }},
+  };
+</script>
+<script src="{{ url_for('static', filename='stock-news.js') }}"></script>
+{% endblock %}
