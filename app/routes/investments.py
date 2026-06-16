@@ -201,6 +201,7 @@ def news_feed_api():
         from_date=from_date,
         to_date=to_date,
         force_refresh=force_refresh,
+        app=current_app._get_current_object(),
     )
     if meta.get("error") and not items:
         status = 503 if not meta.get("configured", True) else 400
@@ -216,6 +217,8 @@ def news_feed_api():
         "limit": norm_limit,
         "has_more": has_more,
         "configured": meta.get("configured", True),
+        "translated": meta.get("translated", True),
+        "translating": meta.get("translating", False),
         "from": from_date,
         "to": to_date,
     })

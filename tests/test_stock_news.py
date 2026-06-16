@@ -1,6 +1,8 @@
 """监控标的财经新闻。"""
+import json
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,9 +10,21 @@ from flask import Flask
 
 from app.services.quote_providers import eodhd
 from app.services.stock_news import (
+    _parse_cache_payload,
+    _read_cache_entry,
+    _write_cache,
     fetch_ticker_news,
     list_news_tickers,
 )
+
+SAMPLE_ITEM = {
+    "date": "2026-01-01T10:00:00+00:00",
+    "title": "Apple news",
+    "summary": "Summary",
+    "link": "https://example.com",
+    "tags": [],
+    "sentiment_label": "中性",
+}
 
 
 class ListNewsTickersTest(unittest.TestCase):
@@ -59,6 +73,18 @@ class ListNewsTickersTest(unittest.TestCase):
         self.assertEqual(len(tickers[0]["themes"]), 2)
 
 
+class CachePayloadTest(unittest.TestCase):
+    def test_legacy_list_is_translated(self):
+        items, translated = _parse_cache_payload([SAMPLE_ITEM])
+        self.assertEqual(len(items), 1)
+        self.assertTrue(translated)
+
+    def test_wrapper_respects_translated_flag(self):
+        items, translated = _parse_cache_payload({"items": [SAMPLE_ITEM], "translated": False})
+        self.assertEqual(len(items), 1)
+        self.assertFalse(translated)
+
+
 class FetchTickerNewsCacheTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
@@ -79,34 +105,83 @@ class FetchTickerNewsCacheTest(unittest.TestCase):
         self.ctx.pop()
         Path(self.tmp.name).unlink(missing_ok=True)
 
-    @patch("app.services.stock_news.translate_news_items", side_effect=lambda items: items)
     @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
     @patch.object(eodhd, "fetch_financial_news")
-    def test_cache_avoids_repeat_fetch(self, mock_fetch, _cooldown, _translate):
-        mock_fetch.return_value = [
-            {
-                "date": "2026-01-01T10:00:00+00:00",
-                "title": "Apple news",
-                "summary": "Summary",
-                "link": "https://example.com",
-                "tags": [],
-                "sentiment_label": "中性",
-            }
-        ]
-        items1, _, _ = fetch_ticker_news("AAPL", offset=0, limit=20)
-        items2, _, _ = fetch_ticker_news("AAPL", offset=0, limit=20)
+    def test_cache_avoids_repeat_fetch(self, mock_fetch, _cooldown):
+        mock_fetch.return_value = [SAMPLE_ITEM]
+        items1, _, meta1 = fetch_ticker_news("AAPL", offset=0, limit=20)
+        items2, _, meta2 = fetch_ticker_news("AAPL", offset=0, limit=20)
         self.assertEqual(len(items1), 1)
         self.assertEqual(len(items2), 1)
+        self.assertTrue(meta1["translated"])
+        self.assertTrue(meta2["translated"])
         mock_fetch.assert_called_once()
 
-    @patch("app.services.stock_news.translate_news_items", side_effect=lambda items: items)
     @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
     @patch.object(eodhd, "fetch_financial_news")
-    def test_force_refresh_bypasses_cache(self, mock_fetch, _cooldown, _translate):
+    def test_force_refresh_bypasses_cache(self, mock_fetch, _cooldown):
         mock_fetch.return_value = []
         fetch_ticker_news("AAPL", offset=0, limit=20)
         fetch_ticker_news("AAPL", offset=0, limit=20, force_refresh=True)
         self.assertEqual(mock_fetch.call_count, 2)
+
+    @patch("app.services.stock_news._schedule_translation", return_value=True)
+    @patch("app.services.stock_news.is_translation_available", return_value=True)
+    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
+    @patch.object(eodhd, "fetch_financial_news")
+    def test_async_translation_returns_immediately(self, mock_fetch, _cooldown, _avail, _schedule):
+        mock_fetch.return_value = [SAMPLE_ITEM]
+        items, _, meta = fetch_ticker_news(
+            "AAPL",
+            offset=0,
+            limit=20,
+            app=self.app,
+        )
+        self.assertEqual(len(items), 1)
+        self.assertFalse(meta["translated"])
+        self.assertTrue(meta["translating"])
+        _schedule.assert_called_once()
+
+    @patch("app.services.stock_news.is_translation_available", return_value=True)
+    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
+    def test_legacy_cache_treated_as_translated(self, _cooldown, _avail):
+        cache_key = "AAPL:0:20::"
+        db = __import__("app.database", fromlist=["get_db"]).get_db()
+        db.execute(
+            """
+            INSERT INTO stock_news_cache (cache_key, payload_json, fetched_at)
+            VALUES (?, ?, ?)
+            """,
+            (
+                cache_key,
+                json.dumps([SAMPLE_ITEM], ensure_ascii=False),
+                datetime.now().isoformat(timespec="seconds"),
+            ),
+        )
+        db.commit()
+
+        entry = _read_cache_entry(cache_key)
+        self.assertIsNotNone(entry)
+        items, translated, _fetched_at = entry
+        self.assertEqual(len(items), 1)
+        self.assertTrue(translated)
+
+        items, _, meta = fetch_ticker_news("AAPL", offset=0, limit=20, app=self.app)
+        self.assertEqual(len(items), 1)
+        self.assertTrue(meta["translated"])
+        self.assertFalse(meta["translating"])
+
+    @patch("app.services.stock_news._schedule_translation", return_value=True)
+    @patch("app.services.stock_news.is_translation_available", return_value=True)
+    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
+    def test_untranslated_cache_schedules_translation(self, _cooldown, _avail, schedule):
+        cache_key = "AAPL:0:20::"
+        _write_cache(cache_key, [SAMPLE_ITEM], translated=False)
+        items, _, meta = fetch_ticker_news("AAPL", offset=0, limit=20, app=self.app)
+        self.assertEqual(len(items), 1)
+        self.assertFalse(meta["translated"])
+        self.assertTrue(meta["translating"])
+        schedule.assert_called_once()
 
 
 class FetchFinancialNewsOffsetTest(unittest.TestCase):
@@ -163,6 +238,18 @@ class NewsRouteTest(unittest.TestCase):
     def test_feed_without_key_returns_503(self, _mock_key):
         rv = self.client.get("/investments/news/api/feed?ticker=AAPL")
         self.assertEqual(rv.status_code, 503)
+
+    @patch("app.services.stock_news._schedule_translation", return_value=True)
+    @patch("app.services.stock_news.is_translation_available", return_value=True)
+    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
+    @patch.object(eodhd, "fetch_financial_news")
+    def test_feed_includes_translation_flags(self, mock_fetch, _cooldown, _avail, _schedule):
+        mock_fetch.return_value = [SAMPLE_ITEM]
+        rv = self.client.get("/investments/news/api/feed?ticker=AAPL")
+        self.assertEqual(rv.status_code, 200)
+        data = rv.get_json()
+        self.assertFalse(data["translated"])
+        self.assertTrue(data["translating"])
 
 
 if __name__ == "__main__":

@@ -18,66 +18,37 @@ class NeedsTranslationTest(unittest.TestCase):
 
 
 class TranslateNewsItemsTest(unittest.TestCase):
-    @patch("app.services.news_translate.is_translation_available", return_value=False)
-    def test_no_package_returns_unchanged(self, _mock_avail):
+    @patch("app.services.news_translate.has_financial_ai_configured", return_value=False)
+    def test_no_ai_returns_unchanged(self, _mock_ai):
         items = [{"title": "Hello", "summary": "World"}]
         self.assertEqual(translate_news_items(items), items)
 
-    @patch("app.services.news_translate._ensure_en_zh_package", return_value=True)
-    @patch("app.services.news_translate._translate_texts")
-    @patch("app.services.news_translate.is_translation_available", return_value=True)
-    def test_translates_english_items(self, _mock_avail, mock_translate, _mock_pkg):
-        mock_translate.return_value = ["苹果新闻", "摘要"]
+    @patch("app.services.news_translate.chat_completion_messages")
+    @patch("app.services.news_translate.has_financial_ai_configured", return_value=True)
+    def test_translates_english_items(self, _mock_ai, mock_chat):
+        mock_chat.return_value = {
+            "text": '[{"index": 0, "title": "苹果新闻", "summary": "摘要"}]',
+        }
         items = [{"title": "Apple news", "summary": "Summary"}]
         result = translate_news_items(items)
         self.assertEqual(result[0]["title"], "苹果新闻")
         self.assertEqual(result[0]["summary"], "摘要")
         self.assertTrue(result[0].get("translated"))
-        mock_translate.assert_called_once_with(["Apple news", "Summary"])
+        mock_chat.assert_called_once()
 
-    @patch("app.services.news_translate._translate_texts")
-    @patch("app.services.news_translate.is_translation_available", return_value=True)
-    def test_chinese_items_skip_api_call(self, _mock_avail, mock_translate):
+    @patch("app.services.news_translate.chat_completion_messages")
+    @patch("app.services.news_translate.has_financial_ai_configured", return_value=True)
+    def test_chinese_items_skip_api_call(self, _mock_ai, mock_chat):
         items = [{"title": "苹果公司财报", "summary": "业绩超预期"}]
         result = translate_news_items(items)
         self.assertEqual(result, items)
-        mock_translate.assert_not_called()
+        mock_chat.assert_not_called()
 
-    @patch("app.services.news_translate._translate_texts", return_value=["Apple news", "Summary"])
-    @patch("app.services.news_translate.is_translation_available", return_value=True)
-    def test_failed_translation_keeps_original(self, _mock_avail, _mock_translate):
+    @patch("app.services.news_translate.chat_completion_messages", return_value={"error": "fail"})
+    @patch("app.services.news_translate.has_financial_ai_configured", return_value=True)
+    def test_api_error_returns_original(self, _mock_ai, _mock_chat):
         items = [{"title": "Apple news", "summary": "Summary"}]
-        result = translate_news_items(items)
-        self.assertEqual(result[0]["title"], "Apple news")
-        self.assertFalse(result[0].get("translated"))
-
-
-class EnsureEnZhPackageTest(unittest.TestCase):
-    def setUp(self):
-        import app.services.news_translate as mod
-        mod._package_ready = None
-
-    def tearDown(self):
-        import app.services.news_translate as mod
-        mod._package_ready = None
-
-    @patch("app.services.news_translate._is_package_installed", return_value=True)
-    def test_skips_download_when_installed(self, _mock_installed):
-        from app.services.news_translate import _ensure_en_zh_package
-
-        self.assertTrue(_ensure_en_zh_package())
-
-    @patch("app.services.news_translate._is_package_installed", return_value=False)
-    def test_returns_false_when_import_missing(self, _mock_installed):
-        from app.services import news_translate as mod
-
-        mod._package_ready = None
-        with patch.dict("sys.modules", {"argostranslate.package": None}):
-            with patch(
-                "builtins.__import__",
-                side_effect=lambda name, *args, **kwargs: (_ for _ in ()).throw(ImportError(name)),
-            ):
-                self.assertFalse(mod._ensure_en_zh_package())
+        self.assertEqual(translate_news_items(items), items)
 
 
 if __name__ == "__main__":

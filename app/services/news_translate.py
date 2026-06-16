@@ -1,16 +1,16 @@
-"""财经新闻标题与摘要自动翻译为简体中文（Argos Translate 离线翻译）。"""
-import logging
+"""财经新闻标题与摘要自动翻译为简体中文（DeepSeek Flash 批量翻译）。"""
+import json
 import re
-import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-logger = logging.getLogger(__name__)
+from app.services.financial_ai import (
+    CHART_INSIGHT_MODEL,
+    chat_completion_messages,
+    has_financial_ai_configured,
+)
 
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
-FROM_CODE = "en"
-TO_CODE = "zh"
-_package_lock = threading.Lock()
-_package_ready: Optional[bool] = None
+_SUMMARY_PROMPT_MAX_LEN = 240
 
 
 def _cjk_ratio(text: str) -> float:
@@ -26,113 +26,90 @@ def needs_translation(text: str) -> bool:
     return _cjk_ratio(text) < 0.25
 
 
-def _is_package_installed() -> bool:
-    try:
-        import argostranslate.package as pkg
-    except ImportError:
-        return False
-    return any(
-        package.from_code == FROM_CODE and package.to_code == TO_CODE
-        for package in pkg.get_installed_packages()
-    )
-
-
-def _ensure_en_zh_package() -> bool:
-    """确保 en→zh 语言包已安装；首次会联网下载。"""
-    global _package_ready
-    if _package_ready is True:
-        return True
-    if _package_ready is False:
-        return False
-
-    with _package_lock:
-        if _package_ready is True:
-            return True
-        if _package_ready is False:
-            return False
-        try:
-            import argostranslate.package as pkg
-        except ImportError:
-            _package_ready = False
-            return False
-
-        if _is_package_installed():
-            _package_ready = True
-            return True
-
-        try:
-            pkg.update_package_index()
-            available = pkg.get_available_packages()
-            match = next(
-                (
-                    package
-                    for package in available
-                    if package.from_code == FROM_CODE and package.to_code == TO_CODE
-                ),
-                None,
-            )
-            if match is None:
-                logger.warning("argostranslate: 未找到 en→zh 语言包")
-                _package_ready = False
-                return False
-            pkg.install_from_path(match.download())
-            _package_ready = True
-            logger.info("argostranslate: en→zh 语言包安装完成")
-            return True
-        except Exception as exc:
-            logger.warning("argostranslate: 安装 en→zh 语言包失败: %s", exc)
-            _package_ready = False
-            return False
-
-
 def is_translation_available() -> bool:
-    """是否已安装 Argos Translate（语言包可在首次翻译时自动下载）。"""
-    try:
-        import argostranslate.translate  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    """是否已配置 DeepSeek，可用于新闻翻译。"""
+    return has_financial_ai_configured()
 
 
-def _translate_texts(texts: List[str]) -> List[str]:
-    if not texts:
-        return texts
-    if not _ensure_en_zh_package():
-        return texts
+def _truncate_for_prompt(text: str, max_len: int = _SUMMARY_PROMPT_MAX_LEN) -> str:
+    text = (text or "").strip()
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1].rstrip() + "…"
 
-    import argostranslate.translate as argos_translate
 
-    results: List[str] = []
-    for text in texts:
-        try:
-            results.append(argos_translate.translate(text, FROM_CODE, TO_CODE))
-        except Exception as exc:
-            logger.debug("argostranslate 翻译失败: %s", exc)
-            results.append(text)
-    return results
+def _extract_json_array(raw: str) -> List[Any]:
+    text = (raw or "").strip()
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE)
+    if fence:
+        text = fence.group(1).strip()
+    start = text.find("[")
+    end = text.rfind("]")
+    if start >= 0 and end > start:
+        text = text[start : end + 1]
+    return json.loads(text)
 
 
 def translate_news_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """将英文新闻标题与摘要译为简体中文；未安装依赖或已是中文则原样返回。"""
-    if not items or not is_translation_available():
+    """将英文新闻标题与摘要译为简体中文；无 DeepSeek 或已是中文则原样返回。"""
+    if not items or not has_financial_ai_configured():
+        return items
+
+    pending: List[Dict[str, Any]] = []
+    for index, item in enumerate(items):
+        title = str(item.get("title") or "").strip()
+        summary = str(item.get("summary") or "").strip()
+        if not needs_translation(title) and not needs_translation(summary):
+            continue
+        pending.append({
+            "index": index,
+            "title": title,
+            "summary": _truncate_for_prompt(summary),
+        })
+
+    if not pending:
+        return items
+
+    prompt = f"""你是财经新闻翻译助手。将下列英文新闻标题与摘要译为简体中文。
+要求：
+1. 保留公司名、股票代码、数字与专有名词的准确性
+2. 语言简洁通顺，符合中文财经报道习惯
+3. 仅返回 JSON 数组，每项含 index（原序号）、title、summary 字段，不要 markdown
+
+待翻译：
+{json.dumps(pending, ensure_ascii=False, indent=2)}"""
+
+    result = chat_completion_messages(
+        [{"role": "user", "content": prompt}],
+        model=CHART_INSIGHT_MODEL,
+    )
+    if result.get("error"):
+        return items
+
+    try:
+        translated_rows = _extract_json_array(result.get("text") or "")
+    except (json.JSONDecodeError, TypeError):
+        return items
+
+    if not isinstance(translated_rows, list):
         return items
 
     merged = [dict(item) for item in items]
-    pending: List[tuple[int, str, str]] = []
-    for index, item in enumerate(merged):
-        for field in ("title", "summary"):
-            text = str(item.get(field) or "").strip()
-            if needs_translation(text):
-                pending.append((index, field, text))
-
-    if not pending:
-        return merged
-
-    translated = _translate_texts([text for _, _, text in pending])
-    for (index, field, original), new_text in zip(pending, translated):
-        cleaned = (new_text or "").strip()
-        if cleaned and cleaned != original:
-            merged[index][field] = cleaned
-            merged[index]["translated"] = True
+    for row in translated_rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            index = int(row.get("index"))
+        except (TypeError, ValueError):
+            continue
+        if index < 0 or index >= len(merged):
+            continue
+        title = str(row.get("title") or "").strip()
+        summary = str(row.get("summary") or "").strip()
+        if title:
+            merged[index]["title"] = title
+        if summary:
+            merged[index]["summary"] = summary
+        merged[index]["translated"] = True
 
     return merged

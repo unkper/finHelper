@@ -10,7 +10,7 @@
       <div>
         <p class="eyebrow">Financial News</p>
         <h2>监控标的新闻</h2>
-        <p class="hint">汇总投资主题下美股监控标的的 EODHD 财经新闻；按标的切换浏览，数据约 30 分钟缓存。{% if translate_configured %}英文内容将自动译为中文（Argos 离线翻译，首次需下载语言包）。{% endif %}</p>
+        <p class="hint">汇总投资主题下美股监控标的的 EODHD 财经新闻；按标的切换浏览，数据约 30 分钟缓存。{% if translate_configured %}英文内容将自动译为中文（DeepSeek Flash，先显示原文后刷新）。{% endif %}</p>
         {% if not has_eodhd_key %}
         <p class="hint news-hint-warn">未配置 <code>EODHD_API_KEY</code>，无法拉取新闻。</p>
         {% elif not news_configured %}

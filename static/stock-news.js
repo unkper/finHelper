@@ -1,9 +1,15 @@
 (function () {
   const cfg = window.STOCK_NEWS_PAGE || {};
   const LIMIT = 20;
+  const POLL_INTERVAL_MS = 1500;
+  const POLL_MAX_ATTEMPTS = 27;
   let currentOffset = 0;
   let hasMore = false;
   let loading = false;
+  let polling = false;
+  let pollTimer = null;
+  let pollAttempts = 0;
+  let lastFeedParams = null;
 
   function $(id) {
     return document.getElementById(id);
@@ -65,14 +71,31 @@
     `;
   }
 
+  function renderNewsList(items) {
+    const list = $("newsList");
+    if (!list) return;
+    list.innerHTML = items.map((item) => renderNewsCard(item)).join("");
+  }
+
   function setLoading(active) {
     loading = active;
     const el = $("newsLoading");
     if (el) el.hidden = !active;
     const refreshBtn = $("refreshNewsBtn");
     const loadMoreBtn = $("loadMoreNewsBtn");
-    if (refreshBtn) refreshBtn.disabled = active || !cfg.selectedTicker;
-    if (loadMoreBtn) loadMoreBtn.disabled = active;
+    if (refreshBtn) refreshBtn.disabled = active || polling || !cfg.selectedTicker;
+    if (loadMoreBtn) loadMoreBtn.disabled = active || polling;
+  }
+
+  function stopPolling() {
+    polling = false;
+    pollAttempts = 0;
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+    const refreshBtn = $("refreshNewsBtn");
+    if (refreshBtn) refreshBtn.disabled = loading || !cfg.selectedTicker;
   }
 
   function buildFeedUrl(offset, refresh) {
@@ -86,16 +109,71 @@
     return `${cfg.feedUrl}?${params.toString()}`;
   }
 
-  async function loadNews({ append = false, refresh = false } = {}) {
-    if (!cfg.feedUrl || !cfg.selectedTicker || loading) return;
+  function applyFeedData(data, { append = false } = {}) {
+    const items = data.items || [];
+    hasMore = !!data.has_more;
+    currentOffset = append ? currentOffset + items.length : items.length;
+
+    if (append) {
+      const list = $("newsList");
+      items.forEach((item) => {
+        list?.insertAdjacentHTML("beforeend", renderNewsCard(item));
+      });
+    } else {
+      renderNewsList(items);
+    }
+
+    const list = $("newsList");
+    const hasItems = (list?.children.length || 0) > 0;
+    $("newsListPanel")?.toggleAttribute("hidden", !hasItems);
+    $("newsEmpty")?.toggleAttribute("hidden", hasItems);
+    $("loadMoreNewsBtn")?.toggleAttribute("hidden", !hasMore || !hasItems);
+
+    return data;
+  }
+
+  function schedulePoll() {
+    if (!polling) return;
+    if (pollAttempts >= POLL_MAX_ATTEMPTS) {
+      stopPolling();
+      setStatus("翻译超时，请稍后刷新重试", true);
+      return;
+    }
+    pollTimer = setTimeout(() => {
+      pollAttempts += 1;
+      loadNews({ poll: true });
+    }, POLL_INTERVAL_MS);
+  }
+
+  function maybeStartPolling(data, feedParams) {
+    stopPolling();
+    if (!data.translating || data.translated) {
+      setStatus("", false);
+      return;
+    }
+    lastFeedParams = feedParams;
+    polling = true;
+    pollAttempts = 0;
+    setStatus("正在翻译为中文…", false);
+    schedulePoll();
+  }
+
+  async function loadNews({ append = false, refresh = false, poll = false } = {}) {
+    if (!cfg.feedUrl || !cfg.selectedTicker) return;
+    if (loading) return;
+    if (poll && !polling) return;
 
     const offset = append ? currentOffset : 0;
-    setLoading(true);
-    setStatus("", false);
-    if (!append) {
-      $("newsList")?.replaceChildren();
-      $("newsListPanel")?.setAttribute("hidden", "");
-      $("newsEmpty")?.setAttribute("hidden", "");
+    const feedParams = { append, refresh, offset };
+    if (!poll) {
+      stopPolling();
+      setLoading(true);
+      setStatus("", false);
+      if (!append) {
+        $("newsList")?.replaceChildren();
+        $("newsListPanel")?.setAttribute("hidden", "");
+        $("newsEmpty")?.setAttribute("hidden", "");
+      }
     }
 
     try {
@@ -103,29 +181,31 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "加载失败");
 
-      const items = data.items || [];
-      hasMore = !!data.has_more;
-      currentOffset = offset + items.length;
-
-      const list = $("newsList");
-      if (list) {
-        items.forEach((item) => {
-          list.insertAdjacentHTML("beforeend", renderNewsCard(item));
-        });
+      if (poll) {
+        if (data.translated) {
+          applyFeedData(data, { append: lastFeedParams?.append || false });
+          stopPolling();
+          setStatus("", false);
+        } else {
+          schedulePoll();
+        }
+        return;
       }
 
-      const hasItems = (list?.children.length || 0) > 0;
-      $("newsListPanel")?.toggleAttribute("hidden", !hasItems);
-      $("newsEmpty")?.toggleAttribute("hidden", hasItems);
-      $("loadMoreNewsBtn")?.toggleAttribute("hidden", !hasMore || !hasItems);
+      applyFeedData(data, { append });
+      maybeStartPolling(data, feedParams);
     } catch (error) {
+      if (poll) {
+        schedulePoll();
+        return;
+      }
       setStatus(error.message || "加载失败", true);
       if (!append) {
         $("newsListPanel")?.setAttribute("hidden", "");
         $("newsEmpty")?.removeAttribute("hidden");
       }
     } finally {
-      setLoading(false);
+      if (!poll) setLoading(false);
     }
   }
 
@@ -139,7 +219,7 @@
     });
 
     $("loadMoreNewsBtn")?.addEventListener("click", () => {
-      if (hasMore) loadNews({ append: true });
+      if (hasMore && !polling) loadNews({ append: true });
     });
   });
 })();
