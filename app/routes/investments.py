@@ -8,6 +8,7 @@ from app.database import get_db
 from app.services.investment import (
     fetch_assistants_with_themes, fetch_all_assistants, fetch_theme_by_id,
     fetch_theme_details, fetch_theme_score, create_theme, create_assistant,
+    delete_assistant,
     move_theme_to_assistant, archive_theme, update_theme,
     fetch_archived_themes, fetch_archived_theme_by_id, count_archived_themes,
     add_theme_asset, add_theme_milestone, update_theme_milestone, add_theme_article,
@@ -998,6 +999,25 @@ def create_assistant_route():
     else:
         create_assistant(name, description)
         flash(f"投资助手「{name}」已创建", "success")
+    return redirect(url_for('investments.index'))
+
+
+@bp.route('/assistants/<int:assistant_id>/delete', methods=['POST'])
+def delete_assistant_route(assistant_id):
+    result = delete_assistant(assistant_id)
+    if result is None:
+        flash("投资助手不存在", "error")
+    elif result is False:
+        flash("默认投资助手不可移除", "error")
+    else:
+        name, archived_count = result
+        if archived_count:
+            flash(
+                f"投资助手「{name}」已移除，{archived_count} 个主题已移入回收站",
+                "success",
+            )
+        else:
+            flash(f"投资助手「{name}」已移除", "success")
     return redirect(url_for('investments.index'))
 
 

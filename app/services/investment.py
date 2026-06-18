@@ -67,6 +67,52 @@ def create_assistant(name, description=None):
     return cursor.lastrowid
 
 
+def delete_assistant(assistant_id):
+    """
+    永久删除投资助手：活跃主题移入回收站，已封存主题改挂默认助手。
+    返回 None（不存在）、False（不可删，如默认助手）、或 (name, archived_count)。
+    """
+    assistant = fetch_assistant_by_id(assistant_id)
+    if not assistant:
+        return None
+    if assistant["is_default"]:
+        return False
+
+    default_id = get_default_assistant_id()
+    db = get_db()
+    active_rows = db.execute(
+        """
+        SELECT id FROM themes
+        WHERE assistant_id = ? AND archived_at IS NULL
+        """,
+        (assistant_id,),
+    ).fetchall()
+    archived_count = len(active_rows)
+    now_iso = datetime.now().isoformat(timespec="seconds")
+
+    if archived_count:
+        db.execute(
+            """
+            UPDATE themes
+            SET archived_at = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE assistant_id = ? AND archived_at IS NULL
+            """,
+            (now_iso, assistant_id),
+        )
+
+    db.execute(
+        """
+        UPDATE themes
+        SET assistant_id = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE assistant_id = ?
+        """,
+        (default_id, assistant_id),
+    )
+    db.execute("DELETE FROM investment_assistants WHERE id = ?", (assistant_id,))
+    db.commit()
+    return assistant["name"], archived_count
+
+
 def fetch_assistants_with_themes():
     """返回 [(assistant, [themes...]), ...] 供列表页分组展示；助手按重要性均分排名。"""
     assistants = fetch_all_assistants()

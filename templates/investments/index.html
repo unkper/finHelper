@@ -14,6 +14,12 @@
   .assistant-pnl.positive { color: #006644; }
   .assistant-pnl.negative { color: #bf2600; }
   .assistant-pnl.neutral { color: #5e6c84; }
+  .assistant-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .assistant-delete-btn {
+    font-size: 11px; padding: 2px 8px; border: none; background: none;
+    color: #bf2600; cursor: pointer; font-weight: 600;
+  }
+  .assistant-delete-btn:hover { text-decoration: underline; }
   .theme-card { background: #ffffff; border-radius: 6px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(9, 30, 66, 0.25); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
   .theme-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(9, 30, 66, 0.15); }
   .theme-card h4 { margin: 0 0 8px 0; color: #172b4d; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
@@ -123,6 +129,15 @@
         {% endif %}
       {% else %}
         <span class="assistant-pnl neutral">暂无评分</span>
+      {% endif %}
+      {% if not assistant.is_default %}
+      <div class="assistant-actions">
+        <form method="post"
+              action="{{ url_for('investments.delete_assistant_route', assistant_id=assistant.id) }}"
+              onsubmit="return confirm('确定移除助手「{{ assistant.name }}」？其下所有主题将移入回收站，此操作不可撤销。');">
+          <button type="submit" class="assistant-delete-btn">移除助手</button>
+        </form>
+      </div>
       {% endif %}
     </h3>
     {% if assistant.description %}
