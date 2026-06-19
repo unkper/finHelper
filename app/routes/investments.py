@@ -83,6 +83,13 @@ from app.services.financial_ai import (
     normalize_extracted_payload,
 )
 from app.services.financial_statements import build_chart_payload
+from app.services.financial_valuation import (
+    build_valuation_payload,
+    get_valuation_override,
+    save_valuation_dcf_params,
+    save_valuation_override,
+)
+from app.services.market_stats import fetch_us_market_stats
 from app.services.financial_pdf import run_parse_job, run_text_analyze_job, save_uploaded_pdf
 from app.services.financial_chart_insight import explain_chart, explain_dashboard
 from app.services.financial_game_rules import build_game_rules
@@ -419,6 +426,12 @@ def research_report_detail(report_id):
         narrative_url=url_for("investments.research_report_narrative", report_id=report_id),
         ask_url=url_for("investments.research_report_ask", report_id=report_id),
         qa_presets=PRESET_QUESTIONS,
+        valuation_override_url=url_for(
+            "investments.research_report_valuation_override", report_id=report_id
+        ),
+        valuation_dcf_params_url=url_for(
+            "investments.research_report_valuation_dcf_params", report_id=report_id
+        ),
     )
 
 
@@ -442,7 +455,72 @@ def research_report_chart_data(report_id):
         extracted = current_extracted
         narratives = extracted.get("narratives") if isinstance(extracted.get("narratives"), dict) else {}
         payload["narratives"] = narratives
+        override = get_valuation_override(report_id)
+        market_stats = fetch_us_market_stats([report["ticker"]]).get(report["ticker"].upper(), {})
+        payload["valuation"] = build_valuation_payload(
+            report["ticker"],
+            payload,
+            market_stats,
+            override,
+        )
     return jsonify(payload)
+
+
+@bp.route('/research/reports/<int:report_id>/valuation/override', methods=['POST'])
+def research_report_valuation_override(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+
+    data = request.get_json(silent=True) or {}
+    clear_market_cap = bool(data.get("clear_market_cap"))
+    clear_shares = bool(data.get("clear_shares"))
+    market_cap = data.get("market_cap")
+    shares = data.get("shares_outstanding")
+
+    def _to_float(value):
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    save_valuation_override(
+        report_id,
+        market_cap=_to_float(market_cap),
+        shares_outstanding=_to_float(shares),
+        clear_market_cap=clear_market_cap,
+        clear_shares=clear_shares,
+    )
+    return jsonify({"ok": True})
+
+
+@bp.route('/research/reports/<int:report_id>/valuation/dcf-params', methods=['POST'])
+def research_report_valuation_dcf_params(report_id):
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+
+    data = request.get_json(silent=True) or {}
+    allowed_keys = (
+        "wacc",
+        "optimistic_factor",
+        "pessimistic_factor",
+        "terminal_growth_optimistic",
+        "terminal_growth_base",
+        "terminal_growth_pessimistic",
+    )
+    params = {}
+    for key in allowed_keys:
+        if key not in data:
+            continue
+        try:
+            params[key] = float(data[key])
+        except (TypeError, ValueError):
+            return jsonify({"error": f"参数 {key} 无效"}), 400
+    save_valuation_dcf_params(report_id, params)
+    return jsonify({"ok": True})
 
 
 @bp.route('/research/reports/<int:report_id>/analyze', methods=['POST'])

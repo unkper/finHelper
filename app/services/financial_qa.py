@@ -6,6 +6,8 @@ from app.services.financial_ai import CHART_INSIGHT_MODEL, chat_completion_messa
 from app.services.financial_chart_insight import build_dashboard_context
 from app.services.financial_reports import fetch_report_by_id, fetch_report_extracted, get_report_source_text
 from app.services.financial_statements import build_chart_payload
+from app.services.financial_valuation import build_valuation_payload, get_valuation_override
+from app.services.market_stats import fetch_us_market_stats
 
 PRESET_QUESTIONS: List[Dict[str, str]] = [
     {
@@ -22,6 +24,14 @@ PRESET_QUESTIONS: List[Dict[str, str]] = [
         "question": (
             "有哪些主要风险与后续应跟踪的事项？"
             "请结合风险提示、重大事项及财务数据说明。"
+        ),
+    },
+    {
+        "id": "valuation",
+        "label": "估值是否合理",
+        "question": (
+            "结合当前 PS/PE/PEG 倍数、盈利阶段与 DCF 三情景结果，"
+            "这家公司的估值是否合理？请说明主要支撑与风险。"
         ),
     },
 ]
@@ -97,6 +107,16 @@ def build_report_qa_context(report_id: int) -> Dict[str, Any] | None:
                 context["dashboard_data"] = build_dashboard_context(chart_payload)
                 context["red_flags"] = chart_payload.get("red_flags") or context["red_flags"]
                 context["material_events"] = chart_payload.get("material_events") or context["material_events"]
+                override = get_valuation_override(report_id)
+                market_stats = fetch_us_market_stats([report["ticker"]]).get(
+                    (report.get("ticker") or "").upper(), {}
+                )
+                context["valuation"] = build_valuation_payload(
+                    report["ticker"],
+                    chart_payload,
+                    market_stats,
+                    override,
+                )
 
     return context
 

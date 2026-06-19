@@ -28,7 +28,7 @@ class PresetQuestionsTest(unittest.TestCase):
     def test_get_preset_question(self):
         self.assertIn("基本面", get_preset_question("fundamentals") or "")
         self.assertIsNone(get_preset_question("unknown"))
-        self.assertEqual(len(PRESET_QUESTIONS), 2)
+        self.assertEqual(len(PRESET_QUESTIONS), 3)
 
 
 class BuildReportQaContextTest(unittest.TestCase):

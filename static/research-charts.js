@@ -474,7 +474,7 @@
     document.querySelectorAll(".research-section-tab").forEach((tab) => {
       tab.classList.toggle("is-active", tab.dataset.section === section);
     });
-    document.querySelectorAll(".research-charts-grid .research-chart-panel").forEach((panel) => {
+    document.querySelectorAll(".research-charts-grid [data-section]").forEach((panel) => {
       const match = panel.dataset.section === section;
       const empty = panel.dataset.empty === "1";
       panel.hidden = !match || empty;
@@ -917,6 +917,9 @@
       return;
     }
     renderChartPanels(data);
+    if (typeof window.renderResearchValuation === "function") {
+      window.renderResearchValuation(data.valuation || null);
+    }
     applyNarrativeStyle(getNarrativeStyle());
     ensureNarrativeForStyle(getNarrativeStyle());
   }
@@ -1236,6 +1239,8 @@
 
   updateStyleToggleUi(getNarrativeStyle());
   applyThemeClass(getNarrativeStyle());
+
+  window.reloadResearchCharts = loadCharts;
 
   if (cfg.initialInsights) {
     renderInsights(cfg.initialInsights);

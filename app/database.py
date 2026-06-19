@@ -440,6 +440,21 @@ def _migrate_stock_news_cache(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_research_valuation_overrides(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS research_valuation_overrides (
+            report_id INTEGER PRIMARY KEY,
+            market_cap REAL,
+            shares_outstanding REAL,
+            dcf_params_json TEXT,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(report_id) REFERENCES financial_reports(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+
 def migrate_db(conn: sqlite3.Connection) -> None:
     _migrate_investment_assistants(conn)
     _migrate_stock_daily_cache(conn)
@@ -449,6 +464,7 @@ def migrate_db(conn: sqlite3.Connection) -> None:
     _migrate_financial_reports(conn)
     _migrate_api_usage_daily(conn)
     _migrate_stock_news_cache(conn)
+    _migrate_research_valuation_overrides(conn)
 
     milestone_columns = {row["name"] for row in conn.execute("PRAGMA table_info(theme_milestones)")}
     if milestone_columns:

@@ -107,6 +107,7 @@
       <button type="button" class="research-section-tab is-active" data-section="profitability" data-label-pro="盈利" data-label-game="属性成长">盈利</button>
       <button type="button" class="research-section-tab" data-section="balance" data-label-pro="资产负债与结构" data-label-game="装备栏">资产负债与结构</button>
       <button type="button" class="research-section-tab" data-section="cashflow" data-label-pro="现金流" data-label-game="技能与冷却">现金流</button>
+      <button type="button" class="research-section-tab" data-section="valuation" data-label-pro="估值" data-label-game="估值">估值</button>
     </nav>
 
     <div class="research-charts-grid" id="chartsGrid">
@@ -241,6 +242,10 @@
         </details>
         <div id="cashflowTrendChart" class="research-chart research-chart--wide"></div>
       </section>
+
+      <section class="panel research-valuation-panel research-chart-panel--wide" data-section="valuation" id="panel-valuation" hidden>
+        <div id="valuationPanelContent" class="research-valuation-content"></div>
+      </section>
     </div>
   </section>
   </details>
@@ -343,6 +348,8 @@
     editUrl: {{ url_for('investments.research_report_edit', report_id=report.id)|tojson }},
     deleteUrl: {{ url_for('investments.research_report_delete', report_id=report.id)|tojson }},
     listUrl: {{ url_for('investments.research', tab='analysis')|tojson }},
+    valuationOverrideUrl: {{ valuation_override_url|tojson }},
+    valuationDcfParamsUrl: {{ valuation_dcf_params_url|tojson }},
     aiConfigured: {{ ai_configured|tojson }},
     initialInsights: {{ initial_insights|tojson }},
   };
@@ -350,4 +357,5 @@
 <script src="{{ url_for('static', filename='research-detail.js') }}"></script>
 <script src="{{ url_for('static', filename='research-qa.js') }}"></script>
 <script src="{{ url_for('static', filename='research-charts.js') }}"></script>
+<script src="{{ url_for('static', filename='research-valuation.js') }}"></script>
 {% endblock %}
