@@ -959,6 +959,27 @@
   font: inherit;
 }
 
+.research-valuation-input-group {
+  display: flex;
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.research-valuation-input-group input {
+  flex: 1;
+  min-width: 0;
+}
+
+.research-valuation-unit {
+  padding: 0.45rem 0.5rem;
+  border: 1px solid #dfe1e6;
+  border-radius: 4px;
+  font: inherit;
+  background: #fff;
+  color: #172b4d;
+  min-width: 5.5rem;
+}
+
 .research-valuation-form-actions {
   display: flex;
   gap: 0.5rem;

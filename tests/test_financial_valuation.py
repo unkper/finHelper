@@ -99,6 +99,13 @@ class BuildValuationPayloadTest(unittest.TestCase):
         self.assertEqual(result["market"]["source"], "manual")
         self.assertEqual(result["market"]["market_cap"], 500_000_000_000.0)
 
+    def test_derives_shares_from_market_cap_and_price(self):
+        chart = _chart_payload_single_q()
+        market = {"price": 100.0, "market_cap": 1_000_000_000_000.0, "source": "fmp"}
+        result = build_valuation_payload("AAPL", chart, market, None)
+        self.assertEqual(result["market"]["shares"], 10_000_000_000.0)
+        self.assertTrue(result["dcf"]["scenarios"][0].get("implied_price"))
+
     def test_dcf_scenario_order(self):
         chart = _chart_payload_single_q()
         market = {"price": 10.0, "market_cap": 400_000_000_000.0, "shares_outstanding": 1_000_000_000.0}

@@ -260,6 +260,9 @@ def _resolve_market(
         if source in ("none", "quote"):
             source = "computed"
 
+    if shares is None and market_cap and price and price > 0:
+        shares = market_cap / price
+
     return {
         "price": price,
         "market_cap": market_cap,

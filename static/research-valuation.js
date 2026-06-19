@@ -1,6 +1,18 @@
 (function () {
   const cfg = window.FINANCIAL_REPORT_PAGE || {};
 
+  const MARKET_CAP_UNITS = {
+    yi: { label: "亿美元", factor: 1e8 },
+    wan: { label: "万美元", factor: 1e4 },
+    raw: { label: "美元", factor: 1 },
+  };
+
+  const SHARES_UNITS = {
+    yi: { label: "亿股", factor: 1e8 },
+    wan: { label: "万股", factor: 1e4 },
+    raw: { label: "股", factor: 1 },
+  };
+
   function $(id) {
     return document.getElementById(id);
   }
@@ -27,6 +39,51 @@
     if (Math.abs(n) >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
     if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
     return `$${fmtNum(n)}`;
+  }
+
+  function fmtUsdYi(value) {
+    if (value == null) return null;
+    return `${fmtNum(Number(value) / 1e8, 2)} 亿美元`;
+  }
+
+  function fmtSharesYi(shares) {
+    if (shares == null) return null;
+    return `${fmtNum(Number(shares) / 1e8, 2)} 亿股`;
+  }
+
+  function toDisplayValue(raw, unitKey, units) {
+    if (raw == null || raw === "") return "";
+    const factor = units[unitKey]?.factor || 1;
+    const n = Number(raw) / factor;
+    if (Number.isNaN(n)) return "";
+    return String(Number(n.toPrecision(10)));
+  }
+
+  function toRawValue(inputValue, unitKey, units) {
+    if (inputValue === "" || inputValue == null) return null;
+    const n = Number(inputValue);
+    if (Number.isNaN(n)) return null;
+    const factor = units[unitKey]?.factor || 1;
+    return n * factor;
+  }
+
+  function renderUnitOptions(units, selected) {
+    return Object.entries(units)
+      .map(
+        ([key, meta]) =>
+          `<option value="${key}"${key === selected ? " selected" : ""}>${escapeHtml(meta.label)}</option>`
+      )
+      .join("");
+  }
+
+  function renderInputWithUnit(id, unitId, value, units, placeholder) {
+    return `
+      <div class="research-valuation-input-group">
+        <input type="number" step="any" id="${id}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}">
+        <select id="${unitId}" class="research-valuation-unit" aria-label="单位">
+          ${renderUnitOptions(units, "yi")}
+        </select>
+      </div>`;
   }
 
   function renderKpiCard(label, value, hint) {
@@ -65,20 +122,30 @@
     return `<table class="research-valuation-dcf-table">${head}<tbody>${body}</tbody></table>`;
   }
 
-  function bindForms(valuation) {
+  function bindForms() {
     const overrideForm = $("valuationOverrideForm");
     if (overrideForm) {
       overrideForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         if (!cfg.valuationOverrideUrl) return;
-        const marketCap = $("valuationMarketCap")?.value;
-        const shares = $("valuationShares")?.value;
+        const marketCapUnit = $("valuationMarketCapUnit")?.value || "yi";
+        const sharesUnit = $("valuationSharesUnit")?.value || "yi";
+        const marketCap = toRawValue(
+          $("valuationMarketCap")?.value,
+          marketCapUnit,
+          MARKET_CAP_UNITS
+        );
+        const shares = toRawValue(
+          $("valuationShares")?.value,
+          sharesUnit,
+          SHARES_UNITS
+        );
         const res = await fetch(cfg.valuationOverrideUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            market_cap: marketCap === "" ? null : marketCap,
-            shares_outstanding: shares === "" ? null : shares,
+            market_cap: marketCap,
+            shares_outstanding: shares,
           }),
         });
         const data = await res.json();
@@ -162,6 +229,12 @@
       .map((w) => `<li>${escapeHtml(w)}</li>`)
       .join("");
 
+    const marketCapDisplay = toDisplayValue(market.market_cap, "yi", MARKET_CAP_UNITS);
+    const sharesDisplay = toDisplayValue(market.shares, "yi", SHARES_UNITS);
+    const marketHint = [fmtUsdYi(market.market_cap), fmtSharesYi(market.shares)]
+      .filter(Boolean)
+      .join(" · ");
+
     panel.innerHTML = `
       <div class="research-chart-head">
         <h3>估值分析 · ${escapeHtml(valuation.ticker || cfg.ticker || "")}</h3>
@@ -172,7 +245,7 @@
 
       <div class="research-kpi-grid research-valuation-kpis">
         ${renderKpiCard("现价", market.price != null ? "$" + fmtNum(market.price, 2) : "—", "来源: " + (market.source || "—"))}
-        ${renderKpiCard("市值", fmtUsd(market.market_cap), market.shares ? fmtNum(market.shares, 0) + " 股" : "")}
+        ${renderKpiCard("市值", fmtUsd(market.market_cap), marketHint || "")}
         ${renderKpiCard("PS", multiples.ps != null ? multiples.ps + "x" : "—", valuation.primary_metric === "PS" ? "主指标" : "")}
         ${renderKpiCard("PE", multiples.pe != null ? multiples.pe + "x" : "—", valuation.primary_metric === "PE" ? "主指标" : "")}
         ${renderKpiCard("PEG", multiples.peg != null ? multiples.peg : "—", multiples.pe_g_label || "")}
@@ -181,10 +254,14 @@
 
       <form id="valuationOverrideForm" class="research-valuation-form">
         <h4>市值 / 股本覆盖</h4>
-        <p class="hint">自动从 FMP 拉取；可手动覆盖（美元）。</p>
+        <p class="hint">自动从 FMP 拉取；可手动覆盖。默认单位为「亿」，保存时自动换算为美元 / 股。</p>
         <div class="research-valuation-form-row">
-          <label>市值 (USD)<input type="number" step="any" id="valuationMarketCap" placeholder="如 500000000000"></label>
-          <label>股本<input type="number" step="any" id="valuationShares" placeholder="如 15000000000"></label>
+          <label>市值
+            ${renderInputWithUnit("valuationMarketCap", "valuationMarketCapUnit", marketCapDisplay, MARKET_CAP_UNITS, "如 3000")}
+          </label>
+          <label>总股本
+            ${renderInputWithUnit("valuationShares", "valuationSharesUnit", sharesDisplay, SHARES_UNITS, "如 150")}
+          </label>
         </div>
         <div class="research-valuation-form-actions">
           <button type="submit" class="primary-btn">保存覆盖</button>
@@ -210,7 +287,7 @@
         </form>
       </div>
     `;
-    bindForms(valuation);
+    bindForms();
   }
 
   window.renderResearchValuation = renderValuation;
