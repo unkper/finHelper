@@ -393,6 +393,126 @@ def _build_dcf(
     return {"params": params, "scenarios": scenarios}
 
 
+def _implied_price_at_wacc(
+    fcf_usd: float,
+    growth_pct: float,
+    wacc_pct: float,
+    terminal_growth_pct: float,
+    shares: float,
+) -> Optional[float]:
+    row = _dcf_scenario(fcf_usd, growth_pct, wacc_pct, terminal_growth_pct, shares)
+    return row.get("implied_price")
+
+
+def solve_implied_wacc(
+    fcf_usd: float,
+    base_growth_pct: float,
+    terminal_growth_pct: float,
+    shares: float,
+    target_price: float,
+    *,
+    low: float = 5.0,
+    high: float = 35.0,
+    tol: float = 0.01,
+) -> Optional[float]:
+    """中性情景下，使 DCF 隐含价等于 target_price 的 WACC（二分搜索）。"""
+    if fcf_usd <= 0 or shares <= 0 or target_price <= 0:
+        return None
+    wacc_lo = max(low, terminal_growth_pct + 0.1)
+    if wacc_lo >= high:
+        return None
+
+    price_lo = _implied_price_at_wacc(fcf_usd, base_growth_pct, wacc_lo, terminal_growth_pct, shares)
+    price_hi = _implied_price_at_wacc(fcf_usd, base_growth_pct, high, terminal_growth_pct, shares)
+    if price_lo is None or price_hi is None:
+        return None
+    if target_price > price_lo or target_price < price_hi:
+        return None
+
+    lo, hi = wacc_lo, high
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        price = _implied_price_at_wacc(fcf_usd, base_growth_pct, mid, terminal_growth_pct, shares)
+        if price is None:
+            return None
+        if abs(price - target_price) / target_price < tol:
+            return round(mid, 2)
+        if price > target_price:
+            lo = mid
+        else:
+            hi = mid
+    return round((lo + hi) / 2, 2)
+
+
+def _build_implied_wacc(
+    fcf_millions: Optional[float],
+    growth_pct: Optional[float],
+    market: Dict[str, Any],
+    dcf: Dict[str, Any],
+) -> Dict[str, Any]:
+    price = market.get("price")
+    shares = market.get("shares")
+    params = dcf.get("params") or {}
+    terminal_base = (params.get("terminal_growth") or {}).get("base", DEFAULT_TERMINAL_GROWTH["base"])
+    base_growth = params.get("base_growth_pct")
+    if base_growth is None:
+        base_growth = max(growth_pct or 0.0, 0.0)
+
+    if fcf_millions is None:
+        return {
+            "available": False,
+            "value": None,
+            "target_price": price,
+            "scenario": "base",
+            "method": "bisection",
+            "reason": "缺少 FCF",
+        }
+    if not price:
+        return {
+            "available": False,
+            "value": None,
+            "target_price": None,
+            "scenario": "base",
+            "method": "bisection",
+            "reason": "缺少现价",
+        }
+    if not shares:
+        return {
+            "available": False,
+            "value": None,
+            "target_price": price,
+            "scenario": "base",
+            "method": "bisection",
+            "reason": "缺少股本",
+        }
+
+    fcf_usd = fcf_millions * 1_000_000
+    value = solve_implied_wacc(
+        fcf_usd,
+        float(base_growth),
+        float(terminal_base),
+        float(shares),
+        float(price),
+    )
+    if value is None:
+        return {
+            "available": False,
+            "value": None,
+            "target_price": price,
+            "scenario": "base",
+            "method": "bisection",
+            "reason": "现价超出 DCF 可解释范围或参数无效",
+        }
+    return {
+        "available": True,
+        "value": value,
+        "target_price": price,
+        "scenario": "base",
+        "method": "bisection",
+        "reason": None,
+    }
+
+
 def _build_interpretation(
     stage: str,
     primary_metric: str,
@@ -507,6 +627,7 @@ def build_valuation_payload(
     if fcf_estimated:
         warnings.append("自由现金流为估算值（OCF×0.85 或营收×净利率×0.85）")
     dcf = _build_dcf(fcf_m, fcf_estimated, growth_pct, market, dcf_params)
+    implied_wacc = _build_implied_wacc(fcf_m, growth_pct, market, dcf)
 
     return {
         "ticker": ticker,
@@ -524,6 +645,7 @@ def build_valuation_payload(
         "growth_pct": growth_pct,
         "multiples": multiples,
         "dcf": dcf,
+        "implied_wacc": implied_wacc,
         "warnings": warnings,
         "interpretation": _build_interpretation(
             stage, primary_metric, multiples, market, growth_pct, dcf

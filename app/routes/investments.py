@@ -89,6 +89,7 @@ from app.services.financial_valuation import (
     save_valuation_dcf_params,
     save_valuation_override,
 )
+from app.services.valuation_ai import recommend_valuation_params
 from app.services.market_stats import fetch_us_market_stats
 from app.services.financial_pdf import run_parse_job, run_text_analyze_job, save_uploaded_pdf
 from app.services.financial_chart_insight import explain_chart, explain_dashboard
@@ -432,6 +433,9 @@ def research_report_detail(report_id):
         valuation_dcf_params_url=url_for(
             "investments.research_report_valuation_dcf_params", report_id=report_id
         ),
+        valuation_recommend_url=url_for(
+            "investments.research_report_valuation_recommend", report_id=report_id
+        ),
     )
 
 
@@ -521,6 +525,29 @@ def research_report_valuation_dcf_params(report_id):
             return jsonify({"error": f"参数 {key} 无效"}), 400
     save_valuation_dcf_params(report_id, params)
     return jsonify({"ok": True})
+
+
+@bp.route('/research/reports/<int:report_id>/valuation/recommend-params', methods=['POST'])
+def research_report_valuation_recommend(report_id):
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(
+        f"valuation-ai:{ip}", max_calls=10, window_seconds=3600
+    )
+    if not allowed:
+        return jsonify({"error": "请求过于频繁", "retry_after": retry_after}), 429
+
+    result = recommend_valuation_params(report_id)
+    if result.get("error"):
+        status = 503 if "DEEPSEEK" in result["error"] else 400
+        return jsonify(result), status
+    return jsonify(result)
 
 
 @bp.route('/research/reports/<int:report_id>/analyze', methods=['POST'])

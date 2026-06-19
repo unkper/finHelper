@@ -9,10 +9,12 @@ from flask import Flask
 
 from app.services.financial_valuation import (
     _compute_ttm,
+    _implied_price_at_wacc,
     build_valuation_payload,
     get_valuation_override,
     save_valuation_dcf_params,
     save_valuation_override,
+    solve_implied_wacc,
 )
 
 
@@ -118,6 +120,43 @@ class BuildValuationPayloadTest(unittest.TestCase):
     def test_missing_market_cap_warning(self):
         result = build_valuation_payload("AAPL", _chart_payload_single_q(), {}, None)
         self.assertIn("缺少市值", " ".join(result["warnings"]))
+
+
+class SolveImpliedWaccTest(unittest.TestCase):
+    def test_round_trip_near_known_wacc(self):
+        fcf_usd = 5_000_000_000.0
+        growth = 15.0
+        terminal = 3.0
+        shares = 1_000_000_000.0
+        wacc = 12.0
+        price = _implied_price_at_wacc(fcf_usd, growth, wacc, terminal, shares)
+        self.assertIsNotNone(price)
+        implied = solve_implied_wacc(fcf_usd, growth, terminal, shares, price)
+        self.assertIsNotNone(implied)
+        self.assertAlmostEqual(implied, wacc, delta=0.15)
+
+    def test_missing_shares_unavailable(self):
+        chart = _chart_payload_single_q()
+        market = {"price": 100.0, "market_cap": None, "source": "fmp"}
+        result = build_valuation_payload("AAPL", chart, market, None)
+        implied = result["implied_wacc"]
+        self.assertFalse(implied["available"])
+        self.assertIn("股本", implied["reason"])
+
+    def test_implied_wacc_in_payload_when_available(self):
+        chart = _chart_payload_single_q()
+        market = {
+            "price": 150.0,
+            "market_cap": 3_000_000_000_000.0,
+            "shares_outstanding": 20_000_000_000.0,
+            "source": "fmp",
+        }
+        result = build_valuation_payload("AAPL", chart, market, None)
+        implied = result["implied_wacc"]
+        self.assertIn("available", implied)
+        if implied["available"]:
+            self.assertIsNotNone(implied["value"])
+            self.assertEqual(implied["scenario"], "base")
 
 
 class ValuationOverrideDbTest(unittest.TestCase):

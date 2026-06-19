@@ -2,16 +2,18 @@
   const cfg = window.FINANCIAL_REPORT_PAGE || {};
 
   const MARKET_CAP_UNITS = {
-    yi: { label: "亿美元", factor: 1e8 },
-    wan: { label: "万美元", factor: 1e4 },
-    raw: { label: "美元", factor: 1 },
+    yi: { label: "亿", title: "亿美元", factor: 1e8 },
+    wan: { label: "万", title: "万美元", factor: 1e4 },
+    raw: { label: "$", title: "美元", factor: 1 },
   };
 
   const SHARES_UNITS = {
-    yi: { label: "亿股", factor: 1e8 },
-    wan: { label: "万股", factor: 1e4 },
-    raw: { label: "股", factor: 1 },
+    yi: { label: "亿股", title: "亿股", factor: 1e8 },
+    wan: { label: "万股", title: "万股", factor: 1e4 },
+    raw: { label: "股", title: "股", factor: 1 },
   };
+
+  let pendingAiParams = null;
 
   function $(id) {
     return document.getElementById(id);
@@ -69,18 +71,22 @@
 
   function renderUnitOptions(units, selected) {
     return Object.entries(units)
-      .map(
-        ([key, meta]) =>
-          `<option value="${key}"${key === selected ? " selected" : ""}>${escapeHtml(meta.label)}</option>`
-      )
+      .map(([key, meta]) => {
+        const title = meta.title ? ` title="${escapeHtml(meta.title)}"` : "";
+        return `<option value="${key}"${key === selected ? " selected" : ""}${title}>${escapeHtml(meta.label)}</option>`;
+      })
       .join("");
   }
 
   function renderInputWithUnit(id, unitId, value, units, placeholder) {
+    const unitTitle = Object.values(units)
+      .map((m) => m.title)
+      .filter(Boolean)
+      .join(" / ");
     return `
       <div class="research-valuation-input-group">
         <input type="number" step="any" id="${id}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}">
-        <select id="${unitId}" class="research-valuation-unit" aria-label="单位">
+        <select id="${unitId}" class="research-valuation-unit" aria-label="单位" title="${escapeHtml(unitTitle)}">
           ${renderUnitOptions(units, "yi")}
         </select>
       </div>`;
@@ -122,7 +128,128 @@
     return `<table class="research-valuation-dcf-table">${head}<tbody>${body}</tbody></table>`;
   }
 
-  function bindForms() {
+  function renderImpliedWacc(implied) {
+    const data = implied || {};
+    if (data.available && data.value != null) {
+      return `
+        <div class="research-valuation-implied-wacc" id="impliedWaccRow">
+          <span>现价隐含 WACC（中性）：<strong>${fmtNum(data.value)}%</strong></span>
+          <button type="button" class="secondary-btn" id="applyImpliedWaccBtn">应用到 WACC</button>
+        </div>`;
+    }
+    const reason = data.reason || "无法计算";
+    return `
+      <div class="research-valuation-implied-wacc" id="impliedWaccRow">
+        <span class="hint">现价隐含 WACC（中性）：${escapeHtml(reason)}</span>
+      </div>`;
+  }
+
+  function renderAiRecommendSection() {
+    const disabled = !cfg.aiConfigured || !cfg.hasAnalysis;
+    const hint = !cfg.aiConfigured
+      ? "未配置 DEEPSEEK_API_KEY"
+      : !cfg.hasAnalysis
+        ? "请先完成 AI 分析"
+        : "";
+    return `
+      <div class="research-valuation-ai-bar">
+        <button type="button" class="secondary-btn" id="valuationAiRecommendBtn"${disabled ? " disabled" : ""}>AI 推荐参数</button>
+        ${hint ? `<span class="hint">${escapeHtml(hint)}</span>` : ""}
+      </div>
+      <div id="valuationAiPreview" class="research-valuation-ai-preview" hidden></div>`;
+  }
+
+  function readDcfFormPayload() {
+    return {
+      wacc: $("dcfWacc")?.value,
+      optimistic_factor: $("dcfOptimisticFactor")?.value,
+      pessimistic_factor: $("dcfPessimisticFactor")?.value,
+      terminal_growth_optimistic: $("dcfTerminalOpt")?.value,
+      terminal_growth_base: $("dcfTerminalBase")?.value,
+      terminal_growth_pessimistic: $("dcfTerminalPes")?.value,
+    };
+  }
+
+  function fillDcfForm(params) {
+    if (!params) return;
+    const map = {
+      dcfWacc: params.wacc,
+      dcfOptimisticFactor: params.optimistic_factor,
+      dcfPessimisticFactor: params.pessimistic_factor,
+      dcfTerminalOpt: params.terminal_growth_optimistic,
+      dcfTerminalBase: params.terminal_growth_base,
+      dcfTerminalPes: params.terminal_growth_pessimistic,
+    };
+    Object.entries(map).forEach(([id, value]) => {
+      const el = $(id);
+      if (el && value != null) el.value = value;
+    });
+  }
+
+  async function saveDcfParams(payload) {
+    if (!cfg.valuationDcfParamsUrl) return { ok: false, error: "缺少保存地址" };
+    const res = await fetch(cfg.valuationDcfParamsUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { ok: false, error: data.error || "保存失败" };
+    }
+    if (typeof window.reloadResearchCharts === "function") {
+      await window.reloadResearchCharts();
+    }
+    return { ok: true };
+  }
+
+  function hideAiPreview() {
+    pendingAiParams = null;
+    const box = $("valuationAiPreview");
+    if (box) {
+      box.hidden = true;
+      box.innerHTML = "";
+    }
+  }
+
+  function renderAiPreview(result) {
+    const box = $("valuationAiPreview");
+    if (!box) return;
+    const p = result.params || {};
+    box.hidden = false;
+    box.innerHTML = `
+      <strong>AI 推荐 DCF 参数</strong>
+      <table>
+        <thead><tr><th>参数</th><th>推荐值</th></tr></thead>
+        <tbody>
+          <tr><td>WACC</td><td>${fmtNum(p.wacc)}%</td></tr>
+          <tr><td>乐观系数</td><td>${fmtNum(p.optimistic_factor)}</td></tr>
+          <tr><td>悲观系数</td><td>${fmtNum(p.pessimistic_factor)}</td></tr>
+          <tr><td>永续增长(乐观)</td><td>${fmtNum(p.terminal_growth_optimistic)}%</td></tr>
+          <tr><td>永续增长(中性)</td><td>${fmtNum(p.terminal_growth_base)}%</td></tr>
+          <tr><td>永续增长(悲观)</td><td>${fmtNum(p.terminal_growth_pessimistic)}%</td></tr>
+        </tbody>
+      </table>
+      <p class="hint">${escapeHtml(result.rationale || "")}</p>
+      <div class="research-valuation-ai-actions">
+        <button type="button" class="primary-btn" id="valuationAiApplyBtn">应用推荐</button>
+        <button type="button" class="secondary-btn" id="valuationAiCancelBtn">取消</button>
+      </div>`;
+
+    $("valuationAiApplyBtn")?.addEventListener("click", async () => {
+      if (!pendingAiParams) return;
+      fillDcfForm(pendingAiParams);
+      const save = await saveDcfParams(pendingAiParams);
+      if (!save.ok) {
+        alert(save.error);
+        return;
+      }
+      hideAiPreview();
+    });
+    $("valuationAiCancelBtn")?.addEventListener("click", hideAiPreview);
+  }
+
+  function bindForms(valuation) {
     const overrideForm = $("valuationOverrideForm");
     if (overrideForm) {
       overrideForm.addEventListener("submit", async (event) => {
@@ -183,27 +310,42 @@
     if (dcfForm) {
       dcfForm.addEventListener("submit", async (event) => {
         event.preventDefault();
-        if (!cfg.valuationDcfParamsUrl) return;
-        const payload = {
-          wacc: $("dcfWacc")?.value,
-          optimistic_factor: $("dcfOptimisticFactor")?.value,
-          pessimistic_factor: $("dcfPessimisticFactor")?.value,
-          terminal_growth_optimistic: $("dcfTerminalOpt")?.value,
-          terminal_growth_base: $("dcfTerminalBase")?.value,
-          terminal_growth_pessimistic: $("dcfTerminalPes")?.value,
-        };
-        const res = await fetch(cfg.valuationDcfParamsUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          alert(data.error || "保存失败");
-          return;
-        }
-        if (typeof window.reloadResearchCharts === "function") {
-          await window.reloadResearchCharts();
+        const save = await saveDcfParams(readDcfFormPayload());
+        if (!save.ok) alert(save.error);
+      });
+    }
+
+    $("applyImpliedWaccBtn")?.addEventListener("click", async () => {
+      const implied = valuation?.implied_wacc;
+      if (!implied?.available || implied.value == null) return;
+      $("dcfWacc").value = implied.value;
+      const save = await saveDcfParams(readDcfFormPayload());
+      if (!save.ok) alert(save.error);
+    });
+
+    const aiBtn = $("valuationAiRecommendBtn");
+    if (aiBtn && !aiBtn.disabled) {
+      aiBtn.addEventListener("click", async () => {
+        if (!cfg.valuationRecommendUrl) return;
+        hideAiPreview();
+        aiBtn.disabled = true;
+        const prevText = aiBtn.textContent;
+        aiBtn.textContent = "推荐中…";
+        try {
+          const res = await fetch(cfg.valuationRecommendUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            alert(data.error || "推荐失败");
+            return;
+          }
+          pendingAiParams = data.params;
+          renderAiPreview(data);
+        } finally {
+          aiBtn.disabled = false;
+          aiBtn.textContent = prevText;
         }
       });
     }
@@ -221,6 +363,7 @@
     }
 
     section.dataset.empty = "0";
+    pendingAiParams = null;
     const market = valuation.market || {};
     const multiples = valuation.multiples || {};
     const dcf = valuation.dcf || {};
@@ -272,6 +415,8 @@
       <div class="research-valuation-dcf">
         <h4>三情景 DCF</h4>
         ${renderDcfTable(dcf)}
+        ${renderImpliedWacc(valuation.implied_wacc)}
+        ${renderAiRecommendSection()}
         <form id="valuationDcfForm" class="research-valuation-form">
           <div class="research-valuation-form-row">
             <label>WACC %<input type="number" step="0.1" id="dcfWacc" value="${params.wacc ?? 12}"></label>
@@ -287,7 +432,7 @@
         </form>
       </div>
     `;
-    bindForms();
+    bindForms(valuation);
   }
 
   window.renderResearchValuation = renderValuation;
