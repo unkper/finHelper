@@ -444,6 +444,341 @@ def solve_implied_wacc(
     return round((lo + hi) / 2, 2)
 
 
+def _detect_fcf_source(
+    periods_used: List[str],
+    kpis: Dict[str, Dict[str, Any]],
+    cash_flow: Dict[str, Dict[str, Any]],
+    revenue_millions: Optional[float],
+    net_income_millions: Optional[float],
+) -> str:
+    """返回 FCF 数据来源标识，便于缺失提示。"""
+    for period in periods_used:
+        block = kpis.get(period) or {}
+        if block.get("free_cash_flow") is not None:
+            return "free_cash_flow"
+    for period in periods_used:
+        cf = (cash_flow.get(period) or {}).get("operating")
+        if cf is not None:
+            return "operating_cf"
+    if revenue_millions and net_income_millions is not None and net_income_millions > 0:
+        return "net_margin_estimate"
+    if revenue_millions:
+        return "revenue_estimate"
+    return "none"
+
+
+def _build_data_gaps(
+    *,
+    periods: List[str],
+    report_count: int,
+    ttm: Dict[str, Any],
+    revenue_m: Optional[float],
+    net_income_m: Optional[float],
+    growth_pct: Optional[float],
+    market: Dict[str, Any],
+    stage: str,
+    primary_metric: str,
+    multiples: Dict[str, Any],
+    fcf_m: Optional[float],
+    fcf_estimated: bool,
+    fcf_source: str,
+    dcf: Dict[str, Any],
+    implied_wacc: Dict[str, Any],
+) -> Dict[str, Any]:
+    """列出估值所需数据的就绪状态与补全指引。"""
+    items: List[Dict[str, Any]] = []
+    periods_used = ttm.get("periods_used") or []
+    period_count = len(_sort_periods(periods))
+    ttm_method = ttm.get("method")
+
+    if period_count >= 4:
+        used_label = "、".join(periods_used[-4:])
+        items.append({
+            "id": "quarters",
+            "label": "财报季度",
+            "status": "ok",
+            "detail": f"已合并 {period_count} 季，TTM 求和：{used_label}",
+            "action": None,
+        })
+    elif period_count >= 1:
+        used_label = "、".join(periods_used)
+        need = 4 - period_count
+        items.append({
+            "id": "quarters",
+            "label": "财报季度",
+            "status": "partial",
+            "detail": f"仅 {period_count} 季（{used_label}），TTM 按单季 ×4 年化",
+            "action": f"同 ticker 下再补充 {need} 个及以上已 AI 分析财季，或一份报告提取多季数据",
+        })
+    else:
+        items.append({
+            "id": "quarters",
+            "label": "财报季度",
+            "status": "missing",
+            "detail": "无有效财季",
+            "action": "完成 AI 分析，确保 extracted 含 periods 与 income_statement",
+        })
+
+    if revenue_m is not None:
+        method_note = "（单季×4）" if ttm_method == "annualized_single_q" else "（四季求和）"
+        items.append({
+            "id": "revenue_ttm",
+            "label": "TTM 营收",
+            "status": "partial" if ttm_method == "annualized_single_q" else "ok",
+            "detail": f"约 {round(revenue_m, 2)} 百万 USD {method_note}",
+            "action": None if period_count >= 4 else "补全更多季度以提高 TTM 准确度",
+        })
+    else:
+        items.append({
+            "id": "revenue_ttm",
+            "label": "TTM 营收",
+            "status": "missing",
+            "detail": "财报中无 revenue",
+            "action": "AI 分析需提取 income_statement 或 kpis.revenue",
+        })
+
+    if net_income_m is not None:
+        items.append({
+            "id": "net_income_ttm",
+            "label": "TTM 净利润",
+            "status": "ok" if net_income_m > 0 else "partial",
+            "detail": f"约 {round(net_income_m, 2)} 百万 USD" + ("（亏损）" if net_income_m <= 0 else ""),
+            "action": None if net_income_m > 0 else "盈利转正后可计算 PE/PEG",
+        })
+    else:
+        items.append({
+            "id": "net_income_ttm",
+            "label": "TTM 净利润",
+            "status": "partial" if stage == "pre_profit" else "missing",
+            "detail": "未提取 net_income",
+            "action": "投入期可暂缺；盈利期公司需 income_statement.net_income",
+        })
+
+    price = market.get("price")
+    if price is not None:
+        items.append({
+            "id": "price",
+            "label": "现价",
+            "status": "ok",
+            "detail": f"${round(float(price), 2)}（{market.get('source') or '行情'}）",
+            "action": None,
+        })
+    else:
+        items.append({
+            "id": "price",
+            "label": "现价",
+            "status": "missing",
+            "detail": "无行情价",
+            "action": "配置 FMP_API_KEY / EODHD 等行情源",
+        })
+
+    market_cap = market.get("market_cap")
+    if market_cap is not None:
+        items.append({
+            "id": "market_cap",
+            "label": "市值",
+            "status": "ok",
+            "detail": fmt_usd_gap(market_cap),
+            "action": None,
+        })
+    else:
+        items.append({
+            "id": "market_cap",
+            "label": "市值",
+            "status": "missing",
+            "detail": "无市值",
+            "action": "配置 FMP_API_KEY，或在下方表单手动填写市值",
+        })
+
+    shares = market.get("shares")
+    if shares is not None:
+        items.append({
+            "id": "shares",
+            "label": "总股本",
+            "status": "ok",
+            "detail": f"约 {round(float(shares) / 1e8, 2)} 亿股",
+            "action": None,
+        })
+    else:
+        items.append({
+            "id": "shares",
+            "label": "总股本",
+            "status": "missing",
+            "detail": "无股本",
+            "action": "配置 FMP 拉取 shares_outstanding，或填市值+现价反推，或手动覆盖",
+        })
+
+    if growth_pct is not None:
+        items.append({
+            "id": "growth",
+            "label": "营收增速",
+            "status": "ok",
+            "detail": f"{growth_pct}%（YoY 或环比）",
+            "action": None,
+        })
+    else:
+        items.append({
+            "id": "growth",
+            "label": "营收增速",
+            "status": "missing",
+            "detail": "无法计算增速",
+            "action": "提取 kpis.revenue.yoy_pct，或至少两期营收做环比",
+        })
+
+    if primary_metric == "PS":
+        if multiples.get("ps") is not None:
+            items.append({
+                "id": "ps",
+                "label": "PS（主指标）",
+                "status": "ok",
+                "detail": f"{multiples['ps']}x",
+                "action": None,
+            })
+        else:
+            items.append({
+                "id": "ps",
+                "label": "PS（主指标）",
+                "status": "missing",
+                "detail": "缺少市值或 TTM 营收",
+                "action": "补全市值与营收后可算 PS",
+            })
+    elif primary_metric == "PE":
+        if multiples.get("pe") is not None:
+            items.append({
+                "id": "pe",
+                "label": "PE（主指标）",
+                "status": "ok",
+                "detail": f"{multiples['pe']}x",
+                "action": None,
+            })
+        else:
+            items.append({
+                "id": "pe",
+                "label": "PE（主指标）",
+                "status": "missing",
+                "detail": "缺少市值或 TTM 净利润",
+                "action": "补全市值与盈利数据后可算 PE/PEG",
+            })
+
+    if fcf_m is None:
+        source_hint = {
+            "none": "财报无 free_cash_flow、经营现金流，且无营收可估算",
+        }.get(fcf_source, "")
+        items.append({
+            "id": "fcf",
+            "label": "自由现金流（DCF）",
+            "status": "missing",
+            "detail": "无法得到 TTM FCF",
+            "action": source_hint or "提取 kpis.free_cash_flow 或 cash_flow.operating",
+        })
+    elif fcf_m < 0:
+        source_labels = {
+            "free_cash_flow": "财报 FCF",
+            "operating_cf": "经营现金流×0.85",
+            "net_margin_estimate": "净利率估算",
+            "revenue_estimate": "营收×5% 估算",
+        }
+        items.append({
+            "id": "fcf",
+            "label": "自由现金流（DCF）",
+            "status": "partial",
+            "detail": f"TTM 约 {round(fcf_m, 2)} 百万 USD（{source_labels.get(fcf_source, '估算')}，为负）",
+            "action": "负 FCF 时 DCF 隐含价无参考意义，投入期建议主看 PS",
+        })
+    else:
+        est_note = "（估算）" if fcf_estimated else "（财报）"
+        items.append({
+            "id": "fcf",
+            "label": "自由现金流（DCF）",
+            "status": "partial" if fcf_estimated else "ok",
+            "detail": f"TTM 约 {round(fcf_m, 2)} 百万 USD {est_note}",
+            "action": None if not fcf_estimated else "补充 kpis.free_cash_flow 可提高 DCF 准确度",
+        })
+
+    scenarios = dcf.get("scenarios") or []
+    if not scenarios:
+        items.append({
+            "id": "dcf",
+            "label": "三情景 DCF",
+            "status": "missing",
+            "detail": "无法计算（通常因缺少 FCF 或股本）",
+            "action": "补全 FCF 与总股本",
+        })
+    else:
+        base = next((s for s in scenarios if s.get("name") == "base"), scenarios[0] if scenarios else None)
+        implied = base.get("implied_price") if base else None
+        if implied is not None and implied < 0:
+            items.append({
+                "id": "dcf",
+                "label": "三情景 DCF",
+                "status": "partial",
+                "detail": f"中性隐含价 ${round(implied, 2)}（负值，模型不适用）",
+                "action": "FCF 转正后再参考 DCF；当前以 PS 为主",
+            })
+        elif implied is not None:
+            items.append({
+                "id": "dcf",
+                "label": "三情景 DCF",
+                "status": "ok",
+                "detail": f"中性隐含价 ${round(implied, 2)}",
+                "action": None,
+            })
+        else:
+            items.append({
+                "id": "dcf",
+                "label": "三情景 DCF",
+                "status": "partial",
+                "detail": "参数无效（如 WACC ≤ 永续增长）",
+                "action": "调整 WACC 或永续增长率",
+            })
+
+    if implied_wacc.get("available"):
+        items.append({
+            "id": "implied_wacc",
+            "label": "现价隐含 WACC",
+            "status": "ok",
+            "detail": f"{implied_wacc.get('value')}%（中性情景）",
+            "action": None,
+        })
+    else:
+        items.append({
+            "id": "implied_wacc",
+            "label": "现价隐含 WACC",
+            "status": "missing" if implied_wacc.get("reason") else "partial",
+            "detail": implied_wacc.get("reason") or "不可算",
+            "action": "需正 FCF、现价、股本，且现价在 DCF 可解释范围内",
+        })
+
+    if report_count > 1:
+        items.append({
+            "id": "report_merge",
+            "label": "报告合并",
+            "status": "ok",
+            "detail": f"已合并同 ticker 下 {report_count} 份已分析报告",
+            "action": None,
+        })
+    elif report_count == 1 and period_count < 4:
+        items.append({
+            "id": "report_merge",
+            "label": "报告合并",
+            "status": "partial",
+            "detail": "仅 1 份报告参与合并",
+            "action": "为更多财季各建一份报告并完成 AI 分析",
+        })
+
+    has_gaps = any(i["status"] in ("missing", "partial") for i in items)
+    return {"items": items, "has_gaps": has_gaps}
+
+
+def fmt_usd_gap(value: float) -> str:
+    n = float(value)
+    if abs(n) >= 1e9:
+        return f"${n / 1e9:.2f}B"
+    if abs(n) >= 1e6:
+        return f"${n / 1e6:.2f}M"
+    return f"${n:,.0f}"
+
+
 def _build_implied_wacc(
     fcf_millions: Optional[float],
     growth_pct: Optional[float],
@@ -628,6 +963,30 @@ def build_valuation_payload(
         warnings.append("自由现金流为估算值（OCF×0.85 或营收×净利率×0.85）")
     dcf = _build_dcf(fcf_m, fcf_estimated, growth_pct, market, dcf_params)
     implied_wacc = _build_implied_wacc(fcf_m, growth_pct, market, dcf)
+    fcf_source = _detect_fcf_source(
+        ttm.get("periods_used") or [],
+        kpis,
+        cash_flow,
+        revenue_m,
+        net_income_m,
+    )
+    data_gaps = _build_data_gaps(
+        periods=periods,
+        report_count=int(chart_payload.get("report_count") or 1),
+        ttm=ttm,
+        revenue_m=revenue_m,
+        net_income_m=net_income_m,
+        growth_pct=growth_pct,
+        market=market,
+        stage=stage,
+        primary_metric=primary_metric,
+        multiples=multiples,
+        fcf_m=fcf_m,
+        fcf_estimated=fcf_estimated,
+        fcf_source=fcf_source,
+        dcf=dcf,
+        implied_wacc=implied_wacc,
+    )
 
     return {
         "ticker": ticker,
@@ -647,6 +1006,7 @@ def build_valuation_payload(
         "dcf": dcf,
         "implied_wacc": implied_wacc,
         "warnings": warnings,
+        "data_gaps": data_gaps,
         "interpretation": _build_interpretation(
             stage, primary_metric, multiples, market, growth_pct, dcf
         ),

@@ -159,6 +159,34 @@ class SolveImpliedWaccTest(unittest.TestCase):
             self.assertEqual(implied["scenario"], "base")
 
 
+class DataGapsTest(unittest.TestCase):
+    def test_lists_missing_market_cap(self):
+        result = build_valuation_payload("AAPL", _chart_payload_single_q(), {}, None)
+        gaps = result.get("data_gaps") or {}
+        self.assertTrue(gaps.get("has_gaps"))
+        cap = next(i for i in gaps["items"] if i["id"] == "market_cap")
+        self.assertEqual(cap["status"], "missing")
+        self.assertIn("FMP", cap["action"])
+
+    def test_single_quarter_marked_partial(self):
+        chart = _chart_payload_single_q()
+        market = {"price": 10.0, "market_cap": 400_000_000_000.0, "shares_outstanding": 1_000_000_000.0}
+        result = build_valuation_payload("AAPL", chart, market, None)
+        quarters = next(i for i in result["data_gaps"]["items"] if i["id"] == "quarters")
+        self.assertEqual(quarters["status"], "partial")
+        self.assertIn("×4", quarters["detail"])
+
+    def test_negative_fcf_marked_partial(self):
+        chart = _chart_payload_single_q()
+        chart["cash_flow"] = {"2025-Q4": {"operating": -50.0}}
+        market = {"price": 10.0, "market_cap": 400_000_000_000.0, "shares_outstanding": 1_000_000_000.0}
+        result = build_valuation_payload("AAOI", chart, market, None)
+        fcf_item = next(i for i in result["data_gaps"]["items"] if i["id"] == "fcf")
+        self.assertEqual(fcf_item["status"], "partial")
+        dcf_item = next(i for i in result["data_gaps"]["items"] if i["id"] == "dcf")
+        self.assertEqual(dcf_item["status"], "partial")
+
+
 class ValuationOverrideDbTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)

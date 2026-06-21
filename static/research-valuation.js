@@ -102,10 +102,40 @@
     `;
   }
 
+  function renderDataGaps(dataGaps) {
+    if (!dataGaps || !dataGaps.has_gaps) return "";
+    const items = dataGaps.items || [];
+    const rows = items
+      .filter((item) => item.status !== "ok")
+      .map((item) => {
+        const statusLabel =
+          item.status === "missing" ? "缺失" : item.status === "partial" ? "不足" : "就绪";
+        const action = item.action
+          ? `<div class="research-valuation-gap-action">${escapeHtml(item.action)}</div>`
+          : "";
+        return `<li class="research-valuation-gap-item research-valuation-gap-${item.status}">
+          <span class="research-valuation-gap-badge">${statusLabel}</span>
+          <div class="research-valuation-gap-body">
+            <strong>${escapeHtml(item.label)}</strong>
+            <span>${escapeHtml(item.detail || "")}</span>
+            ${action}
+          </div>
+        </li>`;
+      })
+      .join("");
+    if (!rows) return "";
+    return `
+      <section class="research-valuation-gaps" aria-label="数据就绪情况">
+        <h4>数据就绪情况</h4>
+        <p class="hint">以下数据缺失或不足，可能影响 PS / DCF 等指标：</p>
+        <ul class="research-valuation-gap-list">${rows}</ul>
+      </section>`;
+  }
+
   function renderDcfTable(dcf) {
     const rows = (dcf && dcf.scenarios) || [];
     if (!rows.length) {
-      return `<p class="hint">缺少 FCF 或参数无效，无法计算 DCF。</p>`;
+      return `<p class="hint">缺少 FCF 或参数无效，无法计算 DCF。见下方「数据就绪情况」。</p>`;
     }
     const head = `
       <thead><tr>
@@ -384,6 +414,7 @@
         <span class="research-valuation-stage">${valuation.stage === "profitable" ? "盈利期 · 主看 PE/PEG" : "投入期 · 主看 PS"}</span>
       </div>
       ${valuation.interpretation ? `<p class="research-valuation-summary">${escapeHtml(valuation.interpretation)}</p>` : ""}
+      ${renderDataGaps(valuation.data_gaps)}
       ${warnings ? `<ul class="research-valuation-warnings">${warnings}</ul>` : ""}
 
       <div class="research-kpi-grid research-valuation-kpis">

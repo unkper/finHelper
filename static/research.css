@@ -920,6 +920,75 @@
   font-size: 0.85rem;
 }
 
+.research-valuation-gaps {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  background: #fffbeb;
+}
+
+.research-valuation-gaps h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  color: #92400e;
+}
+
+.research-valuation-gap-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.research-valuation-gap-item {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.45rem 0;
+  border-top: 1px solid #fde68a;
+  font-size: 0.85rem;
+}
+
+.research-valuation-gap-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.research-valuation-gap-badge {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.research-valuation-gap-missing .research-valuation-gap-badge {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.research-valuation-gap-partial .research-valuation-gap-badge {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.research-valuation-gap-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: #78350f;
+  min-width: 0;
+}
+
+.research-valuation-gap-body strong {
+  color: #451a03;
+}
+
+.research-valuation-gap-action {
+  color: #b45309;
+  font-size: 0.82rem;
+}
+
 .research-valuation-kpis {
   margin-bottom: 1.25rem;
 }
