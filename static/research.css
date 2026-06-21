@@ -1140,3 +1140,32 @@
 .research-valuation-dcf-table th {
   background: #f4f5f7;
 }
+
+.research-valuation-model-toggle {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  flex-wrap: wrap;
+}
+
+.research-valuation-model-btn {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.research-valuation-model-btn.active {
+  background: #1f2937;
+  color: #fff;
+  border-color: #1f2937;
+}
+
+.research-valuation-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-direction: row;
+}

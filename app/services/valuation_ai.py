@@ -17,6 +17,10 @@ _PARAM_BOUNDS = {
     "terminal_growth_optimistic": (1.0, 5.0),
     "terminal_growth_base": (1.0, 5.0),
     "terminal_growth_pessimistic": (0.5, 4.0),
+    "survival_rate": (0.5, 1.0),
+    "rd_amort_years": (3.0, 10.0),
+    "cost_of_equity": (6.0, 25.0),
+    "rim_terminal_growth": (0.5, 5.0),
 }
 
 
@@ -73,13 +77,16 @@ def recommend_valuation_params(report_id: int) -> Dict[str, Any]:
         override,
     )
 
-    prompt = f"""你是科技公司估值助手。根据下列财报与市场数据，为 DCF 三情景模型推荐合理参数。
+    prompt = f"""你是科技公司估值助手。根据下列财报与市场数据，为 Damodaran 增强 DCF / R&D 资本化 RIM 推荐合理参数。
 要求：
 1. 结合盈利阶段（盈利/投入期）、增速、PS/PE/PEG、风险提示与业务特征
 2. 科技公司 WACC 通常 8–18%，高成长未盈利可偏高；永续增长保守
-3. 仅返回 JSON 对象，不要 markdown，字段：
-   wacc, optimistic_factor, pessimistic_factor,
+3. 投入期 survival_rate 建议 0.75–0.9，盈利期接近 1.0；valuation_model 盈利期偏 damodaran，高 R&D 投入期可考虑 rim
+4. 仅返回 JSON 对象，不要 markdown，字段：
+   valuation_model（damodaran 或 rim）,
+   wacc, survival_rate, optimistic_factor, pessimistic_factor,
    terminal_growth_optimistic, terminal_growth_base, terminal_growth_pessimistic,
+   rd_amort_years,
    rationale（2-4 句中文理由）
 
 报告与估值上下文：
@@ -101,11 +108,26 @@ def recommend_valuation_params(report_id: int) -> Dict[str, Any]:
         return {"error": "AI 返回格式异常"}
 
     params: Dict[str, Any] = {}
+    optional_defaults = {
+        "survival_rate": 0.85,
+        "rd_amort_years": 5.0,
+        "cost_of_equity": 12.0,
+        "rim_terminal_growth": 3.0,
+    }
     for key in _PARAM_BOUNDS:
-        clamped = _clamp(key, raw.get(key))
+        raw_val = raw.get(key)
+        if raw_val is None and key in optional_defaults:
+            raw_val = optional_defaults[key]
+        clamped = _clamp(key, raw_val)
         if clamped is None:
             return {"error": f"AI 未返回有效参数：{key}"}
-        params[key] = clamped
+        params[key] = int(clamped) if key == "rd_amort_years" else clamped
+
+    model = str(raw.get("valuation_model") or "damodaran").strip().lower()
+    if model not in ("damodaran", "rim"):
+        model = "damodaran"
+    params["valuation_model"] = model
+    params["rd_capitalize"] = True
 
     rationale = str(raw.get("rationale") or "").strip()
     if not rationale:

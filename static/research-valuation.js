@@ -14,6 +14,8 @@
   };
 
   let pendingAiParams = null;
+  let currentValuation = null;
+  let activeModel = "damodaran";
 
   function $(id) {
     return document.getElementById(id);
@@ -127,15 +129,15 @@
     return `
       <section class="research-valuation-gaps" aria-label="数据就绪情况">
         <h4>数据就绪情况</h4>
-        <p class="hint">以下数据缺失或不足，可能影响 PS / DCF 等指标：</p>
+        <p class="hint">以下数据缺失或不足，可能影响估值指标：</p>
         <ul class="research-valuation-gap-list">${rows}</ul>
       </section>`;
   }
 
-  function renderDcfTable(dcf) {
-    const rows = (dcf && dcf.scenarios) || [];
+  function renderScenarioTable(modelData) {
+    const rows = (modelData && modelData.scenarios) || [];
     if (!rows.length) {
-      return `<p class="hint">缺少 FCF 或参数无效，无法计算 DCF。见下方「数据就绪情况」。</p>`;
+      return `<p class="hint">缺少必要数据或参数无效，无法计算。见下方「数据就绪情况」。</p>`;
     }
     const head = `
       <thead><tr>
@@ -144,8 +146,7 @@
     const body = rows
       .map((row) => {
         const diff = row.vs_current_price_pct;
-        const diffText =
-          diff == null ? "—" : `${diff > 0 ? "+" : ""}${diff}%`;
+        const diffText = diff == null ? "—" : `${diff > 0 ? "+" : ""}${diff}%`;
         return `<tr>
           <td>${escapeHtml(row.label || row.name)}</td>
           <td>${fmtNum(row.growth_pct)}%</td>
@@ -174,6 +175,68 @@
       </div>`;
   }
 
+  function renderModelToggle(selected) {
+    return `
+      <div class="research-valuation-model-toggle" role="tablist" aria-label="估值模型">
+        <button type="button" class="research-valuation-model-btn${selected === "damodaran" ? " active" : ""}" data-model="damodaran" role="tab" aria-selected="${selected === "damodaran"}">Damodaran DCF</button>
+        <button type="button" class="research-valuation-model-btn${selected === "rim" ? " active" : ""}" data-model="rim" role="tab" aria-selected="${selected === "rim"}">R&D 资本化 RIM</button>
+      </div>`;
+  }
+
+  function renderSharedRdFields(rdCap, rdYears) {
+    return `
+      <div class="research-valuation-form-row">
+        <label class="research-valuation-checkbox">
+          <input type="checkbox" id="dcfRdCapitalize"${rdCap ? " checked" : ""}> R&D 资本化
+        </label>
+        <label>R&D 摊销年数<input type="number" step="1" min="1" id="dcfRdAmortYears" value="${rdYears ?? 5}"></label>
+      </div>`;
+  }
+
+  function renderDamodaranForm(params, survivalRate, rdMeta) {
+    const terminal = params.terminal_growth || {};
+    const rdCap = rdMeta?.rd_capitalize !== false;
+    const rdYears = rdMeta?.rd_amort_years ?? 5;
+    return `
+      <form id="valuationDamodaranForm" class="research-valuation-form">
+        <div class="research-valuation-form-row">
+          <label>WACC %<input type="number" step="0.1" id="dcfWacc" value="${params.wacc ?? 12}"></label>
+          <label>生存概率 %<input type="number" step="1" min="50" max="100" id="dcfSurvivalRate" value="${(survivalRate ?? 1) * 100}"></label>
+          <label>乐观系数<input type="number" step="0.05" id="dcfOptimisticFactor" value="${params.optimistic_factor ?? 1.3}"></label>
+          <label>悲观系数<input type="number" step="0.05" id="dcfPessimisticFactor" value="${params.pessimistic_factor ?? 0.6}"></label>
+        </div>
+        <div class="research-valuation-form-row">
+          <label>永续增长(乐观)%<input type="number" step="0.1" id="dcfTerminalOpt" value="${terminal.optimistic ?? 4}"></label>
+          <label>永续增长(中性)%<input type="number" step="0.1" id="dcfTerminalBase" value="${terminal.base ?? 3}"></label>
+          <label>永续增长(悲观)%<input type="number" step="0.1" id="dcfTerminalPes" value="${terminal.pessimistic ?? 2}"></label>
+        </div>
+        ${renderSharedRdFields(rdCap, rdYears)}
+        <button type="submit" class="secondary-btn">应用 Damodaran 参数</button>
+      </form>`;
+  }
+
+  function renderRimForm(params, storedParams) {
+    const terminal = params.terminal_growth || {};
+    const rdYears = storedParams.rd_amort_years ?? 5;
+    const rdCap = storedParams.rd_capitalize !== false;
+    return `
+      <form id="valuationRimForm" class="research-valuation-form">
+        <div class="research-valuation-form-row">
+          <label>股权成本 %<input type="number" step="0.1" id="rimCostOfEquity" value="${params.cost_of_equity ?? 12}"></label>
+          <label>RIM 永续增长 %<input type="number" step="0.1" id="rimTerminalGrowth" value="${params.rim_terminal_growth ?? terminal.base ?? 3}"></label>
+          <label>乐观系数<input type="number" step="0.05" id="rimOptimisticFactor" value="${storedParams.optimistic_factor ?? 1.3}"></label>
+          <label>悲观系数<input type="number" step="0.05" id="rimPessimisticFactor" value="${storedParams.pessimistic_factor ?? 0.6}"></label>
+        </div>
+        <div class="research-valuation-form-row">
+          <label>永续增长(乐观)%<input type="number" step="0.1" id="rimTerminalOpt" value="${terminal.optimistic ?? 4}"></label>
+          <label>永续增长(中性)%<input type="number" step="0.1" id="rimTerminalBase" value="${terminal.base ?? 3}"></label>
+          <label>永续增长(悲观)%<input type="number" step="0.1" id="rimTerminalPes" value="${terminal.pessimistic ?? 2}"></label>
+        </div>
+        ${renderSharedRdFields(rdCap, rdYears)}
+        <button type="submit" class="secondary-btn">应用 RIM 参数</button>
+      </form>`;
+  }
+
   function renderAiRecommendSection() {
     const disabled = !cfg.aiConfigured || !cfg.hasAnalysis;
     const hint = !cfg.aiConfigured
@@ -189,18 +252,38 @@
       <div id="valuationAiPreview" class="research-valuation-ai-preview" hidden></div>`;
   }
 
-  function readDcfFormPayload() {
+  function readDamodaranFormPayload() {
+    const survivalPct = Number($("dcfSurvivalRate")?.value);
     return {
+      valuation_model: "damodaran",
       wacc: $("dcfWacc")?.value,
+      survival_rate: Number.isNaN(survivalPct) ? undefined : survivalPct / 100,
       optimistic_factor: $("dcfOptimisticFactor")?.value,
       pessimistic_factor: $("dcfPessimisticFactor")?.value,
       terminal_growth_optimistic: $("dcfTerminalOpt")?.value,
       terminal_growth_base: $("dcfTerminalBase")?.value,
       terminal_growth_pessimistic: $("dcfTerminalPes")?.value,
+      rd_capitalize: $("dcfRdCapitalize")?.checked ?? true,
+      rd_amort_years: $("dcfRdAmortYears")?.value,
     };
   }
 
-  function fillDcfForm(params) {
+  function readRimFormPayload() {
+    return {
+      valuation_model: "rim",
+      cost_of_equity: $("rimCostOfEquity")?.value,
+      rim_terminal_growth: $("rimTerminalGrowth")?.value,
+      optimistic_factor: $("rimOptimisticFactor")?.value,
+      pessimistic_factor: $("rimPessimisticFactor")?.value,
+      terminal_growth_optimistic: $("rimTerminalOpt")?.value,
+      terminal_growth_base: $("rimTerminalBase")?.value,
+      terminal_growth_pessimistic: $("rimTerminalPes")?.value,
+      rd_capitalize: $("dcfRdCapitalize")?.checked ?? true,
+      rd_amort_years: $("dcfRdAmortYears")?.value,
+    };
+  }
+
+  function fillDamodaranForm(params) {
     if (!params) return;
     const map = {
       dcfWacc: params.wacc,
@@ -209,14 +292,21 @@
       dcfTerminalOpt: params.terminal_growth_optimistic,
       dcfTerminalBase: params.terminal_growth_base,
       dcfTerminalPes: params.terminal_growth_pessimistic,
+      dcfRdAmortYears: params.rd_amort_years,
     };
     Object.entries(map).forEach(([id, value]) => {
       const el = $(id);
       if (el && value != null) el.value = value;
     });
+    if (params.survival_rate != null && $("dcfSurvivalRate")) {
+      $("dcfSurvivalRate").value = Number(params.survival_rate) * 100;
+    }
+    if ($("dcfRdCapitalize") && params.rd_capitalize != null) {
+      $("dcfRdCapitalize").checked = !!params.rd_capitalize;
+    }
   }
 
-  async function saveDcfParams(payload) {
+  async function saveDcfParams(payload, reload = true) {
     if (!cfg.valuationDcfParamsUrl) return { ok: false, error: "缺少保存地址" };
     const res = await fetch(cfg.valuationDcfParamsUrl, {
       method: "POST",
@@ -227,7 +317,7 @@
     if (!res.ok) {
       return { ok: false, error: data.error || "保存失败" };
     }
-    if (typeof window.reloadResearchCharts === "function") {
+    if (reload && typeof window.reloadResearchCharts === "function") {
       await window.reloadResearchCharts();
     }
     return { ok: true };
@@ -248,16 +338,17 @@
     const p = result.params || {};
     box.hidden = false;
     box.innerHTML = `
-      <strong>AI 推荐 DCF 参数</strong>
+      <strong>AI 推荐估值参数</strong>
       <table>
         <thead><tr><th>参数</th><th>推荐值</th></tr></thead>
         <tbody>
+          <tr><td>模型</td><td>${p.valuation_model === "rim" ? "RIM" : "Damodaran"}</td></tr>
           <tr><td>WACC</td><td>${fmtNum(p.wacc)}%</td></tr>
+          <tr><td>生存概率</td><td>${p.survival_rate != null ? fmtNum(Number(p.survival_rate) * 100) + "%" : "—"}</td></tr>
           <tr><td>乐观系数</td><td>${fmtNum(p.optimistic_factor)}</td></tr>
           <tr><td>悲观系数</td><td>${fmtNum(p.pessimistic_factor)}</td></tr>
-          <tr><td>永续增长(乐观)</td><td>${fmtNum(p.terminal_growth_optimistic)}%</td></tr>
+          <tr><td>R&D 摊销年数</td><td>${p.rd_amort_years ?? "—"}</td></tr>
           <tr><td>永续增长(中性)</td><td>${fmtNum(p.terminal_growth_base)}%</td></tr>
-          <tr><td>永续增长(悲观)</td><td>${fmtNum(p.terminal_growth_pessimistic)}%</td></tr>
         </tbody>
       </table>
       <p class="hint">${escapeHtml(result.rationale || "")}</p>
@@ -268,7 +359,7 @@
 
     $("valuationAiApplyBtn")?.addEventListener("click", async () => {
       if (!pendingAiParams) return;
-      fillDcfForm(pendingAiParams);
+      fillDamodaranForm(pendingAiParams);
       const save = await saveDcfParams(pendingAiParams);
       if (!save.ok) {
         alert(save.error);
@@ -279,6 +370,19 @@
     $("valuationAiCancelBtn")?.addEventListener("click", hideAiPreview);
   }
 
+  function updateModelPanels(model) {
+    activeModel = model;
+    const damodaranBlock = $("valuationDamodaranBlock");
+    const rimBlock = $("valuationRimBlock");
+    if (damodaranBlock) damodaranBlock.hidden = model !== "damodaran";
+    if (rimBlock) rimBlock.hidden = model !== "rim";
+    document.querySelectorAll(".research-valuation-model-btn").forEach((btn) => {
+      const isActive = btn.dataset.model === model;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+  }
+
   function bindForms(valuation) {
     const overrideForm = $("valuationOverrideForm");
     if (overrideForm) {
@@ -287,23 +391,12 @@
         if (!cfg.valuationOverrideUrl) return;
         const marketCapUnit = $("valuationMarketCapUnit")?.value || "yi";
         const sharesUnit = $("valuationSharesUnit")?.value || "yi";
-        const marketCap = toRawValue(
-          $("valuationMarketCap")?.value,
-          marketCapUnit,
-          MARKET_CAP_UNITS
-        );
-        const shares = toRawValue(
-          $("valuationShares")?.value,
-          sharesUnit,
-          SHARES_UNITS
-        );
+        const marketCap = toRawValue($("valuationMarketCap")?.value, marketCapUnit, MARKET_CAP_UNITS);
+        const shares = toRawValue($("valuationShares")?.value, sharesUnit, SHARES_UNITS);
         const res = await fetch(cfg.valuationOverrideUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            market_cap: marketCap,
-            shares_outstanding: shares,
-          }),
+          body: JSON.stringify({ market_cap: marketCap, shares_outstanding: shares }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -316,40 +409,50 @@
       });
     }
 
-    const clearBtn = $("valuationClearOverrideBtn");
-    if (clearBtn) {
-      clearBtn.addEventListener("click", async () => {
-        if (!cfg.valuationOverrideUrl) return;
-        const res = await fetch(cfg.valuationOverrideUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clear_market_cap: true, clear_shares: true }),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          alert(data.error || "清除失败");
-          return;
-        }
-        if (typeof window.reloadResearchCharts === "function") {
-          await window.reloadResearchCharts();
-        }
+    $("valuationClearOverrideBtn")?.addEventListener("click", async () => {
+      if (!cfg.valuationOverrideUrl) return;
+      const res = await fetch(cfg.valuationOverrideUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear_market_cap: true, clear_shares: true }),
       });
-    }
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "清除失败");
+        return;
+      }
+      if (typeof window.reloadResearchCharts === "function") {
+        await window.reloadResearchCharts();
+      }
+    });
 
-    const dcfForm = $("valuationDcfForm");
-    if (dcfForm) {
-      dcfForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const save = await saveDcfParams(readDcfFormPayload());
+    document.querySelectorAll(".research-valuation-model-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const model = btn.dataset.model;
+        if (!model || model === activeModel) return;
+        updateModelPanels(model);
+        const save = await saveDcfParams({ valuation_model: model });
         if (!save.ok) alert(save.error);
       });
-    }
+    });
+
+    $("valuationDamodaranForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const save = await saveDcfParams(readDamodaranFormPayload());
+      if (!save.ok) alert(save.error);
+    });
+
+    $("valuationRimForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const save = await saveDcfParams(readRimFormPayload());
+      if (!save.ok) alert(save.error);
+    });
 
     $("applyImpliedWaccBtn")?.addEventListener("click", async () => {
       const implied = valuation?.implied_wacc;
       if (!implied?.available || implied.value == null) return;
       $("dcfWacc").value = implied.value;
-      const save = await saveDcfParams(readDcfFormPayload());
+      const save = await saveDcfParams(readDamodaranFormPayload());
       if (!save.ok) alert(save.error);
     });
 
@@ -394,19 +497,20 @@
 
     section.dataset.empty = "0";
     pendingAiParams = null;
+    currentValuation = valuation;
+    activeModel = valuation.valuation_model || "damodaran";
+
     const market = valuation.market || {};
     const multiples = valuation.multiples || {};
-    const dcf = valuation.dcf || {};
-    const params = dcf.params || {};
-    const warnings = (valuation.warnings || [])
-      .map((w) => `<li>${escapeHtml(w)}</li>`)
-      .join("");
+    const damodaran = valuation.damodaran || {};
+    const rim = valuation.rim || {};
+    const dcfParams = valuation.dcf?.params || damodaran.params || {};
+    const survivalRate = damodaran.survival_rate ?? damodaran.params?.survival_rate ?? 1;
+    const warnings = (valuation.warnings || []).map((w) => `<li>${escapeHtml(w)}</li>`).join("");
 
     const marketCapDisplay = toDisplayValue(market.market_cap, "yi", MARKET_CAP_UNITS);
     const sharesDisplay = toDisplayValue(market.shares, "yi", SHARES_UNITS);
-    const marketHint = [fmtUsdYi(market.market_cap), fmtSharesYi(market.shares)]
-      .filter(Boolean)
-      .join(" · ");
+    const marketHint = [fmtUsdYi(market.market_cap), fmtSharesYi(market.shares)].filter(Boolean).join(" · ");
 
     panel.innerHTML = `
       <div class="research-chart-head">
@@ -426,6 +530,8 @@
         ${renderKpiCard("营收增速", valuation.growth_pct != null ? valuation.growth_pct + "%" : "—", valuation.ttm?.method === "annualized_single_q" ? "单季年化" : "TTM")}
       </div>
 
+      ${renderModelToggle(activeModel)}
+
       <form id="valuationOverrideForm" class="research-valuation-form">
         <h4>市值 / 股本覆盖</h4>
         <p class="hint">自动从 FMP 拉取；可手动覆盖。默认单位为「亿」，保存时自动换算为美元 / 股。</p>
@@ -443,24 +549,26 @@
         </div>
       </form>
 
-      <div class="research-valuation-dcf">
-        <h4>三情景 DCF</h4>
-        ${renderDcfTable(dcf)}
+      <div id="valuationDamodaranBlock" class="research-valuation-dcf"${activeModel !== "damodaran" ? " hidden" : ""}>
+        <h4>Damodaran 三情景估值</h4>
+        ${renderScenarioTable(damodaran)}
         ${renderImpliedWacc(valuation.implied_wacc)}
         ${renderAiRecommendSection()}
-        <form id="valuationDcfForm" class="research-valuation-form">
-          <div class="research-valuation-form-row">
-            <label>WACC %<input type="number" step="0.1" id="dcfWacc" value="${params.wacc ?? 12}"></label>
-            <label>乐观系数<input type="number" step="0.05" id="dcfOptimisticFactor" value="${params.optimistic_factor ?? 1.3}"></label>
-            <label>悲观系数<input type="number" step="0.05" id="dcfPessimisticFactor" value="${params.pessimistic_factor ?? 0.6}"></label>
-          </div>
-          <div class="research-valuation-form-row">
-            <label>永续增长(乐观)%<input type="number" step="0.1" id="dcfTerminalOpt" value="${(params.terminal_growth || {}).optimistic ?? 4}"></label>
-            <label>永续增长(中性)%<input type="number" step="0.1" id="dcfTerminalBase" value="${(params.terminal_growth || {}).base ?? 3}"></label>
-            <label>永续增长(悲观)%<input type="number" step="0.1" id="dcfTerminalPes" value="${(params.terminal_growth || {}).pessimistic ?? 2}"></label>
-          </div>
-          <button type="submit" class="secondary-btn">应用 DCF 参数</button>
-        </form>
+        ${renderDamodaranForm(damodaran.params || dcfParams, survivalRate, {
+          rd_capitalize: valuation.rd_adjustment?.rd_capitalized !== false,
+          rd_amort_years: valuation.rd_adjustment?.rd_amort_years ?? 5,
+        })}
+      </div>
+
+      <div id="valuationRimBlock" class="research-valuation-dcf"${activeModel !== "rim" ? " hidden" : ""}>
+        <h4>R&D 资本化 RIM</h4>
+        ${renderScenarioTable(rim)}
+        ${renderRimForm(rim.params || {}, {
+          optimistic_factor: damodaran.params?.optimistic_factor,
+          pessimistic_factor: damodaran.params?.pessimistic_factor,
+          rd_amort_years: valuation.rd_adjustment?.rd_amort_years ?? 5,
+          rd_capitalize: valuation.rd_adjustment?.rd_capitalized !== false,
+        })}
       </div>
     `;
     bindForms(valuation);

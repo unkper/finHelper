@@ -4,11 +4,15 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.database import get_db
+from app.services.fmp_fundamentals import fetch_fundamentals_ttm
 
 DEFAULT_WACC = 12.0
 DEFAULT_OPTIMISTIC_FACTOR = 1.3
 DEFAULT_PESSIMISTIC_FACTOR = 0.6
 DEFAULT_TERMINAL_GROWTH = {"optimistic": 4.0, "base": 3.0, "pessimistic": 2.0}
+DEFAULT_RD_AMORT_YEARS = 5
+DEFAULT_SURVIVAL_RATE_PROFITABLE = 1.0
+DEFAULT_SURVIVAL_RATE_PRE_PROFIT = 0.85
 
 
 def get_valuation_override(report_id: int) -> Optional[Dict[str, Any]]:
@@ -87,9 +91,25 @@ def save_valuation_dcf_params(report_id: int, dcf_params: Dict[str, Any]) -> Non
         "dcf_params": {},
     }
     merged = dict(existing.get("dcf_params") or {})
-    for key in ("wacc", "optimistic_factor", "pessimistic_factor", "terminal_growth_optimistic", "terminal_growth_base", "terminal_growth_pessimistic"):
+    float_keys = (
+        "wacc",
+        "optimistic_factor",
+        "pessimistic_factor",
+        "terminal_growth_optimistic",
+        "terminal_growth_base",
+        "terminal_growth_pessimistic",
+        "survival_rate",
+        "rd_amort_years",
+        "cost_of_equity",
+        "rim_terminal_growth",
+    )
+    for key in float_keys:
         if key in dcf_params and dcf_params[key] is not None:
             merged[key] = dcf_params[key]
+    if "valuation_model" in dcf_params and dcf_params["valuation_model"] in ("damodaran", "rim"):
+        merged["valuation_model"] = dcf_params["valuation_model"]
+    if "rd_capitalize" in dcf_params:
+        merged["rd_capitalize"] = bool(dcf_params["rd_capitalize"])
     db = get_db()
     db.execute(
         """
@@ -322,6 +342,8 @@ def _dcf_scenario(
     wacc_pct: float,
     terminal_growth_pct: float,
     shares: Optional[float],
+    *,
+    survival_rate: float = 1.0,
 ) -> Dict[str, Any]:
     if wacc_pct <= terminal_growth_pct:
         return {
@@ -331,17 +353,226 @@ def _dcf_scenario(
         }
     fcf = fcf_usd
     pv = 0.0
-    for _year in range(1, 6):
+    surv = max(min(float(survival_rate), 1.0), 0.0)
+    for year in range(1, 6):
         fcf *= 1 + growth_pct / 100
-        pv += fcf / ((1 + wacc_pct / 100) ** _year)
+        pv += (surv ** year) * fcf / ((1 + wacc_pct / 100) ** year)
     terminal_fcf = fcf * (1 + terminal_growth_pct / 100)
     terminal_value = terminal_fcf / (wacc_pct / 100 - terminal_growth_pct / 100)
-    pv += terminal_value / ((1 + wacc_pct / 100) ** 5)
+    pv += (surv ** 5) * terminal_value / ((1 + wacc_pct / 100) ** 5)
     implied_price = pv / shares if shares else None
     return {
         "enterprise_value": round(pv, 2),
         "implied_price": round(implied_price, 4) if implied_price is not None else None,
         "vs_current_price_pct": None,
+    }
+
+
+def _capitalize_rd(
+    *,
+    rd_expense_usd: Optional[float],
+    net_income_usd: Optional[float],
+    fcf_usd: Optional[float],
+    equity_usd: Optional[float],
+    rd_capitalize: bool,
+    rd_amort_years: int,
+) -> Dict[str, Any]:
+    years = max(int(rd_amort_years or DEFAULT_RD_AMORT_YEARS), 1)
+    base = {
+        "rd_amort_years": years,
+        "unamortized_rd_usd": None,
+        "adjusted_equity_usd": equity_usd,
+        "adjusted_net_income_usd": net_income_usd,
+        "adjusted_fcf_usd": fcf_usd,
+        "rd_capitalized": False,
+        "rd_amort_usd": None,
+    }
+    if not rd_capitalize or not rd_expense_usd or rd_expense_usd <= 0:
+        return base
+
+    rd_amort = rd_expense_usd / years
+    unamortized = rd_expense_usd * (years - 1) / years
+    base.update({
+        "rd_capitalized": True,
+        "unamortized_rd_usd": round(unamortized, 2),
+        "rd_amort_usd": round(rd_amort, 2),
+        "adjusted_equity_usd": (equity_usd or 0) + unamortized if equity_usd is not None else None,
+        "adjusted_net_income_usd": (
+            (net_income_usd or 0) + rd_expense_usd - rd_amort if net_income_usd is not None else None
+        ),
+        "adjusted_fcf_usd": (fcf_usd or 0) + rd_expense_usd - rd_amort if fcf_usd is not None else None,
+    })
+    return base
+
+
+def _resolve_dcf_params(dcf_params: Dict[str, Any], stage: str) -> Dict[str, Any]:
+    default_survival = (
+        DEFAULT_SURVIVAL_RATE_PROFITABLE if stage == "profitable" else DEFAULT_SURVIVAL_RATE_PRE_PROFIT
+    )
+    terminal = {
+        "optimistic": float(
+            dcf_params.get("terminal_growth_optimistic") or DEFAULT_TERMINAL_GROWTH["optimistic"]
+        ),
+        "base": float(dcf_params.get("terminal_growth_base") or DEFAULT_TERMINAL_GROWTH["base"]),
+        "pessimistic": float(
+            dcf_params.get("terminal_growth_pessimistic") or DEFAULT_TERMINAL_GROWTH["pessimistic"]
+        ),
+    }
+    rim_terminal = dcf_params.get("rim_terminal_growth")
+    return {
+        "valuation_model": dcf_params.get("valuation_model") or "damodaran",
+        "wacc": float(dcf_params.get("wacc") or DEFAULT_WACC),
+        "optimistic_factor": float(dcf_params.get("optimistic_factor") or DEFAULT_OPTIMISTIC_FACTOR),
+        "pessimistic_factor": float(dcf_params.get("pessimistic_factor") or DEFAULT_PESSIMISTIC_FACTOR),
+        "terminal_growth": terminal,
+        "survival_rate": float(dcf_params.get("survival_rate") or default_survival),
+        "rd_capitalize": dcf_params.get("rd_capitalize", True) is not False,
+        "rd_amort_years": int(dcf_params.get("rd_amort_years") or DEFAULT_RD_AMORT_YEARS),
+        "cost_of_equity": float(dcf_params["cost_of_equity"]) if dcf_params.get("cost_of_equity") else None,
+        "rim_terminal_growth": float(rim_terminal) if rim_terminal is not None else terminal["base"],
+    }
+
+
+def _scenario_defs(base_growth: float, params: Dict[str, Any]) -> List[tuple]:
+    terminal = params["terminal_growth"]
+    opt_factor = params["optimistic_factor"]
+    pes_factor = params["pessimistic_factor"]
+    base_growth = max(base_growth or 0.0, 0.0)
+    return [
+        ("optimistic", "乐观", base_growth * opt_factor, terminal["optimistic"]),
+        ("base", "中性", base_growth, terminal["base"]),
+        ("pessimistic", "悲观", base_growth * pes_factor, terminal["pessimistic"]),
+    ]
+
+
+def _build_damodaran(
+    adjusted_fcf_usd: Optional[float],
+    fcf_estimated: bool,
+    base_growth: Optional[float],
+    market: Dict[str, Any],
+    params: Dict[str, Any],
+    rd_adjustment: Dict[str, Any],
+) -> Dict[str, Any]:
+    wacc = params["wacc"]
+    survival_rate = params["survival_rate"]
+    scenario_defs = _scenario_defs(base_growth, params)
+    result_params = {
+        "wacc": wacc,
+        "optimistic_factor": params["optimistic_factor"],
+        "pessimistic_factor": params["pessimistic_factor"],
+        "base_growth_pct": max(base_growth or 0.0, 0.0),
+        "terminal_growth": params["terminal_growth"],
+        "fcf_estimated": fcf_estimated,
+        "survival_rate": survival_rate,
+    }
+    if adjusted_fcf_usd is None:
+        return {"params": result_params, "scenarios": [], "rd_adjustment": rd_adjustment, "survival_rate": survival_rate}
+
+    shares = market.get("shares")
+    price = market.get("price")
+    scenarios = []
+    for key, label, growth, term_g in scenario_defs:
+        row = _dcf_scenario(
+            adjusted_fcf_usd, growth, wacc, term_g, shares, survival_rate=survival_rate
+        )
+        row["name"] = key
+        row["label"] = label
+        row["growth_pct"] = round(growth, 2)
+        row["terminal_growth_pct"] = term_g
+        if row.get("implied_price") and price:
+            row["vs_current_price_pct"] = round((row["implied_price"] / price - 1) * 100, 2)
+        scenarios.append(row)
+    return {
+        "params": result_params,
+        "scenarios": scenarios,
+        "rd_adjustment": rd_adjustment,
+        "survival_rate": survival_rate,
+    }
+
+
+def _rim_scenario(
+    book_value_usd: float,
+    roe_pct: float,
+    cost_of_equity_pct: float,
+    growth_pct: float,
+    terminal_growth_pct: float,
+    shares: Optional[float],
+) -> Dict[str, Any]:
+    r = cost_of_equity_pct / 100
+    g = terminal_growth_pct / 100
+    if r <= g or book_value_usd <= 0:
+        return {
+            "equity_value": None,
+            "implied_price": None,
+            "vs_current_price_pct": None,
+        }
+    roe = roe_pct / 100
+    b = book_value_usd
+    pv_ri = 0.0
+    for year in range(1, 6):
+        ri = (roe - r) * b
+        pv_ri += ri / ((1 + r) ** year)
+        b *= 1 + growth_pct / 100
+    ri_terminal = (roe - r) * b
+    terminal_pv = ri_terminal / (r - g) / ((1 + r) ** 5)
+    equity_value = book_value_usd + pv_ri + terminal_pv
+    implied_price = equity_value / shares if shares else None
+    return {
+        "equity_value": round(equity_value, 2),
+        "implied_price": round(implied_price, 4) if implied_price is not None else None,
+        "vs_current_price_pct": None,
+    }
+
+
+def _build_rim(
+    adjusted_equity_usd: Optional[float],
+    adjusted_net_income_usd: Optional[float],
+    base_growth: Optional[float],
+    market: Dict[str, Any],
+    params: Dict[str, Any],
+    rd_adjustment: Dict[str, Any],
+) -> Dict[str, Any]:
+    cost_of_equity = params["cost_of_equity"] or params["wacc"]
+    rim_terminal = params["rim_terminal_growth"]
+    scenario_defs = _scenario_defs(base_growth, params)
+    book_value = adjusted_equity_usd
+    roe_pct = None
+    if book_value and adjusted_net_income_usd is not None and book_value > 0:
+        roe_pct = adjusted_net_income_usd / book_value * 100
+    result_params = {
+        "cost_of_equity": cost_of_equity,
+        "base_growth_pct": max(base_growth or 0.0, 0.0),
+        "terminal_growth": params["terminal_growth"],
+        "rim_terminal_growth": rim_terminal,
+        "roe_pct": round(roe_pct, 2) if roe_pct is not None else None,
+    }
+    if book_value is None or roe_pct is None or not market.get("shares"):
+        return {
+            "params": result_params,
+            "scenarios": [],
+            "rd_adjustment": rd_adjustment,
+            "book_value_usd": book_value,
+        }
+
+    shares = market.get("shares")
+    price = market.get("price")
+    scenarios = []
+    for key, label, growth, term_g in scenario_defs:
+        term = rim_terminal if key == "base" else term_g
+        row = _rim_scenario(book_value, roe_pct, cost_of_equity, growth, term, shares)
+        row["name"] = key
+        row["label"] = label
+        row["growth_pct"] = round(growth, 2)
+        row["terminal_growth_pct"] = term
+        row["enterprise_value"] = row.get("equity_value")
+        if row.get("implied_price") and price:
+            row["vs_current_price_pct"] = round((row["implied_price"] / price - 1) * 100, 2)
+        scenarios.append(row)
+    return {
+        "params": result_params,
+        "scenarios": scenarios,
+        "rd_adjustment": rd_adjustment,
+        "book_value_usd": round(book_value, 2),
     }
 
 
@@ -399,8 +630,12 @@ def _implied_price_at_wacc(
     wacc_pct: float,
     terminal_growth_pct: float,
     shares: float,
+    *,
+    survival_rate: float = 1.0,
 ) -> Optional[float]:
-    row = _dcf_scenario(fcf_usd, growth_pct, wacc_pct, terminal_growth_pct, shares)
+    row = _dcf_scenario(
+        fcf_usd, growth_pct, wacc_pct, terminal_growth_pct, shares, survival_rate=survival_rate
+    )
     return row.get("implied_price")
 
 
@@ -414,6 +649,7 @@ def solve_implied_wacc(
     low: float = 5.0,
     high: float = 35.0,
     tol: float = 0.01,
+    survival_rate: float = 1.0,
 ) -> Optional[float]:
     """中性情景下，使 DCF 隐含价等于 target_price 的 WACC（二分搜索）。"""
     if fcf_usd <= 0 or shares <= 0 or target_price <= 0:
@@ -422,8 +658,12 @@ def solve_implied_wacc(
     if wacc_lo >= high:
         return None
 
-    price_lo = _implied_price_at_wacc(fcf_usd, base_growth_pct, wacc_lo, terminal_growth_pct, shares)
-    price_hi = _implied_price_at_wacc(fcf_usd, base_growth_pct, high, terminal_growth_pct, shares)
+    price_lo = _implied_price_at_wacc(
+        fcf_usd, base_growth_pct, wacc_lo, terminal_growth_pct, shares, survival_rate=survival_rate
+    )
+    price_hi = _implied_price_at_wacc(
+        fcf_usd, base_growth_pct, high, terminal_growth_pct, shares, survival_rate=survival_rate
+    )
     if price_lo is None or price_hi is None:
         return None
     if target_price > price_lo or target_price < price_hi:
@@ -432,7 +672,9 @@ def solve_implied_wacc(
     lo, hi = wacc_lo, high
     for _ in range(80):
         mid = (lo + hi) / 2
-        price = _implied_price_at_wacc(fcf_usd, base_growth_pct, mid, terminal_growth_pct, shares)
+        price = _implied_price_at_wacc(
+            fcf_usd, base_growth_pct, mid, terminal_growth_pct, shares, survival_rate=survival_rate
+        )
         if price is None:
             return None
         if abs(price - target_price) / target_price < tol:
@@ -482,8 +724,12 @@ def _build_data_gaps(
     fcf_m: Optional[float],
     fcf_estimated: bool,
     fcf_source: str,
-    dcf: Dict[str, Any],
+    damodaran: Dict[str, Any],
+    rim: Dict[str, Any],
+    valuation_model: str,
     implied_wacc: Dict[str, Any],
+    fundamentals: Dict[str, Any],
+    rd_adjustment: Dict[str, Any],
 ) -> Dict[str, Any]:
     """列出估值所需数据的就绪状态与补全指引。"""
     items: List[Dict[str, Any]] = []
@@ -660,79 +906,133 @@ def _build_data_gaps(
                 "action": "补全市值与盈利数据后可算 PE/PEG",
             })
 
+    adjusted_fcf_m = None
+    if rd_adjustment.get("adjusted_fcf_usd") is not None:
+        adjusted_fcf_m = rd_adjustment["adjusted_fcf_usd"] / 1_000_000
+
     if fcf_m is None:
         source_hint = {
             "none": "财报无 free_cash_flow、经营现金流，且无营收可估算",
         }.get(fcf_source, "")
         items.append({
             "id": "fcf",
-            "label": "自由现金流（DCF）",
+            "label": "自由现金流（Damodaran）",
             "status": "missing",
             "detail": "无法得到 TTM FCF",
             "action": source_hint or "提取 kpis.free_cash_flow 或 cash_flow.operating",
         })
-    elif fcf_m < 0:
+    elif (adjusted_fcf_m if adjusted_fcf_m is not None else fcf_m) < 0:
         source_labels = {
             "free_cash_flow": "财报 FCF",
             "operating_cf": "经营现金流×0.85",
             "net_margin_estimate": "净利率估算",
             "revenue_estimate": "营收×5% 估算",
         }
+        use_fcf = adjusted_fcf_m if adjusted_fcf_m is not None else fcf_m
         items.append({
             "id": "fcf",
-            "label": "自由现金流（DCF）",
+            "label": "自由现金流（Damodaran）",
             "status": "partial",
-            "detail": f"TTM 约 {round(fcf_m, 2)} 百万 USD（{source_labels.get(fcf_source, '估算')}，为负）",
-            "action": "负 FCF 时 DCF 隐含价无参考意义，投入期建议主看 PS",
+            "detail": f"调整后 TTM 约 {round(use_fcf, 2)} 百万 USD（{source_labels.get(fcf_source, '估算')}，为负）",
+            "action": "负 FCF 时 Damodaran 隐含价仅供参考，投入期建议主看 PS",
         })
     else:
         est_note = "（估算）" if fcf_estimated else "（财报）"
+        rd_note = "，已 R&D 资本化" if rd_adjustment.get("rd_capitalized") else ""
+        use_fcf = adjusted_fcf_m if adjusted_fcf_m is not None else fcf_m
         items.append({
             "id": "fcf",
-            "label": "自由现金流（DCF）",
+            "label": "自由现金流（Damodaran）",
             "status": "partial" if fcf_estimated else "ok",
-            "detail": f"TTM 约 {round(fcf_m, 2)} 百万 USD {est_note}",
-            "action": None if not fcf_estimated else "补充 kpis.free_cash_flow 可提高 DCF 准确度",
+            "detail": f"调整后 TTM 约 {round(use_fcf, 2)} 百万 USD {est_note}{rd_note}",
+            "action": None if not fcf_estimated else "补充 kpis.free_cash_flow 可提高准确度",
         })
 
-    scenarios = dcf.get("scenarios") or []
+    if fundamentals.get("source") in ("none", None):
+        items.append({
+            "id": "fundamentals",
+            "label": "FMP 基本面",
+            "status": "partial",
+            "detail": "未从 FMP 拉取三表 TTM",
+            "action": "配置 FMP_API_KEY；当前使用财报 AI 提取回退",
+        })
+    elif fundamentals.get("source") == "mixed":
+        items.append({
+            "id": "fundamentals",
+            "label": "FMP 基本面",
+            "status": "partial",
+            "detail": "FMP 与财报提取混合",
+            "action": None,
+        })
+    else:
+        items.append({
+            "id": "fundamentals",
+            "label": "FMP 基本面",
+            "status": "ok",
+            "detail": f"来源：{fundamentals.get('source')}",
+            "action": None,
+        })
+
+    if rd_adjustment.get("rd_capitalized"):
+        items.append({
+            "id": "rd_cap",
+            "label": "R&D 资本化",
+            "status": "ok",
+            "detail": f"未摊销 R&D 约 {fmt_usd_gap(rd_adjustment.get('unamortized_rd_usd') or 0)}",
+            "action": None,
+        })
+
+    active = damodaran if valuation_model == "damodaran" else rim
+    model_label = "Damodaran 三情景" if valuation_model == "damodaran" else "R&D 资本化 RIM"
+    scenarios = active.get("scenarios") or []
     if not scenarios:
         items.append({
-            "id": "dcf",
-            "label": "三情景 DCF",
+            "id": "valuation_model",
+            "label": model_label,
             "status": "missing",
-            "detail": "无法计算（通常因缺少 FCF 或股本）",
-            "action": "补全 FCF 与总股本",
+            "detail": "无法计算（缺少 FCF/净资产或股本）",
+            "action": "补全基本面与总股本",
         })
     else:
         base = next((s for s in scenarios if s.get("name") == "base"), scenarios[0] if scenarios else None)
         implied = base.get("implied_price") if base else None
         if implied is not None and implied < 0:
             items.append({
-                "id": "dcf",
-                "label": "三情景 DCF",
+                "id": "valuation_model",
+                "label": model_label,
                 "status": "partial",
                 "detail": f"中性隐含价 ${round(implied, 2)}（负值，模型不适用）",
-                "action": "FCF 转正后再参考 DCF；当前以 PS 为主",
+                "action": "数据改善后再参考该模型",
             })
         elif implied is not None:
             items.append({
-                "id": "dcf",
-                "label": "三情景 DCF",
+                "id": "valuation_model",
+                "label": model_label,
                 "status": "ok",
                 "detail": f"中性隐含价 ${round(implied, 2)}",
                 "action": None,
             })
         else:
             items.append({
-                "id": "dcf",
-                "label": "三情景 DCF",
+                "id": "valuation_model",
+                "label": model_label,
                 "status": "partial",
                 "detail": "参数无效（如 WACC ≤ 永续增长）",
                 "action": "调整 WACC 或永续增长率",
             })
 
-    if implied_wacc.get("available"):
+    if valuation_model == "rim":
+        equity = rd_adjustment.get("adjusted_equity_usd") or fundamentals.get("equity_usd")
+        if equity is None:
+            items.append({
+                "id": "rim_equity",
+                "label": "RIM 净资产",
+                "status": "missing",
+                "detail": "缺少净资产",
+                "action": "FMP 三表或财报 balance_sheet.equity",
+            })
+
+    if valuation_model == "damodaran" and implied_wacc.get("available"):
         items.append({
             "id": "implied_wacc",
             "label": "现价隐含 WACC",
@@ -740,13 +1040,13 @@ def _build_data_gaps(
             "detail": f"{implied_wacc.get('value')}%（中性情景）",
             "action": None,
         })
-    else:
+    elif valuation_model == "damodaran":
         items.append({
             "id": "implied_wacc",
             "label": "现价隐含 WACC",
             "status": "missing" if implied_wacc.get("reason") else "partial",
             "detail": implied_wacc.get("reason") or "不可算",
-            "action": "需正 FCF、现价、股本，且现价在 DCF 可解释范围内",
+            "action": "需正调整后 FCF、现价、股本，且现价在模型可解释范围内",
         })
 
     if report_count > 1:
@@ -780,27 +1080,28 @@ def fmt_usd_gap(value: float) -> str:
 
 
 def _build_implied_wacc(
-    fcf_millions: Optional[float],
+    adjusted_fcf_usd: Optional[float],
     growth_pct: Optional[float],
     market: Dict[str, Any],
-    dcf: Dict[str, Any],
+    damodaran: Dict[str, Any],
 ) -> Dict[str, Any]:
     price = market.get("price")
     shares = market.get("shares")
-    params = dcf.get("params") or {}
+    params = damodaran.get("params") or {}
     terminal_base = (params.get("terminal_growth") or {}).get("base", DEFAULT_TERMINAL_GROWTH["base"])
     base_growth = params.get("base_growth_pct")
     if base_growth is None:
         base_growth = max(growth_pct or 0.0, 0.0)
+    survival_rate = params.get("survival_rate") or 1.0
 
-    if fcf_millions is None:
+    if adjusted_fcf_usd is None or adjusted_fcf_usd <= 0:
         return {
             "available": False,
             "value": None,
             "target_price": price,
             "scenario": "base",
             "method": "bisection",
-            "reason": "缺少 FCF",
+            "reason": "缺少调整后 FCF 或为负",
         }
     if not price:
         return {
@@ -821,13 +1122,13 @@ def _build_implied_wacc(
             "reason": "缺少股本",
         }
 
-    fcf_usd = fcf_millions * 1_000_000
     value = solve_implied_wacc(
-        fcf_usd,
+        float(adjusted_fcf_usd),
         float(base_growth),
         float(terminal_base),
         float(shares),
         float(price),
+        survival_rate=float(survival_rate),
     )
     if value is None:
         return {
@@ -836,7 +1137,7 @@ def _build_implied_wacc(
             "target_price": price,
             "scenario": "base",
             "method": "bisection",
-            "reason": "现价超出 DCF 可解释范围或参数无效",
+            "reason": "现价超出模型可解释范围或参数无效",
         }
     return {
         "available": True,
@@ -854,7 +1155,8 @@ def _build_interpretation(
     multiples: Dict[str, Any],
     market: Dict[str, Any],
     growth_pct: Optional[float],
-    dcf: Dict[str, Any],
+    active_model: Dict[str, Any],
+    valuation_model: str,
 ) -> str:
     parts: List[str] = []
     if stage == "profitable":
@@ -877,11 +1179,16 @@ def _build_interpretation(
             f"订阅特征：NRR {multiples['nrr_pct']}%，ARR 代理倍数约 {multiples['arr_multiple']} 倍。"
         )
 
-    base_scenario = next((s for s in dcf.get("scenarios") or [] if s.get("name") == "base"), None)
+    base_scenario = next(
+        (s for s in active_model.get("scenarios") or [] if s.get("name") == "base"), None
+    )
+    model_name = "Damodaran" if valuation_model == "damodaran" else "RIM"
     if base_scenario and base_scenario.get("implied_price") is not None and market.get("price"):
         diff = base_scenario.get("vs_current_price_pct")
         if diff is not None:
-            parts.append(f"中性 DCF 隐含价较现价{'偏高' if diff > 0 else '偏低'}约 {abs(diff)}%。")
+            parts.append(
+                f"中性 {model_name} 隐含价较现价{'偏高' if diff > 0 else '偏低'}约 {abs(diff)}%。"
+            )
     return " ".join(parts)
 
 
@@ -950,7 +1257,15 @@ def build_valuation_payload(
             if multiples["ps"] is not None:
                 multiples["arr_multiple"] = multiples["ps"]
 
-    dcf_params = (override or {}).get("dcf_params") or {}
+    dcf_params_raw = (override or {}).get("dcf_params") or {}
+    params = _resolve_dcf_params(dcf_params_raw, stage)
+    valuation_model = params["valuation_model"]
+
+    fundamentals = fetch_fundamentals_ttm(ticker, chart_payload)
+    if fundamentals.get("net_income_usd") is not None and net_income_usd is None:
+        net_income_usd = fundamentals["net_income_usd"]
+        net_income_m = net_income_usd / 1_000_000
+
     fcf_m, fcf_estimated = _fcf_millions_ttm(
         ttm.get("periods_used") or [],
         income,
@@ -959,10 +1274,47 @@ def build_valuation_payload(
         revenue_m,
         net_income_m,
     )
+    fcf_usd = fcf_m * 1_000_000 if fcf_m is not None else None
+    equity_usd = fundamentals.get("equity_usd")
+    rd_expense_usd = fundamentals.get("rd_expense_usd")
+    net_for_rd = fundamentals.get("net_income_usd") or net_income_usd
+
+    rd_adjustment = _capitalize_rd(
+        rd_expense_usd=rd_expense_usd,
+        net_income_usd=net_for_rd,
+        fcf_usd=fcf_usd,
+        equity_usd=equity_usd,
+        rd_capitalize=params["rd_capitalize"],
+        rd_amort_years=params["rd_amort_years"],
+    )
+
     if fcf_estimated:
         warnings.append("自由现金流为估算值（OCF×0.85 或营收×净利率×0.85）")
-    dcf = _build_dcf(fcf_m, fcf_estimated, growth_pct, market, dcf_params)
-    implied_wacc = _build_implied_wacc(fcf_m, growth_pct, market, dcf)
+    if rd_adjustment.get("rd_capitalized"):
+        warnings.append("已对 R&D 费用资本化并调整 FCF / 净资产 / 净利润")
+
+    adjusted_fcf_usd = rd_adjustment.get("adjusted_fcf_usd")
+    if adjusted_fcf_usd is not None and adjusted_fcf_usd < 0:
+        warnings.append("Damodaran 模型在负调整 FCF 下仅供参考")
+
+    damodaran = _build_damodaran(
+        adjusted_fcf_usd, fcf_estimated, growth_pct, market, params, rd_adjustment
+    )
+    rim = _build_rim(
+        rd_adjustment.get("adjusted_equity_usd"),
+        rd_adjustment.get("adjusted_net_income_usd"),
+        growth_pct,
+        market,
+        params,
+        rd_adjustment,
+    )
+    active = damodaran if valuation_model == "damodaran" else rim
+    dcf = active
+
+    implied_wacc: Dict[str, Any] = {"available": False, "reason": None}
+    if valuation_model == "damodaran":
+        implied_wacc = _build_implied_wacc(adjusted_fcf_usd, growth_pct, market, damodaran)
+
     fcf_source = _detect_fcf_source(
         ttm.get("periods_used") or [],
         kpis,
@@ -984,8 +1336,12 @@ def build_valuation_payload(
         fcf_m=fcf_m,
         fcf_estimated=fcf_estimated,
         fcf_source=fcf_source,
-        dcf=dcf,
+        damodaran=damodaran,
+        rim=rim,
+        valuation_model=valuation_model,
         implied_wacc=implied_wacc,
+        fundamentals=fundamentals,
+        rd_adjustment=rd_adjustment,
     )
 
     return {
@@ -1003,11 +1359,16 @@ def build_valuation_payload(
         "primary_metric": primary_metric,
         "growth_pct": growth_pct,
         "multiples": multiples,
+        "valuation_model": valuation_model,
+        "damodaran": damodaran,
+        "rim": rim,
         "dcf": dcf,
+        "fundamentals": fundamentals,
+        "rd_adjustment": rd_adjustment,
         "implied_wacc": implied_wacc,
         "warnings": warnings,
         "data_gaps": data_gaps,
         "interpretation": _build_interpretation(
-            stage, primary_metric, multiples, market, growth_pct, dcf
+            stage, primary_metric, multiples, market, growth_pct, active, valuation_model
         ),
     }

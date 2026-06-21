@@ -508,22 +508,33 @@ def research_report_valuation_dcf_params(report_id):
         return jsonify({"error": "报告不存在"}), 404
 
     data = request.get_json(silent=True) or {}
-    allowed_keys = (
+    float_keys = (
         "wacc",
         "optimistic_factor",
         "pessimistic_factor",
         "terminal_growth_optimistic",
         "terminal_growth_base",
         "terminal_growth_pessimistic",
+        "survival_rate",
+        "rd_amort_years",
+        "cost_of_equity",
+        "rim_terminal_growth",
     )
     params = {}
-    for key in allowed_keys:
+    for key in float_keys:
         if key not in data:
             continue
         try:
             params[key] = float(data[key])
         except (TypeError, ValueError):
             return jsonify({"error": f"参数 {key} 无效"}), 400
+    if "valuation_model" in data:
+        model = str(data["valuation_model"]).strip().lower()
+        if model not in ("damodaran", "rim"):
+            return jsonify({"error": "valuation_model 须为 damodaran 或 rim"}), 400
+        params["valuation_model"] = model
+    if "rd_capitalize" in data:
+        params["rd_capitalize"] = bool(data["rd_capitalize"])
     save_valuation_dcf_params(report_id, params)
     return jsonify({"ok": True})
 
