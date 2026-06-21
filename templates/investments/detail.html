@@ -721,7 +721,7 @@
           <label>事件描述</label>
           <textarea name="description" rows="2" placeholder="例如：美联储议息会议决议公布" required></textarea>
         </div>
-        <p class="milestone-range-hint" style="margin: 0;">标记为「已发生」后将由 AI 评估重要性（0–10）；主题内证据不足时会参考标普/纳指与 EODHD 宏观资讯。</p>
+        <p class="milestone-range-hint" style="margin: 0;">标记为「已发生」后将由 AI 评估重要性（0–10）；主题内证据不足时会参考标普/纳指与 FMP 宏观资讯。</p>
       </div>
       <div class="modal-form-actions">
         <button type="button" class="secondary-btn" onclick="document.getElementById('addMilestoneModal').style.display='none'">取消</button>
@@ -1772,7 +1772,7 @@
 
       const currentPriceEl = document.getElementById('aiAssetCurrentPrice');
       if (item.current_price != null) {
-        currentPriceEl.textContent = `EODHD 现价 $${Number(item.current_price).toFixed(2)}`;
+        currentPriceEl.textContent = `现价 $${Number(item.current_price).toFixed(2)}`;
         currentPriceEl.hidden = false;
       } else {
         currentPriceEl.hidden = true;
@@ -1780,7 +1780,7 @@
 
       const validationWarn = document.getElementById('aiAssetValidationWarn');
       if (item.validated === false) {
-        validationWarn.textContent = `警告：${ticker} 未能通过 EODHD 行情校验，请确认代码是否正确。`;
+        validationWarn.textContent = `警告：${ticker} 未能通过行情校验，请确认代码是否正确。`;
         validationWarn.hidden = false;
       } else {
         validationWarn.hidden = true;

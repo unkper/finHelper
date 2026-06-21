@@ -1,4 +1,4 @@
-"""财报日历：EODHD 优先，FMP 回退；含缓存与归一化。"""
+"""财报日历：FMP 优先，EODHD 回退；含缓存与归一化。"""
 import json
 import time
 from datetime import date, datetime, timedelta
@@ -293,21 +293,21 @@ def fetch_earnings_calendar(
     provider = "none"
     error_hint: Optional[str] = None
 
-    if eodhd.has_api_key():
-        events, error_hint = _fetch_eodhd(from_str, to_str, tickers)
-        if events:
-            provider = "eodhd"
-        elif _has_fmp_key():
-            fmp_events, fmp_err = _fetch_fmp(from_str, to_str, tickers)
-            events = fmp_events
-            error_hint = fmp_err or error_hint
-            if events:
-                provider = "fmp"
-            else:
-                provider = "eodhd"
-    elif _has_fmp_key():
+    if _has_fmp_key():
         events, error_hint = _fetch_fmp(from_str, to_str, tickers)
-        provider = "fmp" if events else "fmp"
+        if events:
+            provider = "fmp"
+        elif eodhd.has_api_key():
+            eodhd_events, eodhd_err = _fetch_eodhd(from_str, to_str, tickers)
+            events = eodhd_events
+            error_hint = eodhd_err or error_hint
+            if events:
+                provider = "eodhd"
+            else:
+                provider = "fmp"
+    elif eodhd.has_api_key():
+        events, error_hint = _fetch_eodhd(from_str, to_str, tickers)
+        provider = "eodhd" if events else "eodhd"
 
     if events:
         _write_cache(cache_key, events)
@@ -344,7 +344,7 @@ def build_earnings_payload(horizon_days: int, force_refresh: bool = False) -> Di
             "horizon_days": horizon,
             "from_date": today.isoformat(),
             "to_date": to_date.isoformat(),
-            "message": "未配置 EODHD 或 FMP API Key，无法拉取财报日历。",
+            "message": "未配置 FMP 或 EODHD API Key，无法拉取财报日历。",
             "error_hint": "missing_key",
         }
 
@@ -354,7 +354,7 @@ def build_earnings_payload(horizon_days: int, force_refresh: bool = False) -> Di
     message = None
     if not events:
         if error_hint == "api_error":
-            message = "API 返回错误（EODHD 财报接口可能需要付费套餐，已尝试 FMP 回退）。"
+            message = "API 返回错误（FMP/EODHD 财报接口可能不可用，请检查 Key 与套餐）。"
         elif error_hint == "request_failed":
             message = "请求财报数据失败，请稍后重试。"
         else:

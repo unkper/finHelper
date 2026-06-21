@@ -1,11 +1,11 @@
-"""时间线评分：大盘基准、EODHD 资讯与证据充分度判断。"""
+"""时间线评分：大盘基准、FMP/EODHD 资讯与证据充分度判断。"""
 from __future__ import annotations
 
 import re
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
-from app.services.quote_providers import eodhd
+from app.services.quote_providers import eodhd, fmp
 from app.services.quotes import fetch_us_quotes
 from app.services.stock_history import fetch_daily_series
 
@@ -152,13 +152,75 @@ def _filter_events_by_keywords(
     return matched or events[:8]
 
 
+def _fetch_benchmark_news(from_news: str, to_news: str) -> List[Dict[str, str]]:
+    news_pool: List[Dict[str, str]] = []
+    for ticker in BENCHMARK_TICKERS:
+        if fmp.has_api_key() and not fmp.is_news_feature_on_cooldown():
+            news_pool.extend(
+                fmp.fetch_stock_news(
+                    ticker,
+                    from_date=from_news,
+                    to_date=to_news,
+                    limit=_NEWS_LIMIT,
+                )
+            )
+        elif eodhd.has_api_key() and not eodhd.is_news_feature_on_cooldown():
+            news_pool.extend(
+                eodhd.fetch_financial_news(
+                    symbol=ticker,
+                    from_date=from_news,
+                    to_date=to_news,
+                    limit=_NEWS_LIMIT,
+                )
+            )
+    return news_pool
+
+
+def _fetch_tagged_news(token: str, from_news: str, to_news: str) -> List[Dict[str, str]]:
+    if eodhd.has_api_key() and not eodhd.is_news_feature_on_cooldown():
+        return eodhd.fetch_financial_news(
+            tag=token.lower(),
+            from_date=from_news,
+            to_date=to_news,
+            limit=4,
+        )
+    if fmp.has_api_key() and not fmp.is_news_feature_on_cooldown() and token.isascii():
+        return fmp.fetch_stock_news(
+            token.upper(),
+            from_date=from_news,
+            to_date=to_news,
+            limit=4,
+        )
+    return []
+
+
+def _fetch_economic_events(cal_from: str, cal_to: str) -> List[Dict[str, str]]:
+    if fmp.has_api_key() and not fmp.is_economic_calendar_on_cooldown():
+        events = fmp.fetch_economic_calendar(
+            from_date=cal_from,
+            to_date=cal_to,
+            country="US",
+            limit=40,
+        )
+        if events:
+            return events
+    if eodhd.has_api_key():
+        return eodhd.fetch_economic_events(
+            from_date=cal_from,
+            to_date=cal_to,
+            country="US",
+            limit=40,
+        )
+    return []
+
+
 def fetch_external_news_and_events(
     *,
     event_date: str,
     milestone_description: str,
 ) -> tuple[List[Dict[str, str]], List[Dict[str, str]]]:
-    """拉取 EODHD 新闻与宏观日历（未配置 key 时返回空列表）。"""
-    if not eodhd.has_api_key():
+    """拉取 FMP（优先）或 EODHD 新闻与宏观日历。"""
+    if not fmp.has_api_key() and not eodhd.has_api_key():
         return [], []
 
     try:
@@ -173,38 +235,22 @@ def fetch_external_news_and_events(
     cal_from = (ev - timedelta(days=_MACRO_CALENDAR_PADDING_DAYS)).isoformat()
     cal_to = (ev + timedelta(days=_MACRO_CALENDAR_PADDING_DAYS)).isoformat()
 
-    news_pool: List[Dict[str, str]] = []
-    for ticker in BENCHMARK_TICKERS:
-        news_pool.extend(
-            eodhd.fetch_financial_news(
-                symbol=ticker,
-                from_date=from_news,
-                to_date=to_news,
-                limit=_NEWS_LIMIT,
-            )
-        )
+    news_pool = _fetch_benchmark_news(from_news, to_news)
 
     tokens = extract_search_tokens(milestone_description)
     for token in tokens:
         if token.isascii() and len(token) <= 6:
-            tagged = eodhd.fetch_financial_news(
-                tag=token.lower(),
-                from_date=from_news,
-                to_date=to_news,
-                limit=4,
-            )
-            news_pool.extend(tagged)
+            news_pool.extend(_fetch_tagged_news(token, from_news, to_news))
 
     keywords = tokens + [t.lower() for t in tokens if t.isascii()]
-    events = eodhd.fetch_economic_events(
-        from_date=cal_from,
-        to_date=cal_to,
-        country="US",
-        limit=40,
-    )
+    events = _fetch_economic_events(cal_from, cal_to)
     events = _filter_events_by_keywords(events, keywords)
 
     return _dedupe_news(news_pool, _NEWS_LIMIT * 2), events[:10]
+
+
+def is_market_data_available() -> bool:
+    return fmp.has_api_key() or eodhd.has_api_key()
 
 
 def build_macro_context_block(
@@ -214,7 +260,7 @@ def build_macro_context_block(
     theme_title: str,
     articles: List[Dict[str, str]],
 ) -> Dict[str, Any]:
-    """组装大盘、EODHD 资讯与 evidence_hint。"""
+    """组装大盘、外部资讯与 evidence_hint。"""
     external_news, economic_events = fetch_external_news_and_events(
         event_date=event_date,
         milestone_description=milestone_description,
@@ -228,6 +274,8 @@ def build_macro_context_block(
         "market_dynamics": build_market_dynamics(event_date),
         "external_news": external_news,
         "economic_events": economic_events,
+        "market_data_available": is_market_data_available(),
+        "fmp_available": fmp.has_api_key(),
         "eodhd_available": eodhd.has_api_key(),
     }
 

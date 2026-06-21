@@ -30,7 +30,7 @@
   <div id="researchCalendarPanel">
     {% if not earnings_enabled %}
     <section class="panel research-notice">
-      <p>财报日历 API 与飞书提醒需在环境变量中开启 <code>EARNINGS_ENABLED=true</code> 并配置 EODHD/FMP Key。</p>
+      <p>财报日历 API 与飞书提醒需在环境变量中开启 <code>EARNINGS_ENABLED=true</code> 并配置 FMP Key（EODHD 可选回退）。</p>
       <p class="hint">财报分析 Tab 不依赖该开关，可直接粘贴文字使用。</p>
     </section>
     {% else %}

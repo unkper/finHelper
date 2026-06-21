@@ -10,11 +10,11 @@
       <div>
         <p class="eyebrow">Financial News</p>
         <h2>监控标的新闻</h2>
-        <p class="hint">汇总投资主题下美股监控标的的 EODHD 财经新闻；按标的切换浏览，数据约 30 分钟缓存。{% if translate_configured %}英文内容将自动译为中文（DeepSeek Flash，先显示原文后刷新）。{% endif %}</p>
-        {% if not has_eodhd_key %}
-        <p class="hint news-hint-warn">未配置 <code>EODHD_API_KEY</code>，无法拉取新闻。</p>
+        <p class="hint">汇总投资主题下美股监控标的的 FMP 财经新闻（EODHD 可选回退）；按标的切换浏览，数据约 30 分钟缓存。{% if translate_configured %}英文内容将自动译为中文（DeepSeek Flash，先显示原文后刷新）。{% endif %}</p>
+        {% if not has_fmp_key and not has_eodhd_key %}
+        <p class="hint news-hint-warn">未配置 <code>FMP_API_KEY</code>，无法拉取新闻。</p>
         {% elif not news_configured %}
-        <p class="hint news-hint-warn">EODHD 新闻接口暂不可用（可能当前套餐不含新闻 API）。</p>
+        <p class="hint news-hint-warn">FMP/EODHD 新闻接口暂不可用（可能套餐不含或已进入冷却）。</p>
         {% endif %}
       </div>
       <div class="news-hero-actions">

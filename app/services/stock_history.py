@@ -1,55 +1,30 @@
-"""美股日 K 历史行情（含缓存；优先 EODHD，回退 Alpha Vantage / FMP）。"""
+"""美股日 K 历史行情（含缓存；优先 FMP，回退 Alpha Vantage / EODHD）。"""
 import time
 from typing import Dict, List
 
-from flask import current_app
-
-from app.services.quote_client import http_get_json, parse_price, normalize_us_tickers
+from app.services.quote_client import normalize_us_tickers
 from app.services.quote_cache import (
     invalidate_daily_cache,
     read_cached_daily_series,
     write_cached_daily_series,
 )
-from app.services.quote_providers import alpha_vantage, eodhd
-
-FMP_HISTORY_URL = "https://financialmodelingprep.com/stable/historical-price-eod/full"
-
-
-def _fetch_fmp_daily(ticker: str) -> List[Dict[str, float | str]]:
-    api_key = current_app.config.get("FMP_API_KEY", "")
-    if not api_key:
-        return []
-    payload = http_get_json(
-        FMP_HISTORY_URL,
-        {"symbol": ticker, "apikey": api_key},
-    )
-    if not isinstance(payload, list):
-        return []
-
-    points = []
-    for bar in payload:
-        if not isinstance(bar, dict):
-            continue
-        bar_date = bar.get("date")
-        close = parse_price(bar.get("close"))
-        if bar_date and close is not None:
-            points.append({"date": bar_date, "close": close})
-    points.sort(key=lambda item: item["date"])
-    return points[-120:]
+from app.services.quote_providers import alpha_vantage, eodhd, fmp
 
 
 def _batch_fetch_delay() -> float:
-    if eodhd.has_api_key():
-        return eodhd.daily_series_batch_delay()
+    if fmp.has_api_key():
+        return fmp.daily_series_batch_delay()
     if alpha_vantage.has_api_key():
         return alpha_vantage.daily_series_batch_delay()
+    if eodhd.has_api_key():
+        return eodhd.daily_series_batch_delay()
     return 0.3
 
 
 def _fetch_daily_from_providers(ticker: str) -> List[Dict[str, float | str]]:
-    """优先 EODHD，再 Alpha Vantage，最后 FMP。"""
-    if eodhd.has_api_key():
-        series = eodhd.fetch_us_daily_series(ticker)
+    """优先 FMP（含 OHLC），再 Alpha Vantage，最后 EODHD。"""
+    if fmp.has_api_key():
+        series = fmp.fetch_us_daily_series(ticker)
         if series:
             return series
 
@@ -58,7 +33,12 @@ def _fetch_daily_from_providers(ticker: str) -> List[Dict[str, float | str]]:
         if series:
             return series
 
-    return _fetch_fmp_daily(ticker)
+    if eodhd.has_api_key():
+        series = eodhd.fetch_us_daily_series(ticker)
+        if series:
+            return series
+
+    return []
 
 
 def fetch_daily_series(
@@ -67,7 +47,7 @@ def fetch_daily_series(
     use_cache: bool = True,
     force_refresh: bool = False,
 ) -> List[Dict[str, float | str]]:
-    """获取单只股票日 K 收盘价序列（优先读缓存，再调 EODHD）。"""
+    """获取单只股票日 K 序列（优先读缓存，再调外部 API）。"""
     symbol = (ticker or "").strip().upper()
     if not symbol:
         return []

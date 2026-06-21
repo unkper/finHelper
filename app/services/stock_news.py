@@ -1,4 +1,4 @@
-"""监控标的财经新闻：EODHD 拉取与短缓存。"""
+"""监控标的财经新闻：FMP 拉取与短缓存（EODHD 可选回退）。"""
 import json
 import logging
 import threading
@@ -10,7 +10,7 @@ from flask import current_app, has_app_context
 from app.database import get_db
 from app.services.investment import fetch_tracked_assets_overview
 from app.services.news_translate import is_translation_available, translate_news_items
-from app.services.quote_providers import eodhd
+from app.services.quote_providers import eodhd, fmp
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,39 @@ _inflight_keys: set[str] = set()
 
 
 def is_news_available() -> bool:
+    if fmp.has_api_key() and not fmp.is_news_feature_on_cooldown():
+        return True
     return eodhd.has_api_key() and not eodhd.is_news_feature_on_cooldown()
+
+
+def _fetch_news_from_providers(
+    ticker: str,
+    *,
+    from_date: str | None,
+    to_date: str | None,
+    limit: int,
+    offset: int,
+) -> List[Dict[str, Any]]:
+    page = offset // limit if limit else 0
+    if fmp.has_api_key() and not fmp.is_news_feature_on_cooldown():
+        items = fmp.fetch_stock_news(
+            ticker,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            page=page,
+        )
+        if items:
+            return items
+    if eodhd.has_api_key() and not eodhd.is_news_feature_on_cooldown():
+        return eodhd.fetch_financial_news(
+            symbol=ticker,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            offset=offset,
+        )
+    return []
 
 
 def list_news_tickers() -> List[Dict[str, Any]]:
@@ -178,13 +210,22 @@ def fetch_ticker_news(
 
     if not ticker:
         return [], False, {**meta, "error": "请选择标的"}
-    if not eodhd.has_api_key():
-        return [], False, {**meta, "configured": False, "error": "未配置 EODHD_API_KEY"}
-    if eodhd.is_news_feature_on_cooldown():
+    if not is_news_available():
+        configured = fmp.has_api_key() or eodhd.has_api_key()
+        on_cooldown = (
+            (fmp.has_api_key() and fmp.is_news_feature_on_cooldown())
+            or (eodhd.has_api_key() and eodhd.is_news_feature_on_cooldown())
+        )
+        if on_cooldown:
+            return [], False, {
+                **meta,
+                "configured": False,
+                "error": "当前 FMP/EODHD 新闻接口暂不可用（可能套餐不含或已进入冷却）",
+            }
         return [], False, {
             **meta,
             "configured": False,
-            "error": "当前 EODHD 套餐可能不含新闻接口，或接口暂不可用",
+            "error": "未配置 FMP_API_KEY（主）或 EODHD_API_KEY（回退）",
         }
 
     cache_key = _cache_key(ticker, offset, limit, from_date, to_date)
@@ -204,8 +245,8 @@ def fetch_ticker_news(
                 meta["translated"] = True
             return items, has_more, meta
 
-    items = eodhd.fetch_financial_news(
-        symbol=ticker,
+    items = _fetch_news_from_providers(
+        ticker,
         from_date=from_date,
         to_date=to_date,
         limit=limit,

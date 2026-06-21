@@ -9,14 +9,14 @@ MIN_STOCKS_PER_PAGE = 4
 MAX_STOCKS_PER_PAGE = 24
 from app.services.quote_cache import invalidate_daily_cache, invalidate_quote_cache
 from app.services.macd import SIGNAL_LABELS, analyze_macd_from_series
-from app.services.quote_providers import eodhd
+from app.services.quote_providers import eodhd, fmp
 from app.services.quotes import fetch_us_quotes
 from app.services.settings import get_macd_alert_settings
 from app.services.stock_history import fetch_daily_series_batch
 
 
 def _series_has_ohlc(series: List[Dict[str, Any]]) -> bool:
-    """EODHD 日 K 含 open/high/low 时可绘制蜡烛图。"""
+    """FMP 日 K 含 open/high/low 时可绘制蜡烛图。"""
     if len(series) < 2:
         return False
     for point in series:
@@ -150,7 +150,8 @@ def build_stock_chart_payload(
             "summary": {
                 "ticker_count": 0,
                 "theme_link_count": 0,
-                "eodhd_configured": eodhd.has_api_key(),
+                "fmp_configured": fmp.has_api_key(),
+                "ohlc_available": fmp.has_api_key() or eodhd.has_api_key(),
                 "page": 1,
                 "per_page": per_page,
                 "total_pages": 0,
@@ -187,7 +188,8 @@ def build_stock_chart_payload(
         "summary": {
             "ticker_count": total_tickers,
             "theme_link_count": theme_link_count,
-            "eodhd_configured": eodhd.has_api_key(),
+            "fmp_configured": fmp.has_api_key(),
+            "ohlc_available": fmp.has_api_key() or eodhd.has_api_key(),
             "page": page,
             "per_page": per_page,
             "total_pages": total_pages,

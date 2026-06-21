@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from flask import current_app
 
-from app.services.quote_providers import eodhd
+from app.services.quotes import fetch_us_quotes
 from app.services.api_usage import record_api_call
 from app.services.settings import get_ai_article_model
 
@@ -205,11 +205,11 @@ def _normalize_assets(items: Any) -> List[Dict[str, Any]]:
 
 
 def _enrich_assets_with_quotes(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """用 EODHD 校验 ticker 并附加现价。"""
+    """用统一行情链校验 ticker 并附加现价。"""
     if not assets:
         return assets
     tickers = [a["ticker"] for a in assets]
-    quotes = eodhd.fetch_us_quotes(tickers)
+    quotes = fetch_us_quotes(tickers)
     for asset in assets:
         price = quotes.get(asset["ticker"])
         asset["validated"] = price is not None

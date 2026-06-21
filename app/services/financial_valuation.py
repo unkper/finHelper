@@ -569,7 +569,7 @@ def _build_data_gaps(
             "label": "现价",
             "status": "missing",
             "detail": "无行情价",
-            "action": "配置 FMP_API_KEY / EODHD 等行情源",
+            "action": "配置 FMP_API_KEY（或 Alpha Vantage / EODHD 回退）",
         })
 
     market_cap = market.get("market_cap")

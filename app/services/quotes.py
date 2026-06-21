@@ -12,9 +12,9 @@ from app.services.quote_providers import alpha_vantage, eodhd, fmp
 ProviderFn = Callable[[List[str]], Dict[str, float]]
 
 PROVIDERS: Tuple[Tuple[str, ProviderFn], ...] = (
-    ("eodhd", eodhd.fetch_us_quotes),
-    ("alpha_vantage", alpha_vantage.fetch_us_quotes),
     ("fmp", fmp.fetch_us_quotes),
+    ("alpha_vantage", alpha_vantage.fetch_us_quotes),
+    ("eodhd", eodhd.fetch_us_quotes),
 )
 
 

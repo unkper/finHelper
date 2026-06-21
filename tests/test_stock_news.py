@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from flask import Flask
 
-from app.services.quote_providers import eodhd
+from app.services.quote_providers import eodhd, fmp
 from app.services.stock_news import (
     _parse_cache_payload,
     _read_cache_entry,
@@ -91,7 +91,7 @@ class FetchTickerNewsCacheTest(unittest.TestCase):
         self.tmp.close()
         self.app = Flask(__name__)
         self.app.config["DATABASE_PATH"] = self.tmp.name
-        self.app.config["EODHD_API_KEY"] = "test-key"
+        self.app.config["FMP_API_KEY"] = "test-key"
         self.ctx = self.app.app_context()
         self.ctx.push()
         from app.database import init_db
@@ -105,8 +105,8 @@ class FetchTickerNewsCacheTest(unittest.TestCase):
         self.ctx.pop()
         Path(self.tmp.name).unlink(missing_ok=True)
 
-    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
-    @patch.object(eodhd, "fetch_financial_news")
+    @patch.object(fmp, "is_news_feature_on_cooldown", return_value=False)
+    @patch.object(fmp, "fetch_stock_news")
     def test_cache_avoids_repeat_fetch(self, mock_fetch, _cooldown):
         mock_fetch.return_value = [SAMPLE_ITEM]
         items1, _, meta1 = fetch_ticker_news("AAPL", offset=0, limit=20)
@@ -117,8 +117,8 @@ class FetchTickerNewsCacheTest(unittest.TestCase):
         self.assertTrue(meta2["translated"])
         mock_fetch.assert_called_once()
 
-    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
-    @patch.object(eodhd, "fetch_financial_news")
+    @patch.object(fmp, "is_news_feature_on_cooldown", return_value=False)
+    @patch.object(fmp, "fetch_stock_news")
     def test_force_refresh_bypasses_cache(self, mock_fetch, _cooldown):
         mock_fetch.return_value = []
         fetch_ticker_news("AAPL", offset=0, limit=20)
@@ -127,8 +127,8 @@ class FetchTickerNewsCacheTest(unittest.TestCase):
 
     @patch("app.services.stock_news._schedule_translation", return_value=True)
     @patch("app.services.stock_news.is_translation_available", return_value=True)
-    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
-    @patch.object(eodhd, "fetch_financial_news")
+    @patch.object(fmp, "is_news_feature_on_cooldown", return_value=False)
+    @patch.object(fmp, "fetch_stock_news")
     def test_async_translation_returns_immediately(self, mock_fetch, _cooldown, _avail, _schedule):
         mock_fetch.return_value = [SAMPLE_ITEM]
         items, _, meta = fetch_ticker_news(
@@ -143,7 +143,7 @@ class FetchTickerNewsCacheTest(unittest.TestCase):
         _schedule.assert_called_once()
 
     @patch("app.services.stock_news.is_translation_available", return_value=True)
-    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
+    @patch.object(fmp, "is_news_feature_on_cooldown", return_value=False)
     def test_legacy_cache_treated_as_translated(self, _cooldown, _avail):
         cache_key = "AAPL:0:20::"
         db = __import__("app.database", fromlist=["get_db"]).get_db()
@@ -173,7 +173,7 @@ class FetchTickerNewsCacheTest(unittest.TestCase):
 
     @patch("app.services.stock_news._schedule_translation", return_value=True)
     @patch("app.services.stock_news.is_translation_available", return_value=True)
-    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
+    @patch.object(fmp, "is_news_feature_on_cooldown", return_value=False)
     def test_untranslated_cache_schedules_translation(self, _cooldown, _avail, schedule):
         cache_key = "AAPL:0:20::"
         _write_cache(cache_key, [SAMPLE_ITEM], translated=False)
@@ -183,23 +183,34 @@ class FetchTickerNewsCacheTest(unittest.TestCase):
         self.assertTrue(meta["translating"])
         schedule.assert_called_once()
 
+    @patch.object(fmp, "is_news_feature_on_cooldown", return_value=False)
+    @patch.object(fmp, "fetch_stock_news", return_value=[])
+    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
+    @patch.object(eodhd, "fetch_financial_news")
+    def test_falls_back_to_eodhd(self, mock_eodhd, _eod_cool, _fmp_fetch, _fmp_cool):
+        self.app.config["EODHD_API_KEY"] = "eod-key"
+        mock_eodhd.return_value = [SAMPLE_ITEM]
+        items, _, _meta = fetch_ticker_news("AAPL", offset=0, limit=20)
+        self.assertEqual(len(items), 1)
+        mock_eodhd.assert_called_once()
 
-class FetchFinancialNewsOffsetTest(unittest.TestCase):
+
+class FetchStockNewsPageTest(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)
-        self.app.config["EODHD_API_KEY"] = "test-key"
+        self.app.config["FMP_API_KEY"] = "test-key"
         self.ctx = self.app.app_context()
         self.ctx.push()
 
     def tearDown(self):
         self.ctx.pop()
 
-    @patch.object(eodhd, "_http_get_json", return_value=[])
-    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
-    def test_offset_passed_to_api(self, _cooldown, mock_http):
-        eodhd.fetch_financial_news(symbol="AAPL", limit=10, offset=20)
+    @patch.object(fmp, "_http_get_json", return_value=[])
+    @patch.object(fmp, "is_news_feature_on_cooldown", return_value=False)
+    def test_page_derived_from_offset(self, _cooldown, mock_http):
+        fmp.fetch_stock_news("AAPL", limit=10, page=2)
         params = mock_http.call_args[0][1]
-        self.assertEqual(params["offset"], "20")
+        self.assertEqual(params["page"], "2")
         self.assertEqual(params["limit"], "10")
 
 
@@ -234,16 +245,18 @@ class NewsRouteTest(unittest.TestCase):
         self.assertIn("监控标的新闻", body)
         self.assertIn("STOCK_NEWS_PAGE", body)
 
+    @patch.object(fmp, "has_api_key", return_value=False)
     @patch.object(eodhd, "has_api_key", return_value=False)
-    def test_feed_without_key_returns_503(self, _mock_key):
+    def test_feed_without_key_returns_503(self, _eod, _fmp):
         rv = self.client.get("/investments/news/api/feed?ticker=AAPL")
         self.assertEqual(rv.status_code, 503)
 
     @patch("app.services.stock_news._schedule_translation", return_value=True)
     @patch("app.services.stock_news.is_translation_available", return_value=True)
-    @patch.object(eodhd, "is_news_feature_on_cooldown", return_value=False)
-    @patch.object(eodhd, "fetch_financial_news")
+    @patch.object(fmp, "is_news_feature_on_cooldown", return_value=False)
+    @patch.object(fmp, "fetch_stock_news")
     def test_feed_includes_translation_flags(self, mock_fetch, _cooldown, _avail, _schedule):
+        self.app.config["FMP_API_KEY"] = "test-key"
         mock_fetch.return_value = [SAMPLE_ITEM]
         rv = self.client.get("/investments/news/api/feed?ticker=AAPL")
         self.assertEqual(rv.status_code, 200)

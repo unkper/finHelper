@@ -179,7 +179,7 @@
   refreshBtn?.addEventListener("click", () => loadCalendar(true));
 
   if (!cfg.apiConfigured) {
-    metaEl.textContent = "未配置 EODHD 或 FMP API Key，请在 .env 中配置后重启应用。";
+    metaEl.textContent = "未配置 FMP 或 EODHD API Key，请在 .env 中配置后重启应用。";
     loadingEl.hidden = true;
     emptyTextEl.textContent = "未配置行情/财报 API Key";
     emptyEl.hidden = false;

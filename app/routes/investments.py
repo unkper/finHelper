@@ -39,7 +39,7 @@ from app.services.earnings_calendar import (
     fetch_tracked_us_tickers,
     is_earnings_api_configured,
 )
-from app.services.quote_providers import eodhd
+from app.services.quote_providers import eodhd, fmp
 from app.services.stock_charts import build_stock_chart_payload
 from app.services.stock_news import (
     DEFAULT_LIMIT,
@@ -172,6 +172,7 @@ def news():
         selected_ticker=selected if any(t["ticker"] == selected for t in tickers) else "",
         news_range=news_range,
         news_configured=is_news_available(),
+        has_fmp_key=fmp.has_api_key(),
         has_eodhd_key=eodhd.has_api_key(),
         translate_configured=is_translation_available(),
     )
@@ -189,8 +190,8 @@ def news_feed_api():
     ticker = (request.args.get("ticker") or "").strip().upper()
     if not ticker:
         return jsonify({"error": "请选择标的"}), 400
-    if not eodhd.has_api_key():
-        return jsonify({"error": "未配置 EODHD_API_KEY，请在 .env 中设置"}), 503
+    if not is_news_available():
+        return jsonify({"error": "未配置 FMP_API_KEY（主）或 EODHD_API_KEY（回退），请在 .env 中设置"}), 503
 
     from_date = (request.args.get("from") or "").strip() or None
     to_date = (request.args.get("to") or "").strip() or None

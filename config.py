@@ -22,13 +22,13 @@ class Config:
     FEISHU_ALERT_RECEIVER_ID = os.environ.get("FEISHU_ALERT_RECEIVER_ID", "")
     FEISHU_ALERT_RECEIVER_TYPE = os.environ.get("FEISHU_ALERT_RECEIVER_TYPE", "open_id")
 
-    # Financial Modeling Prep（美股行情）
+    # Financial Modeling Prep（主数据源：现价、日K、新闻、财报/宏观日历、估值）
     FMP_API_KEY = os.environ.get("FMP_API_KEY", "")
 
-    # Alpha Vantage（美股行情，支持 REALTIME_BULK_QUOTES 批量）
+    # Alpha Vantage（美股行情回退，支持 REALTIME_BULK_QUOTES 批量）
     ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
 
-    # EOD Historical Data（优先数据源；.env 中可用 EODHD_API 或 EODHD_API_KEY）
+    # EOD Historical Data（可选回退；.env 中可用 EODHD_API 或 EODHD_API_KEY）
     EODHD_API_KEY = os.environ.get("EODHD_API_KEY") or os.environ.get("EODHD_API", "")
 
     # 网页访问密码（必填后才会开放登录）

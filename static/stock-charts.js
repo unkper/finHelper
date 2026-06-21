@@ -714,12 +714,12 @@
 
     const candleCount = payload.assets.filter((a) => a.chart_type === "candlestick").length;
     if (chartModeHint) {
-      if (payload.summary.eodhd_configured && candleCount > 0) {
-        chartModeHint.textContent = `${candleCount} 个标的使用 EODHD 日K蜡烛图，其余为折线`;
-      } else if (payload.summary.eodhd_configured) {
-        chartModeHint.textContent = "已配置 EODHD，刷新后可获取 OHLC 蜡烛图数据";
+      if (payload.summary.ohlc_available && candleCount > 0) {
+        chartModeHint.textContent = `${candleCount} 个标的使用 FMP 日K蜡烛图，其余为折线`;
+      } else if (payload.summary.ohlc_available || payload.summary.fmp_configured) {
+        chartModeHint.textContent = "已配置 FMP，刷新后可获取 OHLC 蜡烛图数据";
       } else {
-        chartModeHint.textContent = "未配置 EODHD，仅显示收盘价折线";
+        chartModeHint.textContent = "未配置 FMP，仅显示收盘价折线";
       }
     }
 
