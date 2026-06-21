@@ -60,7 +60,9 @@ from app.services.features import is_earnings_enabled
 from app.services.financial_reports import (
     PARSE_STATUS_AI,
     PARSE_STATUS_EXTRACTING,
+    PARSE_STATUS_DONE,
     SOURCE_PDF,
+    SOURCE_SEC_XLS,
     clear_pending_extracted,
     create_financial_report,
     delete_financial_report,
@@ -72,12 +74,15 @@ from app.services.financial_reports import (
     get_pending_extracted,
     recover_stale_parse_jobs,
     save_financial_report_analysis,
+    save_pending_analysis,
+    save_report_pdf_blob,
     save_report_narrative_cache,
     update_financial_report_meta,
     update_parse_state,
 )
 from app.services.financial_ai import (
     check_extracted_warnings,
+    enrich_sec_narrative,
     extract_from_financial_text,
     has_financial_ai_configured,
     normalize_extracted_payload,
@@ -92,6 +97,10 @@ from app.services.financial_valuation import (
 from app.services.valuation_ai import recommend_valuation_params
 from app.services.market_stats import fetch_us_market_stats
 from app.services.financial_pdf import run_parse_job, run_text_analyze_job, save_uploaded_pdf
+from app.services.sec_filing_xls import (
+    run_sec_parse_job,
+    parse_sec_bytes,
+)
 from app.services.financial_chart_insight import explain_chart, explain_dashboard
 from app.services.financial_game_rules import build_game_rules
 from app.services.financial_narrative import (
@@ -630,6 +639,111 @@ def research_reports_upload():
     return jsonify({"status": "ok", "report_id": report_id})
 
 
+@bp.route('/research/reports/upload-sec', methods=['POST'])
+def research_reports_upload_sec():
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return jsonify({"error": "请选择 SEC Excel 文件"}), 400
+
+    ticker = (request.form.get("ticker") or "").upper().strip() or None
+    title = (request.form.get("title") or "").strip()
+    data = upload.read()
+    filename = upload.filename
+
+    try:
+        preview = parse_sec_bytes(data, filename, ticker=ticker)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    use_ticker = ticker or preview.get("suggested_ticker") or "UNKNOWN"
+    fiscal_period = preview.get("suggested_fiscal_period") or "2025-Q1"
+    report_date = preview.get("suggested_report_date")
+    use_title = title or preview.get("suggested_title") or f"{use_ticker} {fiscal_period} SEC"
+
+    try:
+        report_id = create_financial_report(
+            use_ticker,
+            fiscal_period,
+            use_title,
+            preview.get("source_text_summary") or "",
+            report_date,
+            source_type=SOURCE_SEC_XLS,
+        )
+        save_report_pdf_blob(report_id, data)
+        save_pending_analysis(
+            report_id,
+            preview["extracted"],
+            preview["extracted"].get("ai_summary") or None,
+        )
+        update_parse_state(
+            report_id,
+            status=PARSE_STATUS_DONE,
+            progress=100,
+            message="SEC 解析完成，请确认结构化结果",
+            source_text=preview.get("source_text_summary") or "",
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({
+        "status": "ok",
+        "report_id": report_id,
+        "suggested": {
+            "ticker": use_ticker,
+            "fiscal_period": fiscal_period,
+            "report_date": report_date,
+            "title": use_title,
+            "filing_meta": preview.get("filing_meta"),
+        },
+    })
+
+
+@bp.route('/research/reports/<int:report_id>/parse-sec', methods=['POST'])
+def research_report_parse_sec(report_id):
+    recover_stale_parse_jobs()
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+    if not report.get("has_pdf"):
+        return jsonify({"error": "该报告无 SEC Excel 文件"}), 400
+    if report.get("parse_status") in (PARSE_STATUS_EXTRACTING, PARSE_STATUS_AI):
+        return jsonify({"error": "解析正在进行中，请稍后再试"}), 409
+
+    app = current_app._get_current_object()
+    run_sec_parse_job(app, report_id)
+    return jsonify({"status": "ok", "report_id": report_id})
+
+
+@bp.route('/research/reports/<int:report_id>/sec-narrative', methods=['POST'])
+def research_report_sec_narrative(report_id):
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+
+    extracted = get_pending_extracted(report_id) if report.get("has_pending") else fetch_report_extracted(report_id)
+    if not extracted:
+        return jsonify({"error": "请先完成 SEC 解析"}), 400
+
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(f"financial-ai:{ip}", max_calls=10, window_seconds=3600)
+    if not allowed:
+        return jsonify({"error": "AI 请求过于频繁", "retry_after": retry_after}), 429
+
+    result = enrich_sec_narrative(extracted, model=get_ai_financial_parse_model())
+    if result.get("error"):
+        return jsonify(result), 503 if "DEEPSEEK" in result["error"] else 400
+
+    if report.get("has_pending"):
+        save_pending_analysis(report_id, result["extracted"], result.get("ai_summary"))
+    else:
+        save_financial_report_analysis(report_id, result["extracted"], result.get("ai_summary"))
+
+    return jsonify({"status": "ok", "ai_summary": result.get("ai_summary")})
+
+
 @bp.route('/research/reports/<int:report_id>/parse-status')
 def research_report_parse_status(report_id):
     report = fetch_report_by_id(report_id)
@@ -653,6 +767,13 @@ def research_report_pdf(report_id):
     data = get_report_pdf_blob(report_id)
     if not data:
         return jsonify({"error": "PDF 文件已丢失"}), 404
+    if report.get("source_type") == SOURCE_SEC_XLS:
+        return send_file(
+            io.BytesIO(data),
+            mimetype="application/vnd.ms-excel",
+            as_attachment=True,
+            download_name=f"report-{report_id}.xls",
+        )
     return send_file(
         io.BytesIO(data),
         mimetype="application/pdf",

@@ -237,7 +237,7 @@ def normalize_extracted_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                     "message": message,
                 })
 
-    return {
+    result = {
         "currency": str(payload.get("currency") or "USD").upper(),
         "unit": str(payload.get("unit") or "millions"),
         "periods": _sort_periods(periods),
@@ -249,6 +249,11 @@ def normalize_extracted_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "material_events": _normalize_material_events(payload.get("material_events")),
         "ai_summary": str(payload.get("ai_summary") or "").strip(),
     }
+    if isinstance(payload.get("filing_meta"), dict):
+        result["filing_meta"] = dict(payload["filing_meta"])
+    if isinstance(payload.get("historical_periods"), list):
+        result["historical_periods"] = payload["historical_periods"]
+    return result
 
 
 _REVENUE_IN_SUMMARY_RE = re.compile(
@@ -388,6 +393,62 @@ def extract_from_financial_text(
     if warnings:
         result["warnings"] = warnings
     return result
+
+
+_SEC_NARRATIVE_PROMPT = """你是财务分析助手。以下 JSON 为已从 SEC 10-Q/10-K Excel 确定性解析的三表数据（单位 millions USD）。
+请仅基于这些数据生成：
+1. ai_summary：3-5 句白话体检报告（注明 10-Q/10-K、FY/Q 若 filing_meta 中有）
+2. red_flags：重要风险数组 {{code, message}}，无则 []
+
+禁止修改或编造任何数字。仅返回 JSON：{{"ai_summary":"...", "red_flags":[...]}}
+
+数据：
+{payload}
+"""
+
+
+def enrich_sec_narrative(extracted: Dict[str, Any], *, model: str | None = None) -> Dict[str, Any]:
+    """为 SEC 结构化数据生成 ai_summary / red_flags（不覆盖三表数字）。"""
+    if not has_financial_ai_configured():
+        return {"error": "未配置 DEEPSEEK_API_KEY"}
+    if not isinstance(extracted, dict) or not extracted.get("periods"):
+        return {"error": "缺少已解析的结构化数据"}
+
+    import json as _json
+
+    prompt = _SEC_NARRATIVE_PROMPT.format(
+        payload=_json.dumps(
+            {
+                "filing_meta": extracted.get("filing_meta"),
+                "periods": extracted.get("periods"),
+                "kpis": extracted.get("kpis"),
+                "income_statement": extracted.get("income_statement"),
+                "balance_sheet": extracted.get("balance_sheet"),
+                "cash_flow": extracted.get("cash_flow"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    use_model = model or get_ai_financial_parse_model()
+    result = _call_deepseek_chat(prompt, model=use_model)
+    if result.get("error"):
+        return {"error": result["error"]}
+    try:
+        payload = json.loads(_extract_json_text(result["content"]))
+    except json.JSONDecodeError:
+        return {"error": "AI 返回格式无法解析"}
+    if not isinstance(payload, dict):
+        return {"error": "AI 返回格式异常"}
+
+    merged = dict(extracted)
+    summary = str(payload.get("ai_summary") or "").strip()
+    if summary:
+        merged["ai_summary"] = summary
+    flags = payload.get("red_flags")
+    if isinstance(flags, list) and flags:
+        merged["red_flags"] = normalize_extracted_payload({"red_flags": flags}).get("red_flags", [])
+    return {"status": "ok", "extracted": normalize_extracted_payload(merged), "ai_summary": summary}
 
 
 def chat_completion_text(prompt: str, *, model: str) -> Dict[str, Any]:

@@ -80,7 +80,7 @@
     <section class="panel research-analysis-toolbar">
       <div>
         <h3>财报分析报告{% if ticker_filter %} · {{ ticker_filter }}{% endif %}</h3>
-        <p class="hint">粘贴解读文字或上传 PDF；同 ticker 多份报告的趋势图会自动合并。</p>
+        <p class="hint">推荐上传 SEC EDGAR 导出的 Excel（10-Q/10-K）；粘贴/PDF 用于无标准表的补充场景。</p>
         {% if ticker_filter %}
         <p class="hint"><a href="{{ url_for('investments.research', tab='analysis') }}">查看全部标的</a></p>
         {% endif %}
@@ -129,13 +129,14 @@
       <button type="button" class="modal-close" id="closeNewReportModal" aria-label="关闭">×</button>
     </div>
     <nav class="research-create-tabs" aria-label="创建方式">
-      <button type="button" class="research-create-tab is-active" data-mode="paste">粘贴文字</button>
+      <button type="button" class="research-create-tab is-active" data-mode="sec">SEC 财报 (10-Q/K)</button>
+      <button type="button" class="research-create-tab" data-mode="paste">粘贴文字</button>
       <button type="button" class="research-create-tab" data-mode="pdf">上传 PDF</button>
     </nav>
     <form id="newReportForm" class="research-form">
       <label>
-        <span>标的 Ticker</span>
-        <input type="text" name="ticker" id="reportTicker" list="trackedTickers" required placeholder="NVDA">
+        <span>标的 Ticker（可选，解析后自动填充）</span>
+        <input type="text" name="ticker" id="reportTicker" list="trackedTickers" placeholder="MU">
         <datalist id="trackedTickers">
           {% for t in tracked_tickers %}
           <option value="{{ t }}"></option>
@@ -143,9 +144,9 @@
         </datalist>
       </label>
       <label>
-        <span>财季</span>
-        <input type="text" name="fiscal_period" required placeholder="2026-Q1" pattern="\d{4}-[Qq][1-4]" title="格式：YYYY-Q1～Q4，例如 2026-Q1">
-        <p class="hint">财季须为 2026-Q1 形式（Q1～Q4）。</p>
+        <span>财季（SEC 模式可留空，解析后自动填充）</span>
+        <input type="text" name="fiscal_period" placeholder="2025-Q2" pattern="\d{4}-[Qq][1-4]" title="格式：YYYY-Q1～Q4，例如 2026-Q1">
+        <p class="hint">日历季 YYYY-Q1～Q4；SEC Excel 上传后会根据报告期末自动填写。</p>
       </label>
       <label>
         <span>标题</span>
@@ -155,6 +156,13 @@
         <span>发布日（可选）</span>
         <input type="date" name="report_date">
       </label>
+      <div id="secFields">
+        <label>
+          <span>SEC Excel（10-Q / 10-K，.xls / .xlsx）</span>
+          <input type="file" name="sec_file" id="reportSecFile" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        </label>
+        <p class="hint">从 EDGAR 下载的 Excel 财报，含 operations / balance sheets / cash flows 等 sheet。</p>
+      </div>
       <div id="pasteFields">
         <label class="research-textarea-label">
           <div class="research-textarea-head">
@@ -188,6 +196,7 @@
     reportsUrl: {{ url_for('investments.research_reports_list')|tojson }},
     createUrl: {{ url_for('investments.research_reports_create')|tojson }},
     uploadUrl: {{ url_for('investments.research_reports_upload')|tojson }},
+    uploadSecUrl: {{ url_for('investments.research_reports_upload_sec')|tojson }},
     detailUrlTemplate: {{ url_for('investments.research_report_detail', report_id=0)|tojson }}.replace('/0', '/__ID__'),
     deleteUrlTemplate: {{ url_for('investments.research_report_delete', report_id=0)|tojson }}.replace('/0', '/__ID__'),
     aiConfigured: {{ ai_configured|tojson }},

@@ -730,6 +730,7 @@ def _build_data_gaps(
     implied_wacc: Dict[str, Any],
     fundamentals: Dict[str, Any],
     rd_adjustment: Dict[str, Any],
+    filing_meta: Dict[str, Any],
 ) -> Dict[str, Any]:
     """列出估值所需数据的就绪状态与补全指引。"""
     items: List[Dict[str, Any]] = []
@@ -981,6 +982,27 @@ def _build_data_gaps(
             "detail": f"未摊销 R&D 约 {fmt_usd_gap(rd_adjustment.get('unamortized_rd_usd') or 0)}",
             "action": None,
         })
+
+    if filing_meta.get("source") == "sec_xls":
+        form_type = filing_meta.get("form_type") or "SEC"
+        fy = filing_meta.get("filing_fy")
+        fq = filing_meta.get("filing_fq")
+        fy_label = f" · FY{fy} Q{fq}" if fy and fq else ""
+        items.append({
+            "id": "sec_filing",
+            "label": "SEC 结构化解析",
+            "status": "ok",
+            "detail": f"{form_type}{fy_label}（{filing_meta.get('period_end') or '—'}）",
+            "action": None,
+        })
+        if filing_meta.get("cash_flow_scope") == "ytd":
+            items.append({
+                "id": "sec_cash_ytd",
+                "label": "单季现金流",
+                "status": "partial",
+                "detail": "10-Q 现金流为 YTD，未写入单季 cash_flow",
+                "action": "需单季现金流量表或下季差分；利润表/资产负债表仍可用",
+            })
 
     active = damodaran if valuation_model == "damodaran" else rim
     model_label = "Damodaran 三情景" if valuation_model == "damodaran" else "R&D 资本化 RIM"
@@ -1342,6 +1364,7 @@ def build_valuation_payload(
         implied_wacc=implied_wacc,
         fundamentals=fundamentals,
         rd_adjustment=rd_adjustment,
+        filing_meta=chart_payload.get("filing_meta") or {},
     )
 
     return {

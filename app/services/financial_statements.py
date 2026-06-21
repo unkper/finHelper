@@ -308,4 +308,5 @@ def build_chart_payload(
         "linked_report_ids": linked_ids,
         "linked_periods": linked_periods,
         "report_count": len(linked_ids),
+        "filing_meta": current_extracted.get("filing_meta") if current_extracted else None,
     }

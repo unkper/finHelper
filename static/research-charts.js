@@ -906,6 +906,28 @@
     if (data.narratives && typeof data.narratives === "object") {
       lastNarratives = { ...lastNarratives, ...data.narratives };
     }
+    renderFilingMeta(data.filing_meta, document.getElementById("confirmFilingMeta"));
+    if (data.filing_meta) {
+      const panel = document.getElementById("secFilingMetaPanel");
+      const list = document.getElementById("secFilingMetaList");
+      if (panel && list) {
+        panel.hidden = false;
+        list.innerHTML = [
+          ["表单", data.filing_meta.form_type],
+          ["报告期末", data.filing_meta.period_end],
+          ["日历季", data.filing_meta.calendar_period],
+          [
+            "公司财年",
+            data.filing_meta.filing_fy && data.filing_meta.filing_fq
+              ? `FY${data.filing_meta.filing_fy} Q${data.filing_meta.filing_fq}`
+              : "—",
+          ],
+          ["现金流口径", data.filing_meta.cash_flow_scope],
+        ]
+          .map(([k, v]) => `<div><span>${k}</span><strong>${v ?? "—"}</strong></div>`)
+          .join("");
+      }
+    }
     const wrap = document.getElementById("researchDashboardWrap");
     if (wrap) wrap.hidden = false;
     const styleToggle = document.getElementById("narrativeStyleToggle");
@@ -1031,9 +1053,29 @@
   const confirmJson = document.getElementById("confirmExtractedJson");
   const confirmSummary = document.getElementById("confirmAiSummary");
 
+  function renderFilingMeta(meta, container) {
+    if (!container || !meta || meta.source !== "sec_xls") {
+      if (container) container.hidden = true;
+      return;
+    }
+    const rows = [
+      ["表单", meta.form_type],
+      ["报告期末", meta.period_end],
+      ["日历季", meta.calendar_period],
+      ["公司财年", meta.filing_fy && meta.filing_fq ? `FY${meta.filing_fy} Q${meta.filing_fq}` : "—"],
+      ["现金流口径", meta.cash_flow_scope],
+      ["CIK", meta.cik],
+    ];
+    container.hidden = false;
+    container.innerHTML = rows
+      .map(([k, v]) => `<div><span>${k}</span><strong>${v ?? "—"}</strong></div>`)
+      .join("");
+  }
+
   function openConfirmModal(result) {
     confirmJson.value = JSON.stringify(result.extracted, null, 2);
     confirmSummary.value = result.ai_summary || result.extracted?.ai_summary || "";
+    renderFilingMeta(result.extracted?.filing_meta, document.getElementById("confirmFilingMeta"));
     const warnings = result.warnings || checkExtractedWarningsClient(result.extracted);
     showConfirmWarnings(warnings);
     renderInsights({
@@ -1124,6 +1166,42 @@
       await loadCharts();
     } catch (err) {
       alert(err.message || "刷新失败");
+    }
+  });
+
+  document.getElementById("reparseSecBtn")?.addEventListener("click", async () => {
+    if (!cfg.parseSecUrl) return;
+    if (!window.confirm("重新解析将覆盖当前待确认结果，是否继续？")) return;
+    try {
+      const res = await fetch(cfg.parseSecUrl, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "启动失败");
+      startParsePolling();
+    } catch (err) {
+      alert(err.message || "启动解析失败");
+    }
+  });
+
+  document.getElementById("secNarrativeBtn")?.addEventListener("click", async () => {
+    if (!cfg.secNarrativeUrl) return;
+    const btn = document.getElementById("secNarrativeBtn");
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "生成中…";
+      }
+      const res = await fetch(cfg.secNarrativeUrl, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "生成失败");
+      alert("摘要已生成，请刷新页面或打开确认查看。");
+      window.location.reload();
+    } catch (err) {
+      alert(err.message || "生成失败");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "AI 生成摘要";
+      }
     }
   });
 

@@ -1169,3 +1169,25 @@
   gap: 0.35rem;
   flex-direction: row;
 }
+
+.research-sec-meta-inline,
+.research-sec-meta-list {
+  display: grid;
+  gap: 0.35rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+.research-sec-meta-inline div,
+.research-sec-meta-list div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.research-sec-meta-inline span,
+.research-sec-meta-list span {
+  color: #6b7280;
+  font-size: 0.8rem;
+}

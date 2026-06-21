@@ -16,8 +16,10 @@
   const sampleHintEl = document.getElementById("sampleActionHint");
   const pasteFields = document.getElementById("pasteFields");
   const pdfFields = document.getElementById("pdfFields");
+  const secFields = document.getElementById("secFields");
   const pdfFileEl = document.getElementById("reportPdfFile");
-  let createMode = "paste";
+  const secFileEl = document.getElementById("reportSecFile");
+  let createMode = "sec";
   let currentPage = 1;
   let searchQuery = "";
   let listMeta = { total: 0, page: 1, total_pages: 0 };
@@ -87,21 +89,29 @@
     if (modal) modal.hidden = true;
     if (form) form.reset();
     showSampleHint("");
-    setCreateMode("paste");
+    setCreateMode("sec");
   }
 
   function setCreateMode(mode) {
-    createMode = mode === "pdf" ? "pdf" : "paste";
+    createMode = mode === "pdf" ? "pdf" : mode === "paste" ? "paste" : "sec";
     document.querySelectorAll(".research-create-tab").forEach((btn) => {
       btn.classList.toggle("is-active", btn.dataset.mode === createMode);
     });
+    if (secFields) secFields.hidden = createMode !== "sec";
     if (pasteFields) pasteFields.hidden = createMode !== "paste";
     if (pdfFields) pdfFields.hidden = createMode !== "pdf";
     if (sourceTextEl) sourceTextEl.required = createMode === "paste";
     if (pdfFileEl) pdfFileEl.required = createMode === "pdf";
+    if (secFileEl) secFileEl.required = createMode === "sec";
+    const periodEl = form?.querySelector('[name="fiscal_period"]');
+    if (periodEl) periodEl.required = createMode !== "sec";
+    const tickerEl = form?.querySelector('[name="ticker"]');
+    if (tickerEl) tickerEl.required = createMode !== "sec";
     const submitBtn = document.getElementById("newReportSubmitBtn");
     if (submitBtn) {
-      submitBtn.textContent = createMode === "pdf" ? "上传并解析" : "创建并打开";
+      if (createMode === "pdf") submitBtn.textContent = "上传并解析";
+      else if (createMode === "sec") submitBtn.textContent = "上传 SEC 并解析";
+      else submitBtn.textContent = "创建并打开";
     }
   }
 
@@ -216,6 +226,12 @@
         const deleteBtn = deleteUrl
           ? `<button type="button" class="secondary-btn research-report-delete-btn" data-delete-url="${escapeHtml(deleteUrl)}" data-report-title="${escapeHtml(r.title)}">删除</button>`
           : "";
+        const sourceLabel =
+          r.source_type === "sec_xls"
+            ? ` · ${escapeHtml(r.filing_form_type || "SEC")}${r.filing_fy && r.filing_fq ? ` FY${r.filing_fy} Q${r.filing_fq}` : ""}`
+            : r.source_type === "pdf"
+              ? " · PDF"
+              : "";
         return `
           <article class="research-report-card">
             <div>
@@ -224,7 +240,7 @@
                 <a href="${tickerLink}">${escapeHtml(r.ticker)}</a>
                 · ${escapeHtml(r.fiscal_period)}
                 · 更新 ${escapeHtml(r.updated_at || "")}
-                ${r.source_type === "pdf" ? " · PDF" : ""}
+                ${sourceLabel}
               </p>
             </div>
             <div class="research-report-card-actions">
@@ -325,6 +341,22 @@
     const periodEl = form.querySelector('[name="fiscal_period"]');
     normalizeFiscalPeriodInput(periodEl);
     try {
+      if (createMode === "sec") {
+        if (!cfg.uploadSecUrl) throw new Error("SEC 上传接口未配置");
+        const file = secFileEl?.files?.[0];
+        if (!file) throw new Error("请选择 SEC Excel 文件");
+        const uploadFd = new FormData();
+        uploadFd.append("ticker", fd.get("ticker") || "");
+        uploadFd.append("fiscal_period", fd.get("fiscal_period") || "");
+        uploadFd.append("title", fd.get("title") || "");
+        uploadFd.append("report_date", fd.get("report_date") || "");
+        uploadFd.append("file", file);
+        const res = await fetch(cfg.uploadSecUrl, { method: "POST", body: uploadFd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "上传失败");
+        window.location.href = cfg.detailUrlTemplate.replace("__ID__", data.report_id);
+        return;
+      }
       if (createMode === "pdf") {
         if (!cfg.uploadUrl) throw new Error("上传接口未配置");
         const file = pdfFileEl?.files?.[0];

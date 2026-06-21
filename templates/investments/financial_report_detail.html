@@ -35,10 +35,13 @@
         <a href="{{ url_for('investments.research', tab='analysis') }}" class="secondary-btn">← 报告列表</a>
         <a href="{{ url_for('investments.research', tab='analysis', ticker=report.ticker) }}" class="secondary-btn">同标的报告</a>
         {% if pdf_url %}
-        <a href="{{ pdf_url }}" class="secondary-btn" target="_blank" rel="noopener">下载 PDF</a>
+        <a href="{{ pdf_url }}" class="secondary-btn" target="_blank" rel="noopener">{{ '下载 SEC Excel' if report.source_type == 'sec_xls' else '下载 PDF' }}</a>
         {% endif %}
-        {% if ai_configured and report.has_pdf %}
-        <button type="button" class="secondary-btn" id="reparsePdfBtn">重新解析 PDF</button>
+        {% if report.source_type == 'sec_xls' and report.has_pdf %}
+        <button type="button" class="secondary-btn" id="reparseSecBtn">重新解析 SEC</button>
+        {% endif %}
+        {% if ai_configured and report.source_type == 'sec_xls' %}
+        <button type="button" class="secondary-btn" id="secNarrativeBtn">AI 生成摘要</button>
         {% endif %}
         <button type="button" class="primary-btn" id="openPendingConfirmBtn" {% if not report.has_pending %}hidden{% endif %}>打开确认</button>
         {% if ai_configured %}
@@ -53,12 +56,17 @@
     </div>
   </section>
 
+  <section id="secFilingMetaPanel" class="panel research-sec-meta" hidden>
+    <h3>SEC 财报元数据</h3>
+    <dl id="secFilingMetaList" class="research-sec-meta-list"></dl>
+  </section>
+
   <section id="parseProgressPanel" class="panel research-parse-panel" {% if report.parse_status not in ['extracting_text', 'ai_analyzing', 'failed'] and not report.has_pending %}hidden{% endif %}>
     <p id="parseProgressLabel" class="research-parse-label">{{ report.parse_message or '准备解析…' }}</p>
     <progress id="parseProgressBar" class="research-parse-bar" max="100" value="{{ report.parse_progress or 0 }}"></progress>
     <p id="parseErrorText" class="research-parse-error" {% if not report.parse_error %}hidden{% endif %}>{{ report.parse_error or '' }}</p>
     <p class="hint research-parse-leave-hint">解析在服务器后台进行，关闭本页不影响；完成后请返回本报告点击「打开确认」或确认弹窗入库并生成图表。</p>
-    <p class="hint">PDF 路径：本地提取文字 → DeepSeek Pro 结构化（官方 API 暂不支持直接读 PDF）。粘贴模式：直接对原文做结构化。</p>
+    <p class="hint">SEC Excel：本地确定性解析三表；可选 AI 生成摘要。PDF/粘贴：DeepSeek 结构化。</p>
   </section>
 
   <div id="gameQuestPanel" class="panel research-game-quests" hidden></div>
@@ -309,6 +317,7 @@
       <button type="button" class="modal-close" id="closeConfirmModal" aria-label="关闭">×</button>
     </div>
     <p class="hint">请核对下方 JSON，可微调后确认入库并刷新图表。</p>
+    <div id="confirmFilingMeta" class="research-sec-meta-inline" hidden></div>
     <p id="confirmExtractWarnings" class="research-confirm-warnings" hidden></p>
     <label class="research-textarea-label">
       <span>AI 体检摘要</span>
@@ -345,6 +354,9 @@
     parseStatusUrl: {{ parse_status_url|tojson }},
     pendingUrl: {{ pending_url|tojson }},
     parsePdfUrl: {{ parse_pdf_url|tojson }},
+    parseSecUrl: {{ url_for('investments.research_report_parse_sec', report_id=report.id)|tojson }},
+    secNarrativeUrl: {{ url_for('investments.research_report_sec_narrative', report_id=report.id)|tojson }},
+    sourceType: {{ report.source_type|tojson }},
     editUrl: {{ url_for('investments.research_report_edit', report_id=report.id)|tojson }},
     deleteUrl: {{ url_for('investments.research_report_delete', report_id=report.id)|tojson }},
     listUrl: {{ url_for('investments.research', tab='analysis')|tojson }},

@@ -26,7 +26,10 @@ _REPORT_LIST_SUMMARY_COLUMNS = """
     created_at, updated_at,
     (pdf_blob IS NOT NULL) AS has_pdf_blob,
     (extracted_json IS NOT NULL AND extracted_json != '') AS has_analysis_flag,
-    (pending_extracted_json IS NOT NULL AND pending_extracted_json != '') AS has_pending_flag
+    (pending_extracted_json IS NOT NULL AND pending_extracted_json != '') AS has_pending_flag,
+    json_extract(COALESCE(pending_extracted_json, extracted_json), '$.filing_meta.form_type') AS filing_form_type,
+    json_extract(COALESCE(pending_extracted_json, extracted_json), '$.filing_meta.filing_fy') AS filing_fy,
+    json_extract(COALESCE(pending_extracted_json, extracted_json), '$.filing_meta.filing_fq') AS filing_fq
 """
 
 PARSE_STATUS_IDLE = "idle"
@@ -37,6 +40,7 @@ PARSE_STATUS_FAILED = "failed"
 
 SOURCE_PASTE = "paste"
 SOURCE_PDF = "pdf"
+SOURCE_SEC_XLS = "sec_xls"
 REPORTS_PAGE_SIZE = 5
 
 
@@ -84,6 +88,9 @@ def serialize_report_list(row) -> Dict[str, Any]:
         "parse_error": _row_get(row, "parse_error"),
         "has_pending": bool(_row_get(row, "has_pending_flag")),
         "has_analysis": bool(_row_get(row, "has_analysis_flag")),
+        "filing_form_type": _row_get(row, "filing_form_type"),
+        "filing_fy": _row_get(row, "filing_fy"),
+        "filing_fq": _row_get(row, "filing_fq"),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -322,6 +329,8 @@ def create_financial_report(
         raise ValueError("ticker 与财季不能为空")
     if source_type == SOURCE_PASTE and not source_text:
         raise ValueError("粘贴模式下原文不能为空")
+    if source_type not in (SOURCE_PASTE, SOURCE_PDF, SOURCE_SEC_XLS):
+        source_type = SOURCE_PASTE
 
     now = _now_iso()
     cursor = db.execute(
