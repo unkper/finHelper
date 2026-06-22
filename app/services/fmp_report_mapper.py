@@ -51,7 +51,7 @@ def _scope_from_header(values: List[Any]) -> str:
             scopes.append("quarter")
         elif "nine months" in norm or "9 months" in norm:
             scopes.append("ytd")
-        elif "year ended" in norm or "years ended" in norm:
+        elif "twelve months" in norm or "12 months" in norm or "year ended" in norm or "years ended" in norm:
             scopes.append("annual")
     if "quarter" in scopes:
         return "quarter"
@@ -60,6 +60,112 @@ def _scope_from_header(values: List[Any]) -> str:
     if "annual" in scopes:
         return "annual"
     return "unknown"
+
+
+def _section_header_blob(section: List[Any], limit: int = 4) -> str:
+    parts: List[str] = []
+    for item in section[:limit]:
+        if not isinstance(item, dict):
+            continue
+        for label, vals in item.items():
+            parts.append(str(label))
+            if isinstance(vals, list):
+                parts.extend(str(v) for v in vals[:4] if v not in (None, "", "\xa0"))
+    return " ".join(parts)
+
+
+def _find_income_section(payload: Dict[str, Any]) -> List[Any]:
+    best: List[Any] = []
+    best_score = -999
+    for key, section in payload.items():
+        if not isinstance(key, str) or not isinstance(section, list) or not section:
+            continue
+        blob = f"{key} {_section_header_blob(section)}".upper()
+        score = 0
+        if "OPERATIONS" in blob or " OF INCOME" in blob or "STATEMENTS OF INCOME" in blob:
+            score += 12
+        if "STATEMENT" in blob or "STATEM" in blob:
+            score += 2
+        if "CONSOLIDATED" in blob or "CONDENSED" in blob:
+            score += 2
+        if "COMPREHENSIVE" in blob or "SHAREHOLDER" in blob or "EQUITY" in blob:
+            score -= 20
+        if "CASH FLOW" in blob or "CASH FLOWS" in blob:
+            score -= 20
+        if "BALANCE SHEET" in blob:
+            score -= 12
+        if score > best_score:
+            best_score = score
+            best = section
+    return best
+
+
+def _find_balance_section(payload: Dict[str, Any]) -> List[Any]:
+    best: List[Any] = []
+    best_score = -999
+    for key, section in payload.items():
+        if not isinstance(key, str) or not isinstance(section, list) or not section:
+            continue
+        blob = f"{key} {_section_header_blob(section)}".upper()
+        score = 0
+        if "BALANCE SHEET" in blob:
+            score += 12
+        if "PARENTHETICAL" in blob:
+            score -= 8
+        if "CONSOLIDATED" in blob or "CONDENSED" in blob:
+            score += 2
+        if "CASH FLOW" in blob or "OPERATIONS" in blob:
+            score -= 12
+        if score > best_score:
+            best_score = score
+            best = section
+    return best
+
+
+def _find_cash_flow_section(payload: Dict[str, Any]) -> List[Any]:
+    best: List[Any] = []
+    best_score = -999
+    for key, section in payload.items():
+        if not isinstance(key, str) or not isinstance(section, list) or not section:
+            continue
+        blob = f"{key} {_section_header_blob(section)}".upper()
+        score = 0
+        if "CASH FLOW" in blob or "CASH FLOWS" in blob:
+            score += 12
+        if "CONSOLIDATED" in blob or "CONDENSED" in blob:
+            score += 2
+        if "BALANCE SHEET" in blob or "OPERATIONS" in blob:
+            score -= 12
+        if score > best_score:
+            best_score = score
+            best = section
+    return best
+
+
+def _scan_period_end_from_payload(payload: Dict[str, Any]) -> Optional[date]:
+    """全文档扫描 Document Period End Date 与 statement 表头日期。"""
+    fallback_dates: List[date] = []
+    for section in payload.values():
+        if not isinstance(section, list):
+            continue
+        for item in section:
+            if not isinstance(item, dict):
+                continue
+            for label, vals in item.items():
+                norm = normalize_label(label)
+                if norm == "document period end date":
+                    val0 = vals[0] if isinstance(vals, list) and vals else vals
+                    parsed = _parse_date(val0)
+                    if parsed:
+                        return parsed
+                if not isinstance(vals, list):
+                    continue
+                if norm == "items" or "months ended" in norm or "balance sheet" in norm:
+                    for val in vals:
+                        parsed = _parse_date(val)
+                        if parsed:
+                            fallback_dates.append(parsed)
+    return max(fallback_dates) if fallback_dates else None
 
 
 def _pick_flow_columns(rows: List[Tuple[str, List[Any]]]) -> Tuple[str, int, Optional[int], Optional[date]]:
@@ -160,30 +266,38 @@ def _extract_fields(
 def extract_cover_meta(payload: Dict[str, Any]) -> Dict[str, Any]:
     """从 Cover Page 提取元数据（轻量预览）。"""
     meta: Dict[str, Any] = {}
+    sections: List[List[Any]] = []
     cover = payload.get("Cover Page")
-    if not isinstance(cover, list):
-        return meta
+    if isinstance(cover, list):
+        sections.append(cover)
+    else:
+        for value in payload.values():
+            if isinstance(value, list):
+                sections.append(value)
 
-    for item in cover:
-        if not isinstance(item, dict):
-            continue
-        for label, vals in item.items():
-            norm = normalize_label(label)
-            val0 = vals[0] if isinstance(vals, list) and vals else vals
-            if norm == "document type":
-                meta["form_type"] = str(val0 or "").strip().upper() or None
-            elif norm == "document period end date":
-                parsed = _parse_date(val0)
-                if parsed:
-                    meta["period_end"] = parsed.isoformat()
-            elif norm == "entity registrant name":
-                meta["company_name"] = str(val0 or "").strip() or None
-            elif norm == "entity central index key":
-                meta["cik"] = str(val0 or "").strip() or None
-            elif norm == "document fiscal year focus":
-                meta["fmp_year"] = str(val0 or "").strip() or None
-            elif norm == "document fiscal period focus":
-                meta["fmp_period"] = str(val0 or "").strip().upper() or None
+    for section in sections:
+        for item in section:
+            if not isinstance(item, dict):
+                continue
+            for label, vals in item.items():
+                norm = normalize_label(label)
+                val0 = vals[0] if isinstance(vals, list) and vals else vals
+                if val0 in (None, "", "\xa0"):
+                    val0 = vals[1] if isinstance(vals, list) and len(vals) > 1 else val0
+                if norm == "document type" and not meta.get("form_type"):
+                    meta["form_type"] = str(val0 or "").strip().upper() or None
+                elif norm == "document period end date" and not meta.get("period_end"):
+                    parsed = _parse_date(val0)
+                    if parsed:
+                        meta["period_end"] = parsed.isoformat()
+                elif norm == "entity registrant name" and not meta.get("company_name"):
+                    meta["company_name"] = str(val0 or "").strip() or None
+                elif norm == "entity central index key" and not meta.get("cik"):
+                    meta["cik"] = str(val0 or "").strip() or None
+                elif norm == "document fiscal year focus" and not meta.get("fmp_year"):
+                    meta["fmp_year"] = str(val0 or "").strip() or None
+                elif norm == "document fiscal period focus" and not meta.get("fmp_period"):
+                    meta["fmp_period"] = str(val0 or "").strip().upper() or None
 
     return meta
 
@@ -217,8 +331,14 @@ def parse_fmp_report_json(
     parse_log: List[str] = []
 
     _, ops_section = _find_section(payload, "CONSOLIDATED", "OPER")
+    if not ops_section:
+        ops_section = _find_income_section(payload)
     _, bal_section = _find_section(payload, "CONSOLIDATED", "BALANCE")
+    if not bal_section:
+        bal_section = _find_balance_section(payload)
     _, cf_section = _find_section(payload, "CONSOLIDATED", "CASH")
+    if not cf_section:
+        cf_section = _find_cash_flow_section(payload)
 
     income, income_prior = {}, {}
     balance, balance_prior = {}, {}
@@ -257,6 +377,9 @@ def parse_fmp_report_json(
         parse_log.append(f"cash flows: {len(cash_flow)} fields, scope={cash_scope}")
     else:
         parse_log.append("missing cash flows section")
+
+    if not period_end:
+        period_end = _scan_period_end_from_payload(payload)
 
     if not period_end:
         raise ValueError("无法从 FMP 财报中识别报告期末日期")
@@ -348,9 +471,9 @@ def preview_calendar_period(
     *,
     ticker: str | None = None,
 ) -> Optional[str]:
-    """仅解析 Cover Page 得到日历季（供期次列表预览）。"""
+    """仅解析 Cover Page / 表头得到日历季（供期次列表预览）。"""
     cover = extract_cover_meta(payload)
-    period_end = _parse_date(cover.get("period_end"))
+    period_end = _parse_date(cover.get("period_end")) or _scan_period_end_from_payload(payload)
     if not period_end:
         return None
     try:

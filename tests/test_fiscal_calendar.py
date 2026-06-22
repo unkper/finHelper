@@ -8,6 +8,7 @@ from app.services.fiscal_calendar import (
     build_period_context,
     calendar_period_from_date,
     infer_filing_fy_fq,
+    _parse_date,
 )
 
 
@@ -25,6 +26,11 @@ class FiscalCalendarTest(unittest.TestCase):
         self.assertEqual(ctx["calendar_period"], "2025-Q2")
         self.assertEqual(ctx["filing_fy"], 2025)
         self.assertEqual(ctx["filing_fq"], 3)
+
+    def test_parse_abbreviated_month_with_dot(self):
+        self.assertEqual(_parse_date("Dec. 28,  2024"), date(2024, 12, 28))
+        self.assertEqual(_parse_date("Aug. 28,  2025"), date(2025, 8, 28))
+        self.assertEqual(_parse_date("Jan. 26,  2025"), date(2025, 1, 26))
 
 
 class ResolveFyEndMonthTest(unittest.TestCase):

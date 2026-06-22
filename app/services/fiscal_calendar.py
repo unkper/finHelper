@@ -1,4 +1,5 @@
 """财季映射：日历季 YYYY-Qn 与公司财年 FY/Q（SEC 财报）。"""
+import re
 from datetime import date, datetime
 from typing import Any, Dict, Optional, Tuple
 
@@ -27,6 +28,12 @@ def calendar_period_from_date(d: date) -> str:
     return f"{d.year}-Q{quarter}"
 
 
+def _normalize_date_text(raw: Any) -> str:
+    text = str(raw or "").replace("\xa0", " ").replace("\n", " ")
+    text = re.sub(r"(\b[A-Za-z]{3})\.\s+", r"\1 ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _parse_date(raw: Any) -> Optional[date]:
     if raw is None:
         return None
@@ -34,17 +41,10 @@ def _parse_date(raw: Any) -> Optional[date]:
         return raw
     if isinstance(raw, datetime):
         return raw.date()
-    text = str(raw).strip()
-    if not text:
+    cleaned = _normalize_date_text(raw)
+    if not cleaned or cleaned.startswith("--"):
         return None
     for fmt in ("%Y-%m-%d", "%B %d, %Y", "%b %d, %Y"):
-        try:
-            return datetime.strptime(text.replace("\n", " ").strip(), fmt).date()
-        except ValueError:
-            continue
-    # "May 29, \n 2025" style
-    cleaned = " ".join(text.split())
-    for fmt in ("%B %d, %Y", "%b %d, %Y"):
         try:
             return datetime.strptime(cleaned, fmt).date()
         except ValueError:

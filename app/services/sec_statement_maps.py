@@ -4,6 +4,8 @@ from typing import Any, Dict, Optional, Tuple
 
 INCOME_MAP: Dict[str, Tuple[str, ...]] = {
     "revenue": ("revenue",),
+    "net sales": ("revenue",),
+    "total revenue": ("revenue",),
     "cost of goods sold": ("cogs",),
     "gross margin": ("gross_profit",),
     "research and development": ("rd",),
