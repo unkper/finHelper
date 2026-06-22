@@ -413,6 +413,7 @@ def _migrate_financial_reports(conn: sqlite3.Connection) -> None:
     for name, typedef in alters:
         if name not in columns:
             conn.execute(f"ALTER TABLE financial_reports ADD COLUMN {name} {typedef}")
+    conn.execute("DELETE FROM financial_reports WHERE source_type = 'sec_xls'")
 
 
 def _migrate_api_usage_daily(conn: sqlite3.Connection) -> None:

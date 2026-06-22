@@ -983,7 +983,7 @@ def _build_data_gaps(
             "action": None,
         })
 
-    if filing_meta.get("source") == "sec_xls":
+    if filing_meta.get("source") in ("sec_fmp", "sec_xls"):
         form_type = filing_meta.get("form_type") or "SEC"
         fy = filing_meta.get("filing_fy")
         fq = filing_meta.get("filing_fq")

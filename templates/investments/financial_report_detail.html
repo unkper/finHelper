@@ -35,13 +35,10 @@
         <a href="{{ url_for('investments.research', tab='analysis') }}" class="secondary-btn">← 报告列表</a>
         <a href="{{ url_for('investments.research', tab='analysis', ticker=report.ticker) }}" class="secondary-btn">同标的报告</a>
         {% if pdf_url %}
-        <a href="{{ pdf_url }}" class="secondary-btn" target="_blank" rel="noopener">{{ '下载 SEC Excel' if report.source_type == 'sec_xls' else '下载 PDF' }}</a>
+        <a href="{{ pdf_url }}" class="secondary-btn" target="_blank" rel="noopener">下载 PDF</a>
         {% endif %}
-        {% if report.source_type == 'sec_xls' and report.has_pdf %}
-        <button type="button" class="secondary-btn" id="reparseSecBtn">重新解析 SEC</button>
-        {% endif %}
-        {% if ai_configured and report.source_type == 'sec_xls' %}
-        <button type="button" class="secondary-btn" id="secNarrativeBtn">AI 生成摘要</button>
+        {% if ai_configured and report.source_type == 'sec_fmp' %}
+        <button type="button" class="secondary-btn" id="filingNarrativeBtn">AI 生成摘要</button>
         {% endif %}
         <button type="button" class="primary-btn" id="openPendingConfirmBtn" {% if not report.has_pending %}hidden{% endif %}>打开确认</button>
         {% if ai_configured %}
@@ -290,9 +287,19 @@
         </datalist>
       </label>
       <label>
-        <span>财季</span>
-        <input type="text" name="fiscal_period" required value="{{ report.fiscal_period }}" placeholder="2026-Q1" pattern="\d{4}-[Qq][1-4]" title="格式：YYYY-Q1～Q4，例如 2026-Q1">
+        <span>日历年份</span>
+        <select name="cal_year" id="editCalYear"></select>
       </label>
+      <label>
+        <span>季度</span>
+        <select name="cal_quarter" id="editCalQuarter">
+          <option value="Q1">Q1</option>
+          <option value="Q2">Q2</option>
+          <option value="Q3">Q3</option>
+          <option value="Q4">Q4</option>
+        </select>
+      </label>
+      <input type="hidden" name="fiscal_period" id="editFiscalPeriodHidden" value="{{ report.fiscal_period }}">
       <label>
         <span>标题</span>
         <input type="text" name="title" value="{{ report.title }}">
@@ -354,8 +361,7 @@
     parseStatusUrl: {{ parse_status_url|tojson }},
     pendingUrl: {{ pending_url|tojson }},
     parsePdfUrl: {{ parse_pdf_url|tojson }},
-    parseSecUrl: {{ url_for('investments.research_report_parse_sec', report_id=report.id)|tojson }},
-    secNarrativeUrl: {{ url_for('investments.research_report_sec_narrative', report_id=report.id)|tojson }},
+    filingNarrativeUrl: {{ url_for('investments.research_report_filing_narrative', report_id=report.id)|tojson }},
     sourceType: {{ report.source_type|tojson }},
     editUrl: {{ url_for('investments.research_report_edit', report_id=report.id)|tojson }},
     deleteUrl: {{ url_for('investments.research_report_delete', report_id=report.id)|tojson }},

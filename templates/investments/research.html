@@ -129,25 +129,52 @@
       <button type="button" class="modal-close" id="closeNewReportModal" aria-label="关闭">×</button>
     </div>
     <nav class="research-create-tabs" aria-label="创建方式">
-      <button type="button" class="research-create-tab is-active" data-mode="sec">SEC 财报 (10-Q/K)</button>
+      <button type="button" class="research-create-tab is-active" data-mode="sec">FMP 10-Q/K</button>
       <button type="button" class="research-create-tab" data-mode="paste">粘贴文字</button>
       <button type="button" class="research-create-tab" data-mode="pdf">上传 PDF</button>
     </nav>
     <form id="newReportForm" class="research-form">
       <label>
-        <span>标的 Ticker（可选，解析后自动填充）</span>
-        <input type="text" name="ticker" id="reportTicker" list="trackedTickers" placeholder="MU">
+        <span>标的 Ticker</span>
+        <input type="text" name="ticker" id="reportTicker" list="trackedTickers" placeholder="MU" required>
         <datalist id="trackedTickers">
           {% for t in tracked_tickers %}
           <option value="{{ t }}"></option>
           {% endfor %}
         </datalist>
       </label>
-      <label>
-        <span>财季（SEC 模式可留空，解析后自动填充）</span>
-        <input type="text" name="fiscal_period" placeholder="2025-Q2" pattern="\d{4}-[Qq][1-4]" title="格式：YYYY-Q1～Q4，例如 2026-Q1">
-        <p class="hint">日历季 YYYY-Q1～Q4；SEC Excel 上传后会根据报告期末自动填写。</p>
-      </label>
+      <div id="fmpPeriodFields">
+        <label>
+          <span>FMP 财年</span>
+          <select id="fmpYear" name="fmp_year" disabled>
+            <option value="">请先输入 Ticker</option>
+          </select>
+        </label>
+        <label>
+          <span>报告期</span>
+          <select id="fmpPeriod" name="fmp_period" disabled>
+            <option value="">请先选择财年</option>
+          </select>
+        </label>
+        <p class="hint" id="fmpPeriodHint">从 FMP 拉取可用 10-Q/10-K 报告期；选定后显示对应日历季。</p>
+      </div>
+      <div id="manualPeriodFields" hidden>
+        <label>
+          <span>日历年份</span>
+          <select id="calYear" name="cal_year"></select>
+        </label>
+        <label>
+          <span>季度</span>
+          <select id="calQuarter" name="cal_quarter">
+            <option value="Q1">Q1</option>
+            <option value="Q2">Q2</option>
+            <option value="Q3">Q3</option>
+            <option value="Q4">Q4</option>
+          </select>
+        </label>
+        <p class="hint">财季格式 YYYY-Q1～Q4，用于图表与报告索引。</p>
+      </div>
+      <input type="hidden" name="fiscal_period" id="fiscalPeriodHidden">
       <label>
         <span>标题</span>
         <input type="text" name="title" placeholder="可选，默认自动生成">
@@ -157,11 +184,7 @@
         <input type="date" name="report_date">
       </label>
       <div id="secFields">
-        <label>
-          <span>SEC Excel（10-Q / 10-K，.xls / .xlsx）</span>
-          <input type="file" name="sec_file" id="reportSecFile" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-        </label>
-        <p class="hint">从 EDGAR 下载的 Excel 财报，含 operations / balance sheets / cash flows 等 sheet。</p>
+        <p class="hint">通过 FMP API 获取 SEC 10-Q/10-K 结构化数据，无需手工上传 Excel。</p>
       </div>
       <div id="pasteFields">
         <label class="research-textarea-label">
@@ -196,7 +219,8 @@
     reportsUrl: {{ url_for('investments.research_reports_list')|tojson }},
     createUrl: {{ url_for('investments.research_reports_create')|tojson }},
     uploadUrl: {{ url_for('investments.research_reports_upload')|tojson }},
-    uploadSecUrl: {{ url_for('investments.research_reports_upload_sec')|tojson }},
+    fmpPeriodsUrl: {{ url_for('investments.research_reports_fmp_periods')|tojson }},
+    fetchFmpUrl: {{ url_for('investments.research_reports_fetch_fmp')|tojson }},
     detailUrlTemplate: {{ url_for('investments.research_report_detail', report_id=0)|tojson }}.replace('/0', '/__ID__'),
     deleteUrlTemplate: {{ url_for('investments.research_report_delete', report_id=0)|tojson }}.replace('/0', '/__ID__'),
     aiConfigured: {{ ai_configured|tojson }},

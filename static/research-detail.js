@@ -3,8 +3,43 @@
 
   const editModal = document.getElementById("editReportModal");
   const editForm = document.getElementById("editReportForm");
+  const editCalYear = document.getElementById("editCalYear");
+  const editCalQuarter = document.getElementById("editCalQuarter");
+  const editFiscalPeriodHidden = document.getElementById("editFiscalPeriodHidden");
+
+  function populateEditYearOptions() {
+    if (!editCalYear) return;
+    const now = new Date().getFullYear();
+    editCalYear.innerHTML = "";
+    for (let y = now + 1; y >= now - 7; y -= 1) {
+      const opt = document.createElement("option");
+      opt.value = String(y);
+      opt.textContent = String(y);
+      editCalYear.appendChild(opt);
+    }
+  }
+
+  function parseFiscalPeriod(period) {
+    const match = String(period || "").trim().toUpperCase().match(/^(\d{4})-(Q[1-4])$/);
+    if (!match) return null;
+    return { year: match[1], quarter: match[2] };
+  }
+
+  function syncEditFiscalPeriodHidden() {
+    if (!editFiscalPeriodHidden || !editCalYear || !editCalQuarter) return;
+    editFiscalPeriodHidden.value = `${editCalYear.value}-${editCalQuarter.value}`;
+  }
+
+  function initEditPeriodFromReport() {
+    const parsed = parseFiscalPeriod(cfg.fiscalPeriod || editFiscalPeriodHidden?.value);
+    if (!parsed) return;
+    if (editCalYear) editCalYear.value = parsed.year;
+    if (editCalQuarter) editCalQuarter.value = parsed.quarter;
+    syncEditFiscalPeriodHidden();
+  }
 
   function openEditModal() {
+    initEditPeriodFromReport();
     if (editModal) editModal.hidden = false;
   }
 
@@ -12,19 +47,19 @@
     if (editModal) editModal.hidden = true;
   }
 
+  populateEditYearOptions();
+  initEditPeriodFromReport();
+  editCalYear?.addEventListener("change", syncEditFiscalPeriodHidden);
+  editCalQuarter?.addEventListener("change", syncEditFiscalPeriodHidden);
+
   document.getElementById("editReportMetaBtn")?.addEventListener("click", openEditModal);
   document.getElementById("closeEditReportModal")?.addEventListener("click", closeEditModal);
   document.getElementById("cancelEditReport")?.addEventListener("click", closeEditModal);
 
-  editForm?.querySelector('[name="fiscal_period"]')?.addEventListener("blur", (e) => {
-    if (e.target?.value) e.target.value = e.target.value.trim().toUpperCase();
-  });
-
   editForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!cfg.editUrl) return;
-    const periodEl = editForm.querySelector('[name="fiscal_period"]');
-    if (periodEl?.value) periodEl.value = periodEl.value.trim().toUpperCase();
+    syncEditFiscalPeriodHidden();
     const fd = new FormData(editForm);
     const payload = {
       ticker: fd.get("ticker"),

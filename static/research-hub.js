@@ -18,15 +18,147 @@
   const pdfFields = document.getElementById("pdfFields");
   const secFields = document.getElementById("secFields");
   const pdfFileEl = document.getElementById("reportPdfFile");
-  const secFileEl = document.getElementById("reportSecFile");
+  const fmpPeriodFields = document.getElementById("fmpPeriodFields");
+  const manualPeriodFields = document.getElementById("manualPeriodFields");
+  const fmpYearEl = document.getElementById("fmpYear");
+  const fmpPeriodEl = document.getElementById("fmpPeriod");
+  const fmpPeriodHintEl = document.getElementById("fmpPeriodHint");
+  const calYearEl = document.getElementById("calYear");
+  const calQuarterEl = document.getElementById("calQuarter");
+  const fiscalPeriodHidden = document.getElementById("fiscalPeriodHidden");
+  let fmpPeriodsCache = [];
+  let fmpPeriodsLoadToken = 0;
   let createMode = "sec";
   let currentPage = 1;
   let searchQuery = "";
   let listMeta = { total: 0, page: 1, total_pages: 0 };
   let searchDebounceTimer = null;
 
+  function populateManualYearOptions() {
+    if (!calYearEl) return;
+    const now = new Date().getFullYear();
+    calYearEl.innerHTML = "";
+    for (let y = now + 1; y >= now - 7; y -= 1) {
+      const opt = document.createElement("option");
+      opt.value = String(y);
+      opt.textContent = String(y);
+      calYearEl.appendChild(opt);
+    }
+  }
+
+  function composeManualFiscalPeriod() {
+    const year = calYearEl?.value;
+    const quarter = calQuarterEl?.value;
+    if (!year || !quarter) return "";
+    return `${year}-${quarter}`;
+  }
+
+  function syncManualFiscalPeriodHidden() {
+    if (fiscalPeriodHidden && createMode !== "sec") {
+      fiscalPeriodHidden.value = composeManualFiscalPeriod();
+    }
+  }
+
+  function resetFmpPeriodSelects(message) {
+    if (fmpYearEl) {
+      fmpYearEl.innerHTML = `<option value="">${message || "请先输入 Ticker"}</option>`;
+      fmpYearEl.disabled = true;
+    }
+    if (fmpPeriodEl) {
+      fmpPeriodEl.innerHTML = `<option value="">${message ? "无可用报告期" : "请先选择财年"}</option>`;
+      fmpPeriodEl.disabled = true;
+    }
+    if (fmpPeriodHintEl) {
+      fmpPeriodHintEl.textContent = message || "从 FMP 拉取可用 10-Q/10-K 报告期；选定后显示对应日历季。";
+    }
+    fmpPeriodsCache = [];
+  }
+
+  function renderFmpPeriodOptions() {
+    if (!fmpYearEl || !fmpPeriodEl) return;
+    const years = [...new Set(fmpPeriodsCache.map((p) => String(p.year)))].sort((a, b) => Number(b) - Number(a));
+    fmpYearEl.innerHTML = years.length
+      ? '<option value="">选择财年</option>' + years.map((y) => `<option value="${y}">FY${y}</option>`).join("")
+      : '<option value="">无可用报告期</option>';
+    fmpYearEl.disabled = !years.length;
+    fmpPeriodEl.innerHTML = '<option value="">请先选择财年</option>';
+    fmpPeriodEl.disabled = true;
+    if (fmpPeriodHintEl) {
+      fmpPeriodHintEl.textContent = years.length
+        ? `共 ${fmpPeriodsCache.length} 个 FMP 报告期可选。`
+        : "该 Ticker 在 FMP 无可用 SEC 报告期。";
+    }
+  }
+
+  function renderFmpPeriodsForYear(year) {
+    if (!fmpPeriodEl) return;
+    const items = fmpPeriodsCache.filter((p) => String(p.year) === String(year));
+    fmpPeriodEl.innerHTML = items.length
+      ? '<option value="">选择报告期</option>' +
+        items
+          .map((p) => `<option value="${p.period}" data-form="${p.form_type || ""}">${escapeHtml(p.label || `${p.period}`)}</option>`)
+          .join("")
+      : '<option value="">无报告期</option>';
+    fmpPeriodEl.disabled = !items.length;
+    updateFmpPeriodHint();
+  }
+
+  async function updateFmpPeriodHint() {
+    if (!fmpPeriodHintEl || createMode !== "sec") return;
+    const ticker = form?.querySelector('[name="ticker"]')?.value?.trim().toUpperCase();
+    const year = fmpYearEl?.value;
+    const period = fmpPeriodEl?.value;
+    if (!ticker || !year || !period) {
+      fmpPeriodHintEl.textContent = "选定 FMP 财年与报告期后将显示对应日历季。";
+      return;
+    }
+    const cached = fmpPeriodsCache.find((p) => String(p.year) === String(year) && p.period === period);
+    if (cached?.calendar_period) {
+      fmpPeriodHintEl.textContent = `日历季：${cached.calendar_period}${cached.period_end ? ` · 期末 ${cached.period_end}` : ""}`;
+      return;
+    }
+    if (!cfg.fmpPeriodsUrl) return;
+    fmpPeriodHintEl.textContent = "正在解析日历季…";
+    try {
+      const url = `${cfg.fmpPeriodsUrl}?ticker=${encodeURIComponent(ticker)}&year=${encodeURIComponent(year)}&period=${encodeURIComponent(period)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "预览失败");
+      const match = (data.periods || []).find((p) => String(p.year) === String(year) && p.period === period);
+      if (match?.calendar_period) {
+        cached.calendar_period = match.calendar_period;
+        cached.period_end = match.period_end;
+        fmpPeriodHintEl.textContent = `日历季：${match.calendar_period}${match.period_end ? ` · 期末 ${match.period_end}` : ""}`;
+      } else {
+        fmpPeriodHintEl.textContent = "未能解析日历季，提交后将由服务端映射。";
+      }
+    } catch (err) {
+      fmpPeriodHintEl.textContent = err.message || "日历季预览失败";
+    }
+  }
+
+  async function loadFmpPeriods(ticker) {
+    const symbol = (ticker || "").trim().toUpperCase();
+    if (!symbol || !cfg.fmpPeriodsUrl) {
+      resetFmpPeriodSelects();
+      return;
+    }
+    const token = ++fmpPeriodsLoadToken;
+    resetFmpPeriodSelects("加载中…");
+    try {
+      const res = await fetch(`${cfg.fmpPeriodsUrl}?ticker=${encodeURIComponent(symbol)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "加载失败");
+      if (token !== fmpPeriodsLoadToken) return;
+      fmpPeriodsCache = data.periods || [];
+      renderFmpPeriodOptions();
+    } catch (err) {
+      if (token !== fmpPeriodsLoadToken) return;
+      resetFmpPeriodSelects(err.message || "加载 FMP 报告期失败");
+    }
+  }
+
   const SAMPLE_REPORT_TEXT = `【NVDA · 2026财年第一财季（2026-Q1）财报解读】
-发布日：2026-05-28（盘后）
 
 一、核心结论
 本季营收继续扩张，但增速较上季放缓；毛利率维持高位，研发投入占比上升。
@@ -100,17 +232,19 @@
     if (secFields) secFields.hidden = createMode !== "sec";
     if (pasteFields) pasteFields.hidden = createMode !== "paste";
     if (pdfFields) pdfFields.hidden = createMode !== "pdf";
+    if (fmpPeriodFields) fmpPeriodFields.hidden = createMode !== "sec";
+    if (manualPeriodFields) manualPeriodFields.hidden = createMode === "sec";
     if (sourceTextEl) sourceTextEl.required = createMode === "paste";
     if (pdfFileEl) pdfFileEl.required = createMode === "pdf";
-    if (secFileEl) secFileEl.required = createMode === "sec";
-    const periodEl = form?.querySelector('[name="fiscal_period"]');
-    if (periodEl) periodEl.required = createMode !== "sec";
+    if (fmpYearEl) fmpYearEl.required = createMode === "sec";
+    if (fmpPeriodEl) fmpPeriodEl.required = createMode === "sec";
     const tickerEl = form?.querySelector('[name="ticker"]');
-    if (tickerEl) tickerEl.required = createMode !== "sec";
+    if (tickerEl) tickerEl.required = true;
+    syncManualFiscalPeriodHidden();
     const submitBtn = document.getElementById("newReportSubmitBtn");
     if (submitBtn) {
       if (createMode === "pdf") submitBtn.textContent = "上传并解析";
-      else if (createMode === "sec") submitBtn.textContent = "上传 SEC 并解析";
+      else if (createMode === "sec") submitBtn.textContent = "从 FMP 获取并解析";
       else submitBtn.textContent = "创建并打开";
     }
   }
@@ -141,9 +275,10 @@
     }
     sourceTextEl.value = SAMPLE_REPORT_TEXT;
     const tickerEl = document.getElementById("reportTicker");
-    const periodInput = form?.querySelector('[name="fiscal_period"]');
     if (tickerEl && !tickerEl.value.trim()) tickerEl.value = "NVDA";
-    if (periodInput && !periodInput.value.trim()) periodInput.value = "2026-Q1";
+    if (calYearEl) calYearEl.value = "2026";
+    if (calQuarterEl) calQuarterEl.value = "Q1";
+    syncManualFiscalPeriodHidden();
     showSampleHint("已插入范例模板，可按实际财报修改数字后创建。", true);
     sourceTextEl.focus();
   }
@@ -227,8 +362,8 @@
           ? `<button type="button" class="secondary-btn research-report-delete-btn" data-delete-url="${escapeHtml(deleteUrl)}" data-report-title="${escapeHtml(r.title)}">删除</button>`
           : "";
         const sourceLabel =
-          r.source_type === "sec_xls"
-            ? ` · ${escapeHtml(r.filing_form_type || "SEC")}${r.filing_fy && r.filing_fq ? ` FY${r.filing_fy} Q${r.filing_fq}` : ""}`
+          r.source_type === "sec_fmp"
+            ? ` · ${escapeHtml(r.filing_form_type || "FMP")}${r.filing_fy && r.filing_fq ? ` FY${r.filing_fy} Q${r.filing_fq}` : ""}`
             : r.source_type === "pdf"
               ? " · PDF"
               : "";
@@ -331,29 +466,47 @@
     btn.addEventListener("click", () => setCreateMode(btn.dataset.mode));
   });
 
-  form?.querySelector('[name="fiscal_period"]')?.addEventListener("blur", (e) => {
-    normalizeFiscalPeriodInput(e.target);
+  form?.querySelector('[name="ticker"]')?.addEventListener("change", (e) => {
+    if (createMode === "sec") loadFmpPeriods(e.target.value);
   });
+  form?.querySelector('[name="ticker"]')?.addEventListener("blur", (e) => {
+    if (createMode === "sec") loadFmpPeriods(e.target.value);
+  });
+  fmpYearEl?.addEventListener("change", (e) => {
+    renderFmpPeriodsForYear(e.target.value);
+  });
+  fmpPeriodEl?.addEventListener("change", () => {
+    updateFmpPeriodHint();
+  });
+  calYearEl?.addEventListener("change", syncManualFiscalPeriodHidden);
+  calQuarterEl?.addEventListener("change", syncManualFiscalPeriodHidden);
 
   form?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
-    const periodEl = form.querySelector('[name="fiscal_period"]');
-    normalizeFiscalPeriodInput(periodEl);
+    syncManualFiscalPeriodHidden();
     try {
       if (createMode === "sec") {
-        if (!cfg.uploadSecUrl) throw new Error("SEC 上传接口未配置");
-        const file = secFileEl?.files?.[0];
-        if (!file) throw new Error("请选择 SEC Excel 文件");
-        const uploadFd = new FormData();
-        uploadFd.append("ticker", fd.get("ticker") || "");
-        uploadFd.append("fiscal_period", fd.get("fiscal_period") || "");
-        uploadFd.append("title", fd.get("title") || "");
-        uploadFd.append("report_date", fd.get("report_date") || "");
-        uploadFd.append("file", file);
-        const res = await fetch(cfg.uploadSecUrl, { method: "POST", body: uploadFd });
+        if (!cfg.fetchFmpUrl) throw new Error("FMP 接口未配置");
+        const ticker = String(fd.get("ticker") || "").trim().toUpperCase();
+        const year = fmpYearEl?.value;
+        const period = fmpPeriodEl?.value;
+        if (!ticker) throw new Error("请填写 Ticker");
+        if (!year || !period) throw new Error("请选择 FMP 财年与报告期");
+        const payload = {
+          ticker,
+          year: Number(year),
+          period,
+          title: fd.get("title") || "",
+          report_date: fd.get("report_date") || null,
+        };
+        const res = await fetch(cfg.fetchFmpUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "上传失败");
+        if (!res.ok) throw new Error(data.error || "获取失败");
         window.location.href = cfg.detailUrlTemplate.replace("__ID__", data.report_id);
         return;
       }
@@ -361,9 +514,11 @@
         if (!cfg.uploadUrl) throw new Error("上传接口未配置");
         const file = pdfFileEl?.files?.[0];
         if (!file) throw new Error("请选择 PDF 文件");
+        const fiscalPeriod = composeManualFiscalPeriod();
+        if (!fiscalPeriod) throw new Error("请选择日历年份与季度");
         const uploadFd = new FormData();
         uploadFd.append("ticker", fd.get("ticker"));
-        uploadFd.append("fiscal_period", fd.get("fiscal_period"));
+        uploadFd.append("fiscal_period", fiscalPeriod);
         uploadFd.append("title", fd.get("title") || "");
         uploadFd.append("report_date", fd.get("report_date") || "");
         uploadFd.append("file", file);
@@ -373,9 +528,11 @@
         window.location.href = cfg.detailUrlTemplate.replace("__ID__", data.report_id);
         return;
       }
+      const fiscalPeriod = composeManualFiscalPeriod();
+      if (!fiscalPeriod) throw new Error("请选择日历年份与季度");
       const payload = {
         ticker: fd.get("ticker"),
-        fiscal_period: fd.get("fiscal_period"),
+        fiscal_period: fiscalPeriod,
         title: fd.get("title"),
         report_date: fd.get("report_date") || null,
         source_text: fd.get("source_text"),
@@ -414,5 +571,7 @@
     }
   });
 
+  populateManualYearOptions();
+  setCreateMode("sec");
   loadReports();
 })();

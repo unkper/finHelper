@@ -40,7 +40,7 @@ PARSE_STATUS_FAILED = "failed"
 
 SOURCE_PASTE = "paste"
 SOURCE_PDF = "pdf"
-SOURCE_SEC_XLS = "sec_xls"
+SOURCE_SEC_FMP = "sec_fmp"
 REPORTS_PAGE_SIZE = 5
 
 
@@ -329,7 +329,7 @@ def create_financial_report(
         raise ValueError("ticker 与财季不能为空")
     if source_type == SOURCE_PASTE and not source_text:
         raise ValueError("粘贴模式下原文不能为空")
-    if source_type not in (SOURCE_PASTE, SOURCE_PDF, SOURCE_SEC_XLS):
+    if source_type not in (SOURCE_PASTE, SOURCE_PDF, SOURCE_SEC_FMP):
         source_type = SOURCE_PASTE
 
     now = _now_iso()
