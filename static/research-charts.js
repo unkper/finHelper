@@ -1193,6 +1193,48 @@
     }
   });
 
+  const supplementInput = document.getElementById("supplementDocxInput");
+  const supplementBtn = document.getElementById("supplementDocxBtn");
+
+  supplementBtn?.addEventListener("click", () => supplementInput?.click());
+
+  supplementInput?.addEventListener("change", async () => {
+    const file = supplementInput.files?.[0];
+    if (!file || !cfg.supplementDocxUrl) return;
+    if (!window.confirm(`上传「${file.name}」作为 10-K Word 补充？AI 将归纳事件与风险并进入待确认。`)) {
+      supplementInput.value = "";
+      return;
+    }
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      if (supplementBtn) {
+        supplementBtn.disabled = true;
+        supplementBtn.textContent = "上传中…";
+      }
+      const res = await fetch(cfg.supplementDocxUrl, { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "上传失败");
+      setParseUi("done", { hasPending: true, message: "Word 补充已合并，请确认结构化结果" });
+      const openPendingBtn = document.getElementById("openPendingConfirmBtn");
+      if (openPendingBtn) openPendingBtn.hidden = false;
+      const badge = document.getElementById("supplementBadge");
+      if (badge) {
+        badge.hidden = false;
+        badge.textContent = `已附 Word · ${file.name}`;
+      }
+      await openPendingConfirm();
+    } catch (err) {
+      alert(err.message || "Word 补充失败");
+    } finally {
+      supplementInput.value = "";
+      if (supplementBtn) {
+        supplementBtn.disabled = false;
+        supplementBtn.textContent = "上传 10-K Word 补充";
+      }
+    }
+  });
+
   document.getElementById("reparsePdfBtn")?.addEventListener("click", async () => {
     if (!cfg.parsePdfUrl) return;
     if (!window.confirm("重新解析将覆盖当前待确认结果，是否继续？")) return;

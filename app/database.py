@@ -413,7 +413,57 @@ def _migrate_financial_reports(conn: sqlite3.Connection) -> None:
     for name, typedef in alters:
         if name not in columns:
             conn.execute(f"ALTER TABLE financial_reports ADD COLUMN {name} {typedef}")
+    supplement_alters = (
+        ("supplement_blob", "BLOB"),
+        ("supplement_filename", "TEXT"),
+        ("supplement_text", "TEXT"),
+        ("supplement_meta_json", "TEXT"),
+    )
+    for name, typedef in supplement_alters:
+        if name not in columns:
+            conn.execute(f"ALTER TABLE financial_reports ADD COLUMN {name} {typedef}")
     conn.execute("DELETE FROM financial_reports WHERE source_type = 'sec_xls'")
+
+
+def _migrate_research_batch_jobs(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS research_batch_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            target_count INTEGER NOT NULL DEFAULT 4,
+            status TEXT NOT NULL DEFAULT 'pending',
+            progress INTEGER NOT NULL DEFAULT 0,
+            message TEXT,
+            error TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS research_batch_job_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id INTEGER NOT NULL,
+            fmp_year INTEGER NOT NULL,
+            fmp_period TEXT NOT NULL,
+            fiscal_period TEXT,
+            report_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending',
+            error TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(job_id) REFERENCES research_batch_jobs(id) ON DELETE CASCADE,
+            FOREIGN KEY(report_id) REFERENCES financial_reports(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_batch_job_items_job
+            ON research_batch_job_items(job_id);
+        CREATE TABLE IF NOT EXISTS fmp_report_json_cache (
+            ticker TEXT NOT NULL,
+            fmp_year INTEGER NOT NULL,
+            fmp_period TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY (ticker, fmp_year, fmp_period)
+        );
+        """
+    )
 
 
 def _migrate_api_usage_daily(conn: sqlite3.Connection) -> None:
@@ -463,6 +513,7 @@ def migrate_db(conn: sqlite3.Connection) -> None:
     _migrate_asset_price_alerts(conn)
     _migrate_earnings_tables(conn)
     _migrate_financial_reports(conn)
+    _migrate_research_batch_jobs(conn)
     _migrate_api_usage_daily(conn)
     _migrate_stock_news_cache(conn)
     _migrate_research_valuation_overrides(conn)

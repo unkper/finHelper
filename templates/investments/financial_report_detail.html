@@ -40,6 +40,13 @@
         {% if ai_configured and report.source_type == 'sec_fmp' %}
         <button type="button" class="secondary-btn" id="filingNarrativeBtn">AI 生成摘要</button>
         {% endif %}
+        {% if ai_configured and (report.has_analysis or report.has_pending) %}
+        <button type="button" class="secondary-btn" id="supplementDocxBtn">上传 10-K Word 补充</button>
+        <input type="file" id="supplementDocxInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+        {% endif %}
+        {% if report.has_supplement %}
+        <span class="research-supplement-badge hint" id="supplementBadge">已附 Word · {{ report.supplement_filename or '补充文档' }}</span>
+        {% endif %}
         <button type="button" class="primary-btn" id="openPendingConfirmBtn" {% if not report.has_pending %}hidden{% endif %}>打开确认</button>
         {% if ai_configured %}
         <button type="button" class="primary-btn" id="analyzeReportBtn" {% if report.parse_status in ['extracting_text', 'ai_analyzing'] %}disabled{% endif %}>
@@ -63,7 +70,7 @@
     <progress id="parseProgressBar" class="research-parse-bar" max="100" value="{{ report.parse_progress or 0 }}"></progress>
     <p id="parseErrorText" class="research-parse-error" {% if not report.parse_error %}hidden{% endif %}>{{ report.parse_error or '' }}</p>
     <p class="hint research-parse-leave-hint">解析在服务器后台进行，关闭本页不影响；完成后请返回本报告点击「打开确认」或确认弹窗入库并生成图表。</p>
-    <p class="hint">SEC Excel：本地确定性解析三表；可选 AI 生成摘要。PDF/粘贴：DeepSeek 结构化。</p>
+    <p class="hint">FMP/粘贴：DeepSeek 结构化；10-K Word 可作为年报全文补充事件与风险（待确认入库）。</p>
   </section>
 
   <div id="gameQuestPanel" class="panel research-game-quests" hidden></div>
@@ -362,6 +369,8 @@
     pendingUrl: {{ pending_url|tojson }},
     parsePdfUrl: {{ parse_pdf_url|tojson }},
     filingNarrativeUrl: {{ url_for('investments.research_report_filing_narrative', report_id=report.id)|tojson }},
+    supplementDocxUrl: {{ url_for('investments.research_report_supplement_docx', report_id=report.id)|tojson }},
+    hasSupplement: {{ report.has_supplement|tojson }},
     sourceType: {{ report.source_type|tojson }},
     editUrl: {{ url_for('investments.research_report_edit', report_id=report.id)|tojson }},
     deleteUrl: {{ url_for('investments.research_report_delete', report_id=report.id)|tojson }},

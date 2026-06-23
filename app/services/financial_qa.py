@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from app.services.financial_ai import CHART_INSIGHT_MODEL, chat_completion_messages, has_financial_ai_configured
 from app.services.financial_chart_insight import build_dashboard_context
-from app.services.financial_reports import fetch_report_by_id, fetch_report_extracted, get_report_source_text
+from app.services.financial_reports import fetch_report_by_id, fetch_report_extracted, get_report_source_text, get_report_supplement_text
 from app.services.financial_statements import build_chart_payload
 from app.services.financial_valuation import build_valuation_payload, get_valuation_override
 from app.services.market_stats import fetch_us_market_stats
@@ -90,6 +90,10 @@ def build_report_qa_context(report_id: int) -> Dict[str, Any] | None:
     }
     if source_text:
         context["source_text_excerpt"] = source_text[:_MAX_SOURCE_CHARS]
+
+    supplement_text = get_report_supplement_text(report_id)
+    if supplement_text:
+        context["supplement_text_excerpt"] = supplement_text[:_MAX_SOURCE_CHARS]
 
     if has_analysis:
         extracted = fetch_report_extracted(report_id)

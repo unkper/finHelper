@@ -1191,3 +1191,48 @@
   color: #6b7280;
   font-size: 0.8rem;
 }
+
+.research-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.research-batch-panel {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+
+.research-batch-message {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+}
+
+.research-batch-items {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+}
+
+.research-batch-item--success {
+  color: #047857;
+}
+
+.research-batch-item--skipped {
+  color: #6b7280;
+}
+
+.research-batch-item--failed {
+  color: #b91c1c;
+}
+
+.research-supplement-badge {
+  align-self: center;
+  white-space: nowrap;
+}

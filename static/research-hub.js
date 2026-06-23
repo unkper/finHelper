@@ -33,6 +33,27 @@
   let searchQuery = "";
   let listMeta = { total: 0, page: 1, total_pages: 0 };
   let searchDebounceTimer = null;
+  let batchPollTimer = null;
+  let activeBatchJobId = null;
+
+  async function safeJson(res) {
+    const text = await res.text();
+    try {
+      return { ok: res.ok, data: JSON.parse(text) };
+    } catch {
+      throw new Error(
+        res.status === 504 ? "网关超时，请稍后重试" : "服务返回非 JSON（可能登录过期）"
+      );
+    }
+  }
+
+  const batchModal = document.getElementById("batchTrackModal");
+  const batchForm = document.getElementById("batchTrackForm");
+  const batchJobPanel = document.getElementById("batchJobPanel");
+  const batchJobMessage = document.getElementById("batchJobMessage");
+  const batchJobProgress = document.getElementById("batchJobProgress");
+  const batchJobItems = document.getElementById("batchJobItems");
+  const batchSubmitBtn = document.getElementById("batchTrackSubmitBtn");
 
   function populateManualYearOptions() {
     if (!calYearEl) return;
@@ -122,8 +143,8 @@
     try {
       const url = `${cfg.fmpPeriodsUrl}?ticker=${encodeURIComponent(ticker)}&year=${encodeURIComponent(year)}&period=${encodeURIComponent(period)}`;
       const res = await fetch(url);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "预览失败");
+      const { ok, data } = await safeJson(res);
+      if (!ok) throw new Error(data.error || "预览失败");
       const match = (data.periods || []).find((p) => String(p.year) === String(year) && p.period === period);
       if (match?.calendar_period) {
         cached.calendar_period = match.calendar_period;
@@ -147,8 +168,8 @@
     resetFmpPeriodSelects("加载中…");
     try {
       const res = await fetch(`${cfg.fmpPeriodsUrl}?ticker=${encodeURIComponent(symbol)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "加载失败");
+      const { ok, data } = await safeJson(res);
+      if (!ok) throw new Error(data.error || "加载失败");
       if (token !== fmpPeriodsLoadToken) return;
       fmpPeriodsCache = data.periods || [];
       renderFmpPeriodOptions();
@@ -505,8 +526,8 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "获取失败");
+        const { ok, data } = await safeJson(res);
+        if (!ok) throw new Error(data.error || "获取失败");
         window.location.href = cfg.detailUrlTemplate.replace("__ID__", data.report_id);
         return;
       }
@@ -570,6 +591,134 @@
       alert(err.message || "删除失败");
     }
   });
+
+  function batchItemStatusLabel(status) {
+    const map = {
+      success: "成功",
+      skipped: "跳过",
+      failed: "失败",
+      pending: "处理中",
+    };
+    return map[status] || status;
+  }
+
+  function renderBatchJob(job) {
+    if (!batchJobPanel) return;
+    batchJobPanel.hidden = false;
+    if (batchJobMessage) {
+      const err = job.error ? ` · ${job.error}` : "";
+      batchJobMessage.textContent = `${job.message || ""}${err}`;
+    }
+    if (batchJobProgress) batchJobProgress.value = job.progress || 0;
+    if (!batchJobItems) return;
+    const items = job.items || [];
+    batchJobItems.innerHTML = items
+      .map((item) => {
+        const fp = item.fiscal_period ? ` · ${escapeHtml(item.fiscal_period)}` : "";
+        const err = item.error ? ` — ${escapeHtml(item.error)}` : "";
+        const link =
+          item.report_id && cfg.detailUrlTemplate
+            ? ` <a href="${cfg.detailUrlTemplate.replace("__ID__", item.report_id)}">查看</a>`
+            : "";
+        return `<li class="research-batch-item research-batch-item--${escapeHtml(item.status)}">
+          FY${item.fmp_year} ${escapeHtml(item.fmp_period)}${fp}
+          · ${batchItemStatusLabel(item.status)}${err}${link}
+        </li>`;
+      })
+      .join("");
+  }
+
+  function openBatchModal() {
+    if (!batchModal) return;
+    batchModal.hidden = false;
+    if (batchJobPanel) batchJobPanel.hidden = true;
+    if (batchForm) batchForm.hidden = false;
+    if (batchSubmitBtn) batchSubmitBtn.disabled = false;
+    const tickerEl = document.getElementById("batchTicker");
+    if (tickerEl && cfg.tickerFilter) tickerEl.value = cfg.tickerFilter;
+  }
+
+  function closeBatchModal() {
+    if (batchModal) batchModal.hidden = true;
+    if (batchPollTimer) {
+      clearInterval(batchPollTimer);
+      batchPollTimer = null;
+    }
+    activeBatchJobId = null;
+    if (batchForm) {
+      batchForm.reset();
+      batchForm.hidden = false;
+    }
+    if (batchJobPanel) batchJobPanel.hidden = true;
+  }
+
+  async function pollBatchJob(jobId) {
+    if (!cfg.batchJobUrlTemplate) return;
+    try {
+      const url = cfg.batchJobUrlTemplate.replace("__ID__", jobId);
+      const res = await fetch(url);
+      const { ok, data } = await safeJson(res);
+      if (!ok) throw new Error(data.error || "查询失败");
+      renderBatchJob(data);
+      if (data.status === "done" || data.status === "failed") {
+        if (batchPollTimer) {
+          clearInterval(batchPollTimer);
+          batchPollTimer = null;
+        }
+        if (batchSubmitBtn) batchSubmitBtn.disabled = false;
+        await loadReports();
+      }
+    } catch (err) {
+      if (batchJobMessage) batchJobMessage.textContent = err.message || "轮询失败";
+    }
+  }
+
+  function startBatchPolling(jobId) {
+    activeBatchJobId = jobId;
+    if (batchForm) batchForm.hidden = true;
+    if (batchSubmitBtn) batchSubmitBtn.disabled = true;
+    pollBatchJob(jobId);
+    if (batchPollTimer) clearInterval(batchPollTimer);
+    batchPollTimer = setInterval(() => pollBatchJob(jobId), 3000);
+  }
+
+  batchForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!cfg.batchJobsUrl) {
+      alert("批量接口未配置");
+      return;
+    }
+    const ticker = String(new FormData(batchForm).get("ticker") || "")
+      .trim()
+      .toUpperCase();
+    if (!ticker) {
+      alert("请填写 Ticker");
+      return;
+    }
+    try {
+      if (batchSubmitBtn) {
+        batchSubmitBtn.disabled = true;
+        batchSubmitBtn.textContent = "提交中…";
+      }
+      const res = await fetch(cfg.batchJobsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker, target_count: 4 }),
+      });
+      const { ok, data } = await safeJson(res);
+      if (!ok) throw new Error(data.error || "启动失败");
+      startBatchPolling(data.job_id);
+    } catch (err) {
+      alert(err.message || "批量任务启动失败");
+      if (batchSubmitBtn) batchSubmitBtn.disabled = false;
+    } finally {
+      if (batchSubmitBtn) batchSubmitBtn.textContent = "开始批量拉取";
+    }
+  });
+
+  document.getElementById("batchTrackBtn")?.addEventListener("click", openBatchModal);
+  document.getElementById("closeBatchTrackModal")?.addEventListener("click", closeBatchModal);
+  document.getElementById("cancelBatchTrack")?.addEventListener("click", closeBatchModal);
 
   populateManualYearOptions();
   setCreateMode("sec");

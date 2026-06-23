@@ -451,6 +451,129 @@ def enrich_sec_narrative(extracted: Dict[str, Any], *, model: str | None = None)
     return {"status": "ok", "extracted": normalize_extracted_payload(merged), "ai_summary": summary}
 
 
+_WORD_SUPPLEMENT_PROMPT = """你是美股财报分析助手。已有结构化财报数据（三表数字已确定），现有一份 10-K Word 全文作为补充。
+请从 Word 正文中归纳**不重复**于已有摘要的内容，提取：
+1. material_events：重大盈利/亏损/一次性事项（type=profit|loss, title, amount_millions 若明确则填否则 null, period 若可推断则 YYYY-Qn 否则 null, description）
+2. red_flags：重要风险 {{code, message}}
+3. ai_summary_addendum：2-4 句补充摘要（业务进展、MD&A 要点、资本开支/并购/诉讼等），勿重复已有 ai_summary
+
+**禁止**修改 income_statement / balance_sheet / cash_flow / kpis 中的任何数字。
+仅返回 JSON：
+{{"material_events":[...], "red_flags":[...], "ai_summary_addendum":"..."}}
+
+已有数据摘要：
+{existing_summary}
+
+已有 material_events 数量：{events_count}
+
+报告：{ticker} · {fiscal_period}
+
+Word 正文（截断）：
+{word_text}
+"""
+
+
+def _merge_unique_events(existing: List[Dict[str, Any]], new_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = {str(e.get("title") or "").strip().lower() for e in existing if isinstance(e, dict)}
+    merged = list(existing)
+    for item in new_items:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if title and title.lower() in seen:
+            continue
+        if title:
+            seen.add(title.lower())
+        merged.append(item)
+    return merged[:16]
+
+
+def _merge_unique_flags(existing: List[Dict[str, Any]], new_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = {str(e.get("message") or "").strip().lower() for e in existing if isinstance(e, dict)}
+    merged = list(existing)
+    for item in new_items:
+        if not isinstance(item, dict):
+            continue
+        msg = str(item.get("message") or "").strip()
+        if not msg or msg.lower() in seen:
+            continue
+        seen.add(msg.lower())
+        merged.append({"code": str(item.get("code") or "word_supplement").strip(), "message": msg})
+    return merged[:12]
+
+
+def merge_word_supplement(
+    extracted: Dict[str, Any],
+    word_text: str,
+    *,
+    ticker: str | None = None,
+    fiscal_period: str | None = None,
+    model: str | None = None,
+) -> Dict[str, Any]:
+    """从 10-K Word 正文提取事件/风险/摘要，合并进 extracted（不改三表数字）。"""
+    if not has_financial_ai_configured():
+        return {"error": "未配置 DEEPSEEK_API_KEY"}
+    if not isinstance(extracted, dict):
+        return {"error": "缺少结构化数据"}
+    text = (word_text or "").strip()
+    if len(text) < 200:
+        return {"error": "Word 正文过短"}
+
+    max_chars = 12000
+    excerpt = text[:max_chars]
+    if len(text) > max_chars:
+        excerpt += "\n…（正文已截断）"
+
+    prompt = _WORD_SUPPLEMENT_PROMPT.format(
+        existing_summary=(extracted.get("ai_summary") or "")[:800],
+        events_count=len(extracted.get("material_events") or []),
+        ticker=(ticker or "").strip().upper(),
+        fiscal_period=(fiscal_period or "").strip(),
+        word_text=excerpt,
+    )
+    use_model = model or get_ai_financial_parse_model()
+    result = _call_deepseek_chat(prompt, model=use_model)
+    if result.get("error"):
+        return {"error": result["error"]}
+    try:
+        payload = json.loads(_extract_json_text(result["content"]))
+    except json.JSONDecodeError:
+        return {"error": "AI 返回格式无法解析"}
+    if not isinstance(payload, dict):
+        return {"error": "AI 返回格式异常"}
+
+    merged = dict(extracted)
+    filing_meta = dict(merged.get("filing_meta") or {})
+    filing_meta["word_supplement"] = True
+    merged["filing_meta"] = filing_meta
+
+    addendum = str(payload.get("ai_summary_addendum") or "").strip()
+    base_summary = str(merged.get("ai_summary") or "").strip()
+    if addendum:
+        block = f"\n\n【10-K Word 补充】\n{addendum}"
+        merged["ai_summary"] = (base_summary + block).strip() if base_summary else addendum
+
+    new_events = _normalize_material_events(payload.get("material_events"))
+    if new_events:
+        merged["material_events"] = _merge_unique_events(
+            merged.get("material_events") or [],
+            new_events,
+        )
+
+    new_flags = payload.get("red_flags")
+    if isinstance(new_flags, list) and new_flags:
+        normalized = normalize_extracted_payload({"red_flags": new_flags}).get("red_flags", [])
+        merged["red_flags"] = _merge_unique_flags(merged.get("red_flags") or [], normalized)
+
+    normalized = normalize_extracted_payload(merged)
+    normalized["filing_meta"] = filing_meta
+    return {
+        "status": "ok",
+        "extracted": normalized,
+        "ai_summary": normalized.get("ai_summary"),
+    }
+
+
 def chat_completion_text(prompt: str, *, model: str) -> Dict[str, Any]:
     """通用短文本生成（如图表解读）。"""
     result = _call_deepseek_chat(prompt, model=model)

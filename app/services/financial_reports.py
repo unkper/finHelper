@@ -16,7 +16,10 @@ _REPORT_DETAIL_COLUMNS = """
     (pdf_blob IS NOT NULL) AS has_pdf_blob,
     (extracted_json IS NOT NULL AND extracted_json != '') AS has_analysis_flag,
     (pending_extracted_json IS NOT NULL AND pending_extracted_json != '') AS has_pending_flag,
-    (source_text IS NOT NULL AND source_text != '') AS has_source_text_flag
+    (source_text IS NOT NULL AND source_text != '') AS has_source_text_flag,
+    supplement_filename,
+    (supplement_blob IS NOT NULL) AS has_supplement_blob,
+    (supplement_text IS NOT NULL AND supplement_text != '') AS has_supplement_text_flag
 """
 
 # 列表分页：不加载 source_text / extracted_json / pending_extracted_json
@@ -130,6 +133,8 @@ def serialize_report(row) -> Dict[str, Any]:
         "theme_id": row["theme_id"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "supplement_filename": _row_get(row, "supplement_filename"),
+        "has_supplement": bool(_row_get(row, "has_supplement_blob")) or bool(_row_get(row, "has_supplement_text_flag")),
     }
     if extracted is not None:
         data["extracted"] = extracted
@@ -146,6 +151,59 @@ def get_report_source_text(report_id: int) -> str:
     if not row:
         return ""
     return (row["source_text"] or "").strip()
+
+
+def get_report_supplement_text(report_id: int) -> str:
+    row = get_db().execute(
+        "SELECT supplement_text FROM financial_reports WHERE id = ?",
+        (report_id,),
+    ).fetchone()
+    if not row:
+        return ""
+    return (row["supplement_text"] or "").strip()
+
+
+def report_exists(ticker: str, fiscal_period: str) -> bool:
+    db = get_db()
+    period = normalize_fiscal_period(fiscal_period)
+    row = db.execute(
+        "SELECT id FROM financial_reports WHERE ticker = ? AND fiscal_period = ?",
+        (ticker.strip().upper(), period),
+    ).fetchone()
+    return row is not None
+
+
+def save_report_supplement(
+    report_id: int,
+    data: bytes,
+    filename: str,
+    text: str,
+    meta: Dict[str, Any] | None = None,
+) -> None:
+    db = get_db()
+    row = db.execute(
+        "SELECT id FROM financial_reports WHERE id = ?",
+        (report_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("报告不存在")
+    db.execute(
+        """
+        UPDATE financial_reports
+        SET supplement_blob = ?, supplement_filename = ?, supplement_text = ?,
+            supplement_meta_json = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            data,
+            filename,
+            text,
+            json.dumps(meta or {}, ensure_ascii=False),
+            _now_iso(),
+            report_id,
+        ),
+    )
+    db.commit()
 
 
 def fetch_report_extracted(report_id: int) -> Dict[str, Any] | None:

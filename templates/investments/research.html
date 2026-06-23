@@ -80,12 +80,15 @@
     <section class="panel research-analysis-toolbar">
       <div>
         <h3>财报分析报告{% if ticker_filter %} · {{ ticker_filter }}{% endif %}</h3>
-        <p class="hint">推荐上传 SEC EDGAR 导出的 Excel（10-Q/10-K）；粘贴/PDF 用于无标准表的补充场景。</p>
+        <p class="hint">推荐从 FMP 拉取 10-Q/10-K；批量跟踪可自动补齐最近 4 季缺失报告。粘贴/PDF 用于补充场景。</p>
         {% if ticker_filter %}
         <p class="hint"><a href="{{ url_for('investments.research', tab='analysis') }}">查看全部标的</a></p>
         {% endif %}
       </div>
-      <button type="button" class="primary-btn" id="newReportBtn">+ 新建报告</button>
+      <div class="research-toolbar-actions">
+        <button type="button" class="secondary-btn" id="batchTrackBtn">批量跟踪</button>
+        <button type="button" class="primary-btn" id="newReportBtn">+ 新建报告</button>
+      </div>
     </section>
 
     <section class="panel">
@@ -214,6 +217,31 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="batchTrackModal" hidden>
+  <div class="modal research-modal research-modal-wide">
+    <div class="modal-header">
+      <h3>批量跟踪 · 拉取最近 4 季 10-Q</h3>
+      <button type="button" class="modal-close" id="closeBatchTrackModal" aria-label="关闭">×</button>
+    </div>
+    <form id="batchTrackForm" class="research-form">
+      <label>
+        <span>标的 Ticker</span>
+        <input type="text" name="ticker" id="batchTicker" list="trackedTickers" placeholder="MU" required>
+      </label>
+      <p class="hint">后台从 FMP 按新→旧尝试 10-Q；已存在的财季跳过，失败则向更早期次递补，直到新建 4 份或候选耗尽。</p>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="cancelBatchTrack">取消</button>
+        <button type="submit" class="primary-btn" id="batchTrackSubmitBtn">开始批量拉取</button>
+      </div>
+    </form>
+    <div id="batchJobPanel" class="research-batch-panel" hidden>
+      <p id="batchJobMessage" class="research-batch-message"></p>
+      <progress id="batchJobProgress" class="research-parse-bar" max="100" value="0"></progress>
+      <ul id="batchJobItems" class="research-batch-items"></ul>
+    </div>
+  </div>
+</div>
+
 <script>
   window.RESEARCH_PAGE = {
     reportsUrl: {{ url_for('investments.research_reports_list')|tojson }},
@@ -221,6 +249,8 @@
     uploadUrl: {{ url_for('investments.research_reports_upload')|tojson }},
     fmpPeriodsUrl: {{ url_for('investments.research_reports_fmp_periods')|tojson }},
     fetchFmpUrl: {{ url_for('investments.research_reports_fetch_fmp')|tojson }},
+    batchJobsUrl: {{ url_for('investments.research_batch_jobs_create')|tojson }},
+    batchJobUrlTemplate: {{ url_for('investments.research_batch_job_detail', job_id=0)|tojson }}.replace('/0', '/__ID__'),
     detailUrlTemplate: {{ url_for('investments.research_report_detail', report_id=0)|tojson }}.replace('/0', '/__ID__'),
     deleteUrlTemplate: {{ url_for('investments.research_report_delete', report_id=0)|tojson }}.replace('/0', '/__ID__'),
     aiConfigured: {{ ai_configured|tojson }},

@@ -1,9 +1,12 @@
 """FMP SEC 10-Q/10-K 财报 dates + JSON 拉取。"""
+import json
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from flask import current_app
 
+from app.database import get_db
 from app.services.fmp_report_mapper import parse_fmp_report_json, preview_calendar_period
 from app.services.quote_client import http_get_json
 
@@ -14,6 +17,50 @@ _JSON_URL = f"{FMP_BASE}/financial-reports-json"
 _VALID_PERIODS = frozenset({"Q1", "Q2", "Q3", "Q4", "FY"})
 _DATES_CACHE: Dict[str, Dict[str, Any]] = {}
 _DATES_CACHE_TTL_SEC = 24 * 3600
+_JSON_CACHE_TTL_SEC = 7 * 24 * 3600
+
+
+def _cache_get_json(ticker: str, year: int | str, period: str) -> Optional[Dict[str, Any]]:
+    db = get_db()
+    row = db.execute(
+        """
+        SELECT payload_json, fetched_at FROM fmp_report_json_cache
+        WHERE ticker = ? AND fmp_year = ? AND fmp_period = ?
+        """,
+        (ticker.strip().upper(), int(year), str(period).upper()),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        fetched = datetime.fromisoformat(row["fetched_at"])
+        if (datetime.now() - fetched).total_seconds() > _JSON_CACHE_TTL_SEC:
+            return None
+        data = json.loads(row["payload_json"])
+        return data if isinstance(data, dict) else None
+    except (ValueError, json.JSONDecodeError):
+        return None
+
+
+def _cache_set_json(ticker: str, year: int | str, period: str, payload: Dict[str, Any]) -> None:
+    db = get_db()
+    now = datetime.now().isoformat(timespec="seconds")
+    db.execute(
+        """
+        INSERT INTO fmp_report_json_cache (ticker, fmp_year, fmp_period, payload_json, fetched_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(ticker, fmp_year, fmp_period) DO UPDATE SET
+            payload_json = excluded.payload_json,
+            fetched_at = excluded.fetched_at
+        """,
+        (
+            ticker.strip().upper(),
+            int(year),
+            str(period).upper(),
+            json.dumps(payload, ensure_ascii=False),
+            now,
+        ),
+    )
+    db.commit()
 
 
 def _api_key() -> str:
@@ -70,6 +117,9 @@ def fetch_report_json(ticker: str, year: int | str, period: str) -> Dict[str, An
         raise ValueError("period 须为 Q1–Q4 或 FY")
 
     api_key = require_api_key()
+    cached = _cache_get_json(symbol, year, period_code)
+    if cached is not None:
+        return cached
     payload = http_get_json(
         _JSON_URL,
         {
@@ -81,6 +131,7 @@ def fetch_report_json(ticker: str, year: int | str, period: str) -> Dict[str, An
     )
     if not isinstance(payload, dict):
         raise ValueError("FMP 未返回有效财报 JSON")
+    _cache_set_json(symbol, year, period_code, payload)
     return payload
 
 

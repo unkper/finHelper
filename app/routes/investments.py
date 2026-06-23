@@ -85,6 +85,7 @@ from app.services.financial_ai import (
     enrich_sec_narrative,
     extract_from_financial_text,
     has_financial_ai_configured,
+    merge_word_supplement,
     normalize_extracted_payload,
 )
 from app.services.financial_statements import build_chart_payload
@@ -98,6 +99,9 @@ from app.services.valuation_ai import recommend_valuation_params
 from app.services.market_stats import fetch_us_market_stats
 from app.services.financial_pdf import run_parse_job, run_text_analyze_job, save_uploaded_pdf
 from app.services.fmp_sec_reports import fetch_and_parse_fmp_report, list_selectable_periods
+from app.services.research_batch import start_batch_job
+from app.services.research_batch_store import fetch_batch_job, list_recent_batch_jobs
+from app.services.financial_docx import save_uploaded_docx_supplement
 from app.services.financial_chart_insight import explain_chart, explain_dashboard
 from app.services.financial_game_rules import build_game_rules
 from app.services.financial_narrative import (
@@ -713,6 +717,89 @@ def research_reports_fetch_fmp():
             "title": use_title,
             "filing_meta": preview.get("filing_meta"),
         },
+    })
+
+
+@bp.route('/research/batch-jobs', methods=['GET'])
+def research_batch_jobs_list():
+    jobs = list_recent_batch_jobs(limit=10)
+    return jsonify({"jobs": jobs})
+
+
+@bp.route('/research/batch-jobs', methods=['POST'])
+def research_batch_jobs_create():
+    data = request.get_json(silent=True) or {}
+    ticker = str(data.get("ticker") or "").upper().strip()
+    target_count = data.get("target_count", 4)
+    if not ticker:
+        return jsonify({"error": "ticker 不能为空"}), 400
+    try:
+        app = current_app._get_current_object()
+        job_id = start_batch_job(app, ticker, int(target_count))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"status": "ok", "job_id": job_id})
+
+
+@bp.route('/research/batch-jobs/<int:job_id>', methods=['GET'])
+def research_batch_job_detail(job_id):
+    job = fetch_batch_job(job_id)
+    if not job:
+        return jsonify({"error": "任务不存在"}), 404
+    return jsonify(job)
+
+
+@bp.route('/research/reports/<int:report_id>/supplement-docx', methods=['POST'])
+def research_report_supplement_docx(report_id):
+    if not has_financial_ai_configured():
+        return jsonify({"error": "未配置 DEEPSEEK_API_KEY"}), 503
+
+    report = fetch_report_by_id(report_id)
+    if not report:
+        return jsonify({"error": "报告不存在"}), 404
+
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return jsonify({"error": "请选择 Word 文件"}), 400
+    if not upload.filename.lower().endswith(".docx"):
+        return jsonify({"error": "仅支持 .docx 文件"}), 400
+
+    extracted = get_pending_extracted(report_id) if report.get("has_pending") else fetch_report_extracted(report_id)
+    if not extracted:
+        return jsonify({"error": "请先完成财报结构化解析"}), 400
+
+    ip = get_client_ip()
+    allowed, retry_after = consume_rate_limit(f"financial-ai:{ip}", max_calls=10, window_seconds=3600)
+    if not allowed:
+        return jsonify({"error": "AI 请求过于频繁", "retry_after": retry_after}), 429
+
+    try:
+        supplement = save_uploaded_docx_supplement(report_id, upload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    result = merge_word_supplement(
+        extracted,
+        supplement["text"],
+        ticker=report.get("ticker"),
+        fiscal_period=report.get("fiscal_period"),
+        model=get_ai_financial_parse_model(),
+    )
+    if result.get("error"):
+        return jsonify(result), 503 if "DEEPSEEK" in result["error"] else 400
+
+    save_pending_analysis(report_id, result["extracted"], result.get("ai_summary"))
+    update_parse_state(
+        report_id,
+        status=PARSE_STATUS_DONE,
+        progress=100,
+        message="Word 补充已合并，请确认结构化结果",
+    )
+    return jsonify({
+        "status": "ok",
+        "report_id": report_id,
+        "has_pending": True,
+        "char_count": supplement.get("char_count"),
     })
 
 
